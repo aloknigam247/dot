@@ -12,6 +12,10 @@ keycodes. It is currently Windows-only (built with the Visual Studio 2026 genera
 For building and running, see [`SETUP.md`](SETUP.md). For contributor conventions, the correctness
 and performance invariants, and the test tiers, see [`AGENTS.md`](AGENTS.md).
 
+The approved UI target is defined in [`docs/design/DESIGN.md`](docs/design/DESIGN.md), with qvim composition,
+implementation mappings, and reference screenshots in [`docs/design/implementation.md`](docs/design/implementation.md).
+The design is not a claim of native implementation parity.
+
 ## Architecture
 
 qvim is a thin, reactive layer over Neovim: Neovim owns all editing state and emits a redraw event
