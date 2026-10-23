@@ -15,31 +15,47 @@ Turn a rough task, bug, or idea into a **well-formed GitHub issue** that a *diff
 - **Always rubber-duck the draft.** Every triage runs the rubber-duck agent over the drafted issue to catch flawed root causes, invariant violations, and weak tests *before* the user sees it.
 - **The issue is for another agent, at another time.** Write it as a self-contained task: enough context, file references, and acceptance criteria that an agent with zero conversation history can pick it up and implement it.
 - **Anchor to stable identifiers, not coordinates.** An issue is implemented at an unknown later time against a changed tree. Reference symbols, string literals, config keys, and search patterns — never line numbers, occurrence counts, or verbatim multi-line snapshots that the codebase will invalidate. A frozen inventory goes stale *and* misleads: the implementing agent trusts it as exhaustive and skips rediscovering occurrences added after the issue was filed. The issue points the way; the implementing agent re-discovers the exact scope.
-- **Match detail to task type.** For a narrow **bug**, the exact offending lines *are* the deliverable — a tight snippet of the actual defect is worth freezing. For **features / refactors / renames / broad sweeps**, staleness dominates: give a discovery recipe (search patterns + stable anchors) and the compat/invariant rules, not an enumerated file list.
+- **Match detail to task type.** For a narrow **bug**, preserve a tight snippet of the actual defect as investigation
+  evidence. For **features / refactors / renames / broad sweeps**, give a discovery recipe (search patterns + stable
+  anchors) and compat/invariant rules, not an enumerated file list that will go stale.
 - **Ask for missing details.** Do not guess when scope, expected behavior, or acceptance criteria are ambiguous.
 
 ## Source complexity and decomposition
 
-Assess implementation complexity from actual production code: behavioral scope, component coupling, interfaces,
-state/lifecycle changes, migration/invariants, and unresolved design.
+Default to low/medium implementation leaves. Assess complexity from actual production code: behavioral scope, component
+coupling, interfaces, state/lifecycle changes, migration/invariants, and unresolved design.
 
 - **Low:** a localized, well-understood behavioral change.
 - **Medium:** one coherent, bounded outcome across a small connected set of components, with clear contracts and
   manageable invariants.
-- **Above medium:** never file as one implementation assignment. Do not use LOC, file-count, or time quotas.
-  If uncertainty prevents a bounded estimate, investigate or clarify before drafting implementation work.
-  Unknown is not low.
+- **Above medium:** exceeds these bounds; follow the decomposition/merge policy below.
+
+Do not use LOC, file-count, or time quotas. If uncertainty prevents a bounded estimate, investigate or clarify before
+drafting implementation work. Unknown is not low.
 
 Exclude test additions/updates, fixtures, harnesses, matrix breadth, coverage, test runtime, and test-writing effort
 from complexity and splitting decisions. Keep tests and validation attached to each implementation slice.
 Large test work alone does not justify splitting it into test-only work or omitting tests.
 Do not split pure docs/tests/spikes solely for size.
 
-Turn above-medium work into a **tracking-only parent**, explicitly not an implementation assignment, and
-non-overlapping, independently verifiable low/medium children. Reassess each child recursively, using nested tracking
-parents as needed.
-Parents track scope, completion criteria, and children; the leaves collectively cover the full request. Preserve real
-dependencies and allow independent children to proceed in parallel. Parent containment does not mean blocked-by.
+Every implementation leaf must deliver a concrete, independently usable or demonstrable outcome, with a named consumer,
+intended use, and completion demonstration. This may be user behavior or an actually consumable API, CLI, library, or
+artifact. Prerequisites are allowed, but no leaf may end as unused schema, scaffolding, or transport awaiting a later
+integration issue to become useful. Passing tests/builds alone is not the feature deliverable. Docs and research
+findings remain valid deliverables for those task types.
+
+Prefer smaller complete functional slices, not artificial file/layer/test splits. If these cannot deliver useful
+outcomes, propose merging the necessary tasks: explain exactly which scopes combine, the outcome/demo, honest
+revised source complexity, and tradeoff. Use `ask_user` to approve the **specific merge and any complexity increase
+before adopting or filing it**. An above-medium leaf is allowed only for that approved merged scope; record its scope,
+actual rating, rationale, and approval in its draft. Never downgrade a rating to fit or treat approval as a blanket
+exception. If declined, revise toward another complete outcome or leave the split unresolved; clarify unresolved design
+before proceeding.
+
+Use **tracking-only parents**, explicitly not implementation assignments, to coordinate decomposed work. Reassess each
+child against this policy, using nested tracking parents as needed. Parents track scope, completion criteria, and
+children; the non-overlapping leaves collectively cover the full request. Preserve real dependencies and allow
+independent children to proceed in parallel. Parent containment does not mean blocked-by.
 Search duplicates and related issues for each proposed child; reuse suitable existing work instead of duplicating it.
 
 Every issue attached as a child, including under an existing parent or a nested tracking parent, needs the exact
@@ -79,7 +95,8 @@ The subagent prompt must include:
 The subagent is responsible for:
 1. Reading the root `AGENTS.md` (and the relevant nested `AGENTS.md`) for architecture, conventions, correctness/performance gates, and gotchas.
 2. Using grep/glob/view to locate the work. **Scale the output to the task type** (see the "Match detail to task type" principle):
-   - **Narrow bug:** capture the exact offending lines as a short verbatim snippet with a `file:line` ref — the defect *is* the deliverable and won't move much.
+   - **Narrow bug:** capture the exact offending lines as a short verbatim snippet with a `file:line` ref as
+     investigation evidence.
    - **Feature / refactor / rename / broad sweep:** do **not** enumerate every hit. Identify the **distinct surfaces/categories** the work touches, give **one representative entry point** per surface (as a stable anchor — a symbol, string literal, or config key), and record the **grep/glob patterns** that locate the rest. Prefer "find the remaining refs via `<pattern>`" over a frozen file list or an occurrence count.
 3. Identifying the **component(s)** involved (e.g., `MsgpackRpc`, `NvimConnector`, `GridModel`, `HighlightTable`, `ModeInfo`, `GridItem`, `CursorItem`, `InputHandler`, a `*Model`, or a `qml/` component).
 4. Confirming the **root cause** (for bugs) by tracing the actual code — not guessing. Remember the redraw event stream is the single source of truth; `ext_hlstate` makes `hl_attr_define` a 4-element event; `paint()` must be a pure function of (`GridModel`, `HighlightTable`, `ModeInfo`, cursor state) and must never reach back into RPC state.
@@ -96,6 +113,9 @@ The subagent must **return a structured report** containing:
 - `components` — the component(s) involved
 - `rootCause` — for bugs, the confirmed root cause with file:line references (or "n/a")
 - `approach` — the proposed implementation approach
+- `deliverables` — for each leaf, its concrete outcome, named consumer/use, and completion demonstration
+- `mergeProposals` — any necessary merges under **Source complexity and decomposition**, with combined scopes, revised
+  complexity, rationale, and tradeoff; proposals are not approval
 - `slices` — if needed, the proposed tracking hierarchy, bounded child outcomes, source complexity/reasons, coverage,
   dependencies, and validation for each leaf
 - `sourceComplexity` — low/medium/above-medium or unresolved, with a concise source-based rationale and stable anchors
@@ -105,6 +125,7 @@ The subagent must **return a structured report** containing:
 Reference stable anchors (symbols, string literals, config keys), **never line numbers or occurrence counts** in the enumerated scope — the issue is implemented later against a moved tree.
 
 If the subagent returns `openQuestions`, resolve them with the user (via `ask_user`) before drafting the issue.
+Resolve `mergeProposals` under **Source complexity and decomposition** before adopting them in the draft plan.
 
 ### 3. Check for duplicate and related issues
 
@@ -159,7 +180,9 @@ Show provisional child names and dependencies before numbers exist; show numbers
 1. Compose the issue **title** in Conventional Commit style: `<type>(scope): <short description>` (e.g., `fix(GridItem): cursor blink phase resets on nvim window event`). Use the component as the scope where it helps. For a spike, use `spike(scope): <question to answer>`.
 2. Compose the issue **body** with these sections (omit a section only if truly not applicable):
    - **Summary** — one or two sentences.
-   - **Source complexity** — for each implementation leaf, low or medium with a concise source-based reason.
+   - **Deliverable** — the leaf's outcome, named consumer/use, and completion demonstration from `deliverables`.
+   - **Source complexity** — actual rating and source-based rationale under **Source complexity and decomposition**;
+     include any approved merged scope and its recorded approval.
    - **Context / Background** — why this matters; the reported symptom or motivation; the affected layer(s). **For a narrow bug**, embed the offending code as a fenced snippet (from the subagent's `codeSnippet`) with a `file:line` caption so the future agent sees exactly what code the task refers to. **For a feature/refactor/rename**, describe the *pattern* and the surfaces involved — do not paste a frozen multi-line snapshot or an occurrence count that the tree will invalidate.
    - **Related issues** — if step 3 found related-but-distinct issues, list each one using a GitHub cross-reference keyword so the relationship is recorded natively in both issues' timelines: `Related to #N`, `Blocked by #N`, `Part of #N`, or `Follow-up to #N` (one per line, with the short reason). Omit this section if there are none. Do **not** list duplicates here — duplicates are resolved with the user in step 3, not linked from a new redundant issue.
    - **Affected surfaces & components** — for a narrow bug, the specific `file` -> `symbol` -> reason sites. For a feature/refactor/rename, the **surfaces/categories** (from the subagent's `surfaces`) with **one representative entry point each** plus the **discovery command** that finds the rest (from `searchStrategy`). Prefix this section with a standing note to the implementing agent: *"This is a starting map, not an exhaustive inventory — re-run the discovery searches below and treat their output as authoritative; occurrences may have been added since this issue was filed."* Reference the "Layout" / "Where to extend" guidance in `AGENTS.md` where relevant.
@@ -181,14 +204,19 @@ Show provisional child names and dependencies before numbers exist; show numbers
    **rubber-duck** agent (via the Task tool) to review all draft paths. The prompt must include:
    - Every full drafted issue (or its path).
    - The subagent's investigation report (`surfaces`, `affected`, `searchStrategy`, `codeSnippet`, `rootCause`, `approach`, `testing`) so it can check the draft against the actual findings.
-   - All parent/child drafts, `sourceComplexity`, and `slices`; reject high/unbounded leaves, coverage gaps or overlap,
-     missing native relationship/label plans, false dependencies, and complexity based on testing effort.
+   - All parent/child drafts, `deliverables`, `mergeProposals`, `sourceComplexity`, `slices`, and recorded merge
+     approvals. Apply **Source complexity and decomposition**: reject missing usable outcomes, named consumers/uses or
+     demos, orphaned integration, leaves useful only after later integration, coverage gaps/overlap, testing-derived
+     sizing, unbounded leaves, and above-medium leaves without specific merge approval. Check approved merged leaves
+     against their recorded scope, actual rating, and rationale; also reject missing native relationship/label plans
+     and false dependencies.
    - The instruction to catch: incorrect or unverified root cause, `file:line` references that don't match reality, **a frozen file/line inventory or occurrence count where a discovery recipe belongs** (features/refactors/renames must anchor to patterns and stable identifiers, not coordinates that will go stale), an approach that violates a qvim invariant (paint-path purity, per-frame redraw cost, no `msgpack::object` copies, render-thread affinity, well-bracketed nvim keycodes, 4-element `hl_attr_define`), acceptance criteria that aren't concretely verifiable, and testing requirements that use soft assertions (`qWarning`/pixel-band) instead of hard `QVERIFY`/`QCOMPARE`, target the wrong test tier, or fail to pin *this specific* fix.
    - The instruction to report only substantive issues (bugs, logic/design flaws, missing coverage) — not style/wording nits.
 
    Resolve substantive findings, reinvestigating factual gaps as needed, before presenting the plan.
-5. Show every proposed **title**, **categories/labels**, parent/child link, dependency, and reused issue.
-   Note that the rubber-duck review passed. Open each draft with mdview in the next step.
+5. Show every proposed **title**, **categories/labels**, parent/child link, dependency, reused issue, and leaf
+   outcome/demo. Highlight approved merged scopes and their actual complexity. Note that the rubber-duck review passed.
+   Open each draft with mdview in the next step.
 6. **Always open the rendered draft with mdview before asking the user to accept.** Launch the viewer on the draft so the user reviews the formatted markdown, not the raw file:
 
    ```ps1
