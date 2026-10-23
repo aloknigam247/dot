@@ -12,10 +12,25 @@ Use the canonical tokens rather than introducing component-specific values.
 
 | Surface | Normative rules |
 |---------|-----------------|
-| Android app | [Android touch profile](DESIGN.md#101-android-touch-profile) and [qvim chrome profile](DESIGN.md#102-qvim-chrome-profile) |
-| Desktop chat | [Shared metrics](DESIGN.md#4-metrics), [qvim chrome profile](DESIGN.md#102-qvim-chrome-profile), and [chat text alignment](DESIGN.md#103-qvim-desktop-chat-text-alignment) |
-| Desktop editor | [Shared metrics](DESIGN.md#4-metrics), [component catalogue](DESIGN.md#9-components), and [qvim chrome profile](DESIGN.md#102-qvim-chrome-profile) |
-| Palette and color pairing | [Canonical palette](DESIGN.md#11-qvim-reference-palette) |
+| Android app | [Android touch profile](DESIGN.md#101-android-touch-profile) and [opaque chrome profile](DESIGN.md#102-opaque-chrome-profile) |
+| Desktop chat | [Shared metrics](DESIGN.md#4-metrics), [opaque chrome profile](DESIGN.md#102-opaque-chrome-profile), and [chat text alignment](DESIGN.md#103-desktop-chat-text-alignment) |
+| Desktop editor | [Shared metrics](DESIGN.md#4-metrics), [component catalogue](DESIGN.md#9-components), and [opaque chrome profile](DESIGN.md#102-opaque-chrome-profile) |
+| Palette and color pairing | [Canonical palette](DESIGN.md#11-reference-palette) |
+
+## Color bindings
+
+The design defines the color roles and their visual meaning. Whether a value comes through Neovim or qvim is an
+implementation detail; the provider does not change which role or state a component uses.
+
+- **Content bindings:** Neovim highlights supply pane background, primary foreground, cursor, text-range selection,
+  and overlay/menu colors. Non-diff buffer syntax remains part of the rendered content.
+- **Fixed chrome:** qvim binds frame, resting, raised, selection, muted, and status roles to the design palette.
+  Changing a content theme does not recalculate these tones.
+- **Materials:** map Neovim transparency settings to the material intensity defined in
+  [Translucency](DESIGN.md#5-translucency), without dimming foreground text or icons.
+- **Resolution:** for configurable content roles, use an explicit user setting, then the corresponding Neovim value,
+  then the matching palette entry when no value is available. A missing cursor color uses the reversed Text/Pane pair.
+  This resolution order belongs to qvim's bindings, not to the design language.
 
 ## Desktop editor
 

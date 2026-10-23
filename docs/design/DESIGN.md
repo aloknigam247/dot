@@ -1,21 +1,11 @@
 # Surfaces — UI design language
 
-**Frozen baseline.** Changes to these principles or components require explicit approval.
-
-The freeze is an approval policy, not an automated file lock. Proposed changes must identify the affected rules,
-profiles, and component states, and receive explicit approval before this specification is revised.
-
 Surfaces is an application-independent UI design language. It defines how content, controls, and their
 containers form a coherent interface through shared geometry, hierarchy, states, and motion. It is
 not a color theme, a rendering technique, or a design specific to one application or toolkit.
 
 The principles stand on their own. Product identities and technology bindings belong in separate documentation.
 Approved platform or product exceptions belong in named profiles in §10; each overrides only the rules it lists.
-The qvim reference palette is authoritative in §11. The
-[qvim application guide](implementation.md) maps these rules to the approved screens and implementation targets.
-
-**Illustrations.** The component images pair dark and light using an example palette. They illustrate the shared
-defaults; the qvim application guide shows the scoped profiles and canonical palette applied to the approved screens.
 
 ## 1. The core idea
 
@@ -28,17 +18,15 @@ depth levels or three surfaces. Components such as chips, cards, fields, and but
 own nested surfaces. A menu has an overlay surface; a submenu is another overlay, not another role.
 Nesting and interactivity do not, by themselves, imply elevation.
 
-Each surface takes its color from its source — the content's theme, with the implementation's palette
-as fallback — not its position in a stack. Separation expresses purpose: a gap between frame and pane,
-local tones for component states, and a soft shadow for an overlay.
+Each surface uses the color defined for its role and state, not its position in a stack. Separation expresses purpose:
+a gap between frame and pane, local tones for component states, and a soft shadow for an overlay.
 
 The ideology in one line: **content is sovereign; chrome recedes; elevation serves a purpose.**
 
 Five beliefs follow from that, and every design decision must be traceable to one of them:
 
 1. **Content is sovereign.** The material being read, created, or explored — text, images, data —
-   owns the screen and owns the color. Chrome derives its colors from the content's own theme and
-   never competes with it.
+   owns the screen and its meaningful formatting. Chrome uses quiet role colors and never competes with it.
 2. **Surface roles, ordered by purpose.** Frame, pane, and overlay organize the workspace; nested
    component surfaces organize what is on them. A new background does not automatically create a new
    elevation. Shadow is reserved for overlays that genuinely float above their hosts.
@@ -64,12 +52,12 @@ The primary roles are:
   opaque view the frame is one tone step darker than the pane it holds; with a platform backdrop
   material it takes that material (see Translucency).
 - **Pane** — one per body of content: a document, a collection, a data view. It rests on the
-  frame, inset by the gap, and takes the content's own background. Everything else that belongs to its
+  frame, inset by the gap, and uses the Pane/background role. Everything else that belongs to its
   content lives on it: its tab band, regions, status line, scrollbars, and other controls. A translucent
   pane is an explicit opt-in only.
 - **Overlay** — a surface that appears above its host while needed: a menu, popup, hover, or notification.
-  Its host can be the frame, a pane, or another overlay. It takes
-  the content's overlay color, so it may be lighter or darker than its host. A soft shadow, and with
+  Its host can be the frame, a pane, or another overlay. Its assigned overlay color
+  may be lighter or darker than its host. A soft shadow, and with
   backdrop materials a blur of what is behind it, expresses elevation — never a prescribed tone.
   Within the interface, only overlays cast shadows; native window decoration is platform-owned (§4).
 
@@ -99,41 +87,31 @@ Within those roles:
 
 ## 3. Color and separation
 
-Depth follows the host and overlay relationships; tone does not encode it. Each surface takes its
-color from its source, and separation expresses its role. Concrete hex values live in an
-implementation's palette or content theme; qvim's palette is in §11. These are the shared defaults,
-subject only to the explicit profiles in §10:
+Depth follows the host and overlay relationships; tone does not encode it. Color expresses role and state.
+The palette in §11 defines the concrete values and derivations. The rules below define their visual use, independently
+of how an application obtains or renders them, subject only to the explicit profiles in §10:
 
-- **Pane — the content's background.** The content theme is the source of truth: background, text,
-  syntax, cursor, and text-range selection come from it where defined. Chrome text is the content's
-  text color too. Selecting a control uses the component-selection treatment below.
+- **Pane — the content area's background.** Use the Pane/background role, with Text for primary content and Muted text
+  for secondary content. Syntax and text-range selection retain their semantic formatting.
+  Selecting a control uses the separate component-selection treatment below.
 - **Frame — one tone step darker than the pane,** in both themes; or the OS material.
-- **Overlay — the content's overlay colors**, with a dedicated menu color where the theme defines one.
-- **Elements — a step from the surface under them, by state.** A step is one move along the palette's
-  tones — frame, resting chip, raised chip, window edge — carried to whatever background the content
-  sets: toward the text color from a pane to its resting chip, then its raised chip; the other way to its
-  frame. At rest a chip is one step from its surface and a menu item none; unselected hover, open,
-  and pressed states are two — the raised tone. Selection is a separate accent tint, not another
-  neutral step. The resting-chip role is derived once from the canonical pane and stored as a fixed
-  theme token; it does not change with the active content pane. Other element steps are about 4 % of
-  the way to the text color; as a tint, exactly 4 % (below).
+- **Overlay — its assigned overlay color,** with a distinct menu color where that role is defined.
+- **Elements — neutral tones by state.** Resting controls use the resting tone; unselected hover, open, and pressed
+  states use the raised tone. A resting menu item shares its host's color. Selection is a separate accent tint, not
+  another neutral step. The resting-chip role is derived once from the canonical Pane color and remains fixed across
+  host layers. Shared tint steps use the percentages below; the opaque chrome profile uses its named palette values.
 - **Status — semantic colors** for error, warning, information, hint, success, and added, changed, or
-  removed content. Error — including failure — warning, and success use the implementation's shared
-  palette across editor, chat, and app. Information, hint, and content-change colors use the content
-  theme where defined.
-- **Accent — the implementation's designated accent**, unless the user overrides it. Surfaces defines
-  its uses, not a particular hue.
+  removed content. Each meaning uses the same palette role across applicable surfaces.
+- **Accent — the named accent role** for active editing, component selection, scroll indicators, and work in progress.
 
-For roles not fixed above, where the content defines no color, it falls back to the implementation's
-palette; the resolution order is explicit override → content-derived → palette fallback. The cursor
-falls back to the text color, reversed — never pure white or black. Every surface, step and state is
+Color roles and their visual meanings do not depend on the component supplying them. Every surface, step, and state is
 defined for light and dark together; light is not an afterthought.
 
-Four rules keep roles and states distinct:
+For rules keep roles and states distinct:
 
 - **Frame and pane: the gap and one tone step.** The frame shows as a thin margin around each pane.
 - **Host and overlay: a shadow, never tone.** An overlay may share its host's tone or contrast with it,
-  as the content's colors dictate; with backdrop materials it also blurs what is behind it.
+  according to its palette role; with backdrop materials it also blurs what is behind it.
 - **Regions: a soft outline and a small gap,** in the raised tone. Outlines express subdivision or
   active text editing, not elevation. Do not border every surface to separate it; platform window edges are
   a separate responsibility (§4).
@@ -158,10 +136,10 @@ These keep chrome quiet on a surface:
   the named selection tone and the selected-hover tone under the pointer. The two roles may alias in a
   theme where their visual difference is negligible. No additional selection icon is required.
   Opening a menu or pressing an ordinary action does not by itself select that control. This rule
-  does not tint every pane or card, or replace the content theme's text-range selection.
+  does not tint every pane or card, or replace text-range selection.
 - **The accent is reserved** for active text editing, component selection, the scrollbar thumb, and
   work in progress. Content never takes it merely because it is interactive: links and
-  references use the content theme's own semantic styles.
+  references use their semantic content styles.
 - **Status colors mean status** and nothing else, save one: a menu's destructive action takes the error
   color, last in the menu, under a hairline.
 - **Icons keep their own colors.** An icon whose color names what it is, not a state — file-type icons,
@@ -177,7 +155,7 @@ These keep chrome quiet on a surface:
   steps where they are tints, and 8 % for an indicator's band (a track or viewport marker); 12 % — a
   hairline's — for a status fill (an amber card, a status chip) or a bar's track; 16 % for the strong
   step: a fill under the pointer, an open status chip, a category chip. These formulas define semantic
-  roles; an implementation may alias perceptually adjacent derived roles to one named palette value.
+  roles; perceptually adjacent derived roles may alias one named palette value.
   Nothing in between is introduced.
 - **Disabled is muted, not gone.** A disabled or ended element keeps its place and shape, drops to its
   rest tone with no accent or emphasis fill, and its text and glyphs use the same muted tone as secondary content.
@@ -261,8 +239,7 @@ window to the OS material — never a decoration applied to content.
 
 - **Where it lives:** the frame and overlays. They sample what is behind them (the OS desktop for the
   frame; the workspace for overlays).
-- **The material takes the content's light or dark,** even when the host platform's theme differs:
-  chrome text is the content's text color, so the material must support its contrast.
+- **The material matches the selected light or dark palette** and must support the contrast of its text and icons.
 - **Where it never lives by default:** behind the scrolling content of a pane. A translucent pane is
   available as an explicit, off-by-default opt-in only, because it costs per-frame compositing and can
   hurt legibility.
@@ -271,10 +248,9 @@ window to the OS material — never a decoration applied to content.
 - **Component and state colors remain opaque.** Chips, buttons, selections, scrollbar tracks, status
   fills, and other nested UI surfaces keep their fixed or host-derived opaque colors on a material.
   Translucency belongs to the pane or overlay material, not to each component drawn on it.
-- **Intensity is content-driven where the content provides it,** reinterpreted as material intensity
-  rather than a flat wash. On a backdrop material an overlay keeps 72 % of its color over a 14px blur
-  by default; a translucent pane keeps 40 %. Where the content supplies transparency settings, an
-  implementation profile specifies their mapping. Without the backdrop treatment, surfaces are opaque.
+- **Intensity belongs to the material,** not a flat wash over the whole component. An overlay keeps 72 % of its color
+  over a 14px blur by default; a translucent pane keeps 40 %. Configured opacity changes only the background material.
+  Without the backdrop treatment, surfaces are opaque.
 
 ![Opaque and opt-in translucent panes with an overlay.](images/materials.png)
 
@@ -319,8 +295,7 @@ When designing a new component or screen, answer in order:
 3. **Apply the shared metrics** — radius, gap, padding, shadow rule, radius hierarchy, and the text
    sizes that follow the body font or content grid — unchanged, unless an applicable §10 profile
    explicitly replaces a metric.
-4. **Take color from its source** — the content theme, stepped by state for elements — with the palette
-   as fallback; define light and dark together.
+4. **Assign the color role and state** from §3 and the palette in §11; define light and dark together.
 5. **Check it against the five beliefs and the accessibility and performance commitments.** If it
    competes with content, separates surfaces with a border, leans on shadow for anything but an overlay,
    or animates content by default, reconsider.
@@ -365,8 +340,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 
 | Primitive | Rest | Hover | Open, pressed | Selected | Editing | Disabled |
 |---|---|---|---|---|---|---|
-| **Surface** | the content's background; the frame a step darker, or the material | | | not inherently selectable | only an actual editable area | |
-| **Overlay** | the overlay color; with a backdrop 72 % over a 14px blur, or content-controlled transparency (§5) | | | not inherently selectable | only an actual editable area | |
+| **Surface** | Pane/background; the frame a step darker, or the material | | | not inherently selectable | only an actual editable area | |
+| **Overlay** | the overlay color; with a backdrop 72 % over a 14px blur, or configured material opacity (§5) | | | not inherently selectable | only an actual editable area | |
 | **Band** | no fill; a card's heading shares its outer surface | | | | | |
 | **Region** | outline in the raised tone | | | on a selection control, if present | accent border if editable and active | |
 | **Card** | soft: stronger outer tone, content background inside; status: same hue on both surfaces, body lightness adjusted from the outer tint (§3) | | | on its selection control | only an editable area inside it | |
@@ -378,7 +353,7 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 | **Indicator** | thumb the accent; a fill muted on a 12 % track; a viewport band 8 % | lane track 8 %, thumb 4px, markers; viewport band 16 % | | | | |
 | **Divider** | the text at 12 %; a label muted | | | | | |
 | **Glyph** | an icon its own color; a state glyph its status; a spinner the accent; a kind's icon muted | | | owned by its control | | muted |
-| **Cursor** | the content's cursor color (§3) | | | | | |
+| **Cursor** | contrasting cursor color (§3) | | | | | |
 | **Text** | text; fixed muted; title bold; aside italic | | | content-owned | | muted |
 
 - **Text and icons.** Verbs, metadata, and counts muted; content-owned formatting keeps its semantic
@@ -554,13 +529,12 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   text area. For long documents, retain the line pitch and show a moving section around the current
   view; all parts move together rather than using different vertical scales.
 
-## 10. Approved implementation profiles
+## 10. Approved design profiles
 
 A named profile is a normative, scoped replacement for the shared defaults it lists. All
 unlisted surface roles, component anatomy, color and state rules, accessibility requirements, and
 performance commitments remain unchanged. Do not transfer a profile's rules outside its stated scope or interpolate
-additional values from it. qvim applies the shared chrome profile to both platforms, with the Android geometry profile
-on Android and the desktop chat text-alignment profile only inside desktop chat.
+additional values from it. An implementation guide identifies which profiles apply to its surfaces.
 
 ### 10.1. Android touch profile
 
@@ -595,7 +569,7 @@ Cards retain their nested surfaces, and genuine overlays retain their elevation.
 - Body content keeps the card's horizontal content inset; the body surface does not add another horizontal padding.
   Code blocks retain their own padding.
 - A soft card body uses the content background. A status card body follows the shared same-hue rule
-  in §3 unless the qvim chrome profile applies.
+  in §3 unless the opaque chrome profile applies.
 - Action tiles and list rows without a distinct heading remain single nested surfaces.
 
 #### Screen gutters and content inset
@@ -645,20 +619,17 @@ Cards retain their nested surfaces, and genuine overlays retain their elevation.
 - The persistent composer keeps 72 % of its surface color over a 32px blur.
 - The material adds saturation and a stronger multi-layer shadow than the default overlay.
 
-### 10.2. qvim chrome profile
+### 10.2. Opaque chrome profile
 
-**Scope:** the approved qvim editor, desktop chat, and Android reference screens. This profile overrides the
-percentage-tint recipes, status-card hue requirements, and region-outline color source in §§2, 3, and 9; it does not
+**Scope:** fixed-color chrome in desktop and touch layouts. This profile overrides the
+percentage-tint recipes, status-card hue requirements, and region-outline color assignment in §§2, 3, and 9; it does not
 change their component roles or geometry.
 
 - **Chrome tones:** use the named opaque colors and role aliases in §11. Frame, resting, raised, selection, and status
   tones are fixed palette values, not new mixtures calculated against each host. Their lightness-only derivations are
   normative; the shared percentage recipes are not used to regenerate them.
-- **Content-owned colors:** Neovim owns buffer content, pane background, primary foreground, cursor,
-  text-range selection, and overlay/menu colors where defined. Resolve these from content, with §11 as fallback.
-  Changing the content theme does not recalculate the fixed chrome tones.
 - **Information and status:** information, error, warning, success, and change roles use the shared palette defaults.
-  A theme's non-diff buffer syntax remains content-owned; UI roles and addition/deletion markings use §11 across qvim.
+  Non-diff syntax styling remains part of the content; UI roles and addition/deletion markings use §11.
 - **Materials and marks:** material opacity, structural hairlines, and minimap viewport bands keep their own recipes.
   They are not additional palette entries or permission to make control/state fills translucent.
 - **Region outlines:** use the named soft-outer tone, not necessarily the raised-control tone.
@@ -666,7 +637,7 @@ change their component roles or geometry.
 - **Status cards:** outer and body surfaces may be neutral. Use semantic text or glyph color with a meaningful label or
   shape; apply the foreground pairings in §11.3 instead of the shared same-hue card requirement.
 
-### 10.3. qvim desktop chat text alignment
+### 10.3. Desktop chat text alignment
 
 **Scope:** text alignment inside desktop chat only. This replaces the fixed lead-gap rule at the boundaries below,
 not the frame gap, surface padding, corners, band heights, or content-group spacing. Android does not use this profile.
@@ -692,17 +663,16 @@ content such as code preserves its own whitespace. Expanded background output re
 beside its text. At the reference font, one cell is 11px and one row is 25px; the cell-based values follow the font,
 while the unchanged geometry tokens still follow display scaling.
 
-## 11. qvim reference palette
+## 11. Reference palette
 
 The canonical palette contains **29 unique colors: 17 primary and 12 derived** across dark and light themes.
-Each value has one row; shared roles alias that row rather than adding colors. Content-theme overrides allowed by
-§10.2 are not additional canonical palette entries.
+Each value has one row; shared roles alias that row rather than adding colors.
 
 Primary colors are independently chosen. A derived color changes only the HSL lightness of its named primary:
 preserve hue and saturation, set the listed lightness, then round RGB channels to the nearest 8-bit value, with exact
 halves rounded up. All palette values are opaque; do not blend them with a background or reduce their opacity.
 
-The palette excludes non-diff colors inside Neovim-rendered buffer content, file-type icons, screenshots, wallpaper
+The palette excludes non-diff syntax colors within content, file-type icons, screenshots, wallpaper
 gradients, review annotations, host window edges, caption controls, materials, and structural borders.
 Brand and provider artwork colors are outside this chrome palette.
 
@@ -714,18 +684,18 @@ Brand and provider artwork colors are outside this chrome palette.
 | Dark | `#F6B3B8` | Error/failure: diagnostics, failed states, deleted-line fills and deletion markers | Editor, chat, app |
 | Dark | `#080A0C` | Frame/base: solid desktop frame, caption band and gaps around panes | Editor, chat |
 | Dark | `#8CF8F7` | Information/change: diagnostics, changed-state markers, paths and mentions | Editor, chat |
-| Dark | `#1C1F25` | Pane/background: fallback content surfaces, app background, inset bodies and read-only fields | Editor, chat, app |
+| Dark | `#1C1F25` | Pane/background: content surfaces, app background, inset bodies and read-only fields | Editor, chat, app |
 | Dark | `#2F323A` | Raised/surface: controls, app surfaces, interaction/neutral/quota tracks, region outlines, soft-card exteriors and table headers | Editor, chat, app |
 | Dark | `#B5E3C8` | Success: completed/connected states, added-line fills and addition markers | Editor, chat, app |
-| Dark | `#EFF3F8` | Text: fallback primary copy, labels and neutral control text | Editor, chat, app |
+| Dark | `#EFF3F8` | Text: primary copy, labels and neutral control text | Editor, chat, app |
 | Dark | `#FCE094` | Warning: warning and needs-attention text, glyphs and badge text | Editor, chat, app |
 | Light | `#3545B8` | Accent: active focus/editing, working state, scroll/overflow thumbs, context-used fill | Editor, chat, app |
 | Light | `#590008` | Error/failure: diagnostics, failed states, deleted-line fills and deletion markers | Editor, chat, app |
 | Light | `#E4E7EC` | Raised/surface: controls, app surfaces, interaction tracks, status exteriors, open status fills and warning badges | Editor, chat, app |
 | Light | `#006E6E` | Information/change: diagnostics, changed-state markers, paths and mentions | Editor, chat |
-| Light | `#F7F8FA` | Pane/background: fallback content surfaces, app background, inset bodies and read-only fields | Editor, chat, app |
+| Light | `#F7F8FA` | Pane/background: content surfaces, app background, inset bodies and read-only fields | Editor, chat, app |
 | Light | `#005523` | Success: completed/connected states, added-line fills and addition markers | Editor, chat, app |
-| Light | `#0C0F14` | Text: fallback primary copy, labels and neutral control text | Editor, chat, app |
+| Light | `#0C0F14` | Text: primary copy, labels and neutral control text | Editor, chat, app |
 | Light | `#6B5300` | Warning: warning and needs-attention text, glyphs and badge text | Editor, chat, app |
 
 ### 11.2. Derived colors
@@ -756,4 +726,4 @@ Brand and provider artwork colors are outside this chrome palette.
 - Shared status-card exteriors stay neutral; primary Error or Warning identifies the status.
 - Success and Warning chip fills use their matching primary status color for text and glyphs, not muted text.
 
-See the [qvim application guide](implementation.md#implementation-mapping) for implementation bindings.
+See the [implementation guide](implementation.md#implementation-mapping) for application bindings.
