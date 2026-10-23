@@ -14,6 +14,9 @@ Approved platform or product exceptions belong in named profiles in §10; each o
 The qvim reference palette is authoritative in §11. The
 [qvim application guide](implementation.md) maps these rules to the approved screens and implementation targets.
 
+**Illustrations.** The component images pair dark and light using an example palette. They illustrate the shared
+defaults; the qvim application guide shows the scoped profiles and canonical palette applied to the approved screens.
+
 ## 1. The core idea
 
 A **surface** is a visual area that provides a background and context for content or interaction. It
@@ -91,6 +94,8 @@ Within those roles:
 - **Content** — the material being read or edited: text, images, documents, data, and their meaningful
   formatting. The language specifies its relationship to the surrounding interface, not which
   application or rendering system produces it.
+
+![Frame, panes, a menu overlay, and nested chip surfaces in dark and light.](images/surface_roles.png)
 
 ## 3. Color and separation
 
@@ -177,6 +182,8 @@ These keep chrome quiet on a surface:
 - **Disabled is muted, not gone.** A disabled or ended element keeps its place and shape, drops to its
   rest tone with no accent or emphasis fill, and its text and glyphs use the same muted tone as secondary content.
 
+![Editing borders, selection, and text levels in dark and light.](images/component_states.png)
+
 ## 4. Metrics
 
 These are the shared tokens. Two kinds of size, and they never mix: **geometry follows the display,
@@ -245,6 +252,8 @@ With a reference row of 25px:
 Native title bars, caption buttons, window edges, and outer corners follow the host platform rather
 than the component tokens. Exact platform metrics belong in separate implementation documentation.
 
+![Shared corner radii, padding, gaps, and text-row geometry.](images/geometry.png)
+
 ## 5. Translucency
 
 Translucency is an accent that signals "this is the frame or a transient overlay," and a way to tie the
@@ -266,6 +275,8 @@ window to the OS material — never a decoration applied to content.
   rather than a flat wash. On a backdrop material an overlay keeps 72 % of its color over a 14px blur
   by default; a translucent pane keeps 40 %. Where the content supplies transparency settings, an
   implementation profile specifies their mapping. Without the backdrop treatment, surfaces are opaque.
+
+![Opaque and opt-in translucent panes with an overlay.](images/materials.png)
 
 ## 6. Animation
 
@@ -393,6 +404,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 
 #### Band and toolbar
 
+![A toolbar and card header sharing their host surfaces.](images/bands_toolbars.png)
+
 - **Purpose and anatomy:** a band arranges related controls or metadata in a strip at a host's edge:
   a header, tab strip, action strip, or status strip. A toolbar is a band specifically containing
   actions, optionally split into labeled groups.
@@ -403,6 +416,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 
 #### Chip
 
+![Descriptive and selectable chips in dark and light.](images/chips.png)
+
 - **Purpose and anatomy:** a compact representation of an item, attribute, or choice: a label, optional
   leading icon or count.
 - **Host and surface:** within a band, pane, card, field group, or overlay. Use the Chip metrics and
@@ -411,6 +426,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   without a tick or editing border.
 
 #### Tab and tab list
+
+![Selected and hovered tabs without editing borders.](images/tabs.png)
 
 - **Purpose and anatomy:** a tab selects one of a set of related panels. A tab list contains the tab
   labels, optional icons or counts, and one selected tab associated with the visible panel.
@@ -421,6 +438,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   panel without a tick icon. Optional close controls are distinct actions.
 
 #### Button and link
+
+![Actions, links, hover, and disabled states.](images/buttons_links.png)
 
 - **Purpose and anatomy:** a button invokes an action; a link navigates to a destination. Both need a
   meaningful label, optionally accompanied or replaced by a named icon.
@@ -433,6 +452,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 
 #### Field
 
+![Empty, editing, invalid, read-only, and disabled fields.](images/fields.png)
+
 - **Purpose and anatomy:** accepts or displays an editable value: a persistent label, input area and
   cursor, optional hint, validation message, and attached controls. Fields may be single- or multiline.
 - **Host and surface:** on a pane, in a card, or in an overlay. Use the Field metrics and nested surface
@@ -443,6 +464,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   changing color alone.
 
 #### Card
+
+![Soft and status cards with rounded inset bodies.](images/cards.png)
 
 - **Purpose and anatomy:** groups related content. The heading and metadata sit on the outer card;
   everything below them, including actions or choices, sits inside a rounded body surface.
@@ -455,6 +478,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   treating the card and all its nested actions as one button.
 
 #### Table
+
+![A standalone table with a header and column dividers.](images/tables.png)
 
 - **Purpose and anatomy:** tabular content with aligned columns, bold column headings, and regular
   body text. A surrounding card is not required.
@@ -469,6 +494,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 
 #### Menu and menu item
 
+![An anchored menu and submenu.](images/menus.png)
+
 - **Purpose and anatomy:** presents commands or choices after an explicit trigger: rows, optional
   group labels and dividers, shortcut hints, and submenu indicators.
 - **Host and surface:** anchored to a control or contextual target on any host. Use Overlay metrics;
@@ -479,6 +506,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   automatically a selected choice.
 
 #### Hover
+
+![Informational and actionable hover surfaces.](images/hover_labels.png)
 
 - **Purpose and anatomy:** a short floating label for content, with an optional action. Without an
   action it displays information; with an action it is clickable. Jump to latest is one use of the
@@ -491,6 +520,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
 
 #### Scrollbar
 
+![Resting and interactive scrollbars with markers.](images/scrollbars.png)
+
 - **Purpose and anatomy:** indicates and changes the visible portion of a scrollable region: a track,
   proportional thumb, and optional content markers.
 - **Host and surface:** local to the region it scrolls, using Indicator metrics. The thumb remains
@@ -499,6 +530,8 @@ areas receive the accent border. These examples do not assume keyboard-navigatio
   implementation determines input behavior.
 
 #### Minimap
+
+![Minimap content, marker lanes, and viewport bands.](images/minimap.png)
 
 - **Purpose and anatomy:** a miniature content view with a visible-range band and optional change
   and diagnostic markers. It is part of its content view, not another surface role.
