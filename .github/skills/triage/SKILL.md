@@ -253,7 +253,8 @@ prints the title and URL. Pass the accepted source rating with `-Complexity` and
 
 Include `spike` when applicable. Create tracking parents before their new descendants; for **every child**, add
 `-Parent <parent-number>`. The helper adds the matching complexity label and, for children, `sub-issue`.
-It rejects conflicting complexity labels before remote calls and normalizes same-rating duplicates.
+It splits and trims comma-separated label entries before validation. Conflicts fail before remote calls;
+same-rating duplicates collapse to the canonical label.
 It creates native links using `gh issue create --parent`, for existing parents and nested children alike.
 For accepted reuse of an existing issue, ensure the label exists and apply
 `gh issue edit <child-number> --add-label sub-issue`. Read its native parent first; if it has none, attach it with

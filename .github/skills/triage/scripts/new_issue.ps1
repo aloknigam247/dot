@@ -19,6 +19,9 @@ $ErrorActionPreference = "Stop"
 $labelArgs = @()
 $parentArgs = @()
 
+$Label = @($Label -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if (-not $Label) { throw "At least one category label is required; no remote calls attempted." }
+
 $complexityLabel = "complexity: $($Complexity.ToLowerInvariant())"
 foreach ($l in $Label) {
     if ($l -imatch "^complexity\s*:\s*(.*)$" -and $Matches[1].Trim() -ine $Complexity) {
