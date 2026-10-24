@@ -9,15 +9,12 @@ Turn a rough task, bug, or idea into a **well-formed GitHub issue** that a *diff
 
 ## Principles
 
-- **Discuss first, create last.** Never create issues before explicit user acceptance of the complete draft plan,
-  including every parent, child, label, relationship, and dependency.
+- **Discuss first, create last.** Never create issues before explicit user acceptance of the complete draft plan, including every parent, child, label, relationship, and dependency.
 - **Check for duplicates and related issues first.** Before drafting, search the repo's existing issues (open *and* closed). If the task duplicates an existing issue, say so and steer the user away from filing a redundant one. If related-but-distinct issues exist, link them via GitHub's native issue relationships.
 - **Always rubber-duck the draft.** Every triage runs the rubber-duck agent over the drafted issue to catch flawed root causes, invariant violations, and weak tests *before* the user sees it.
 - **The issue is for another agent, at another time.** Write it as a self-contained task: enough context, file references, and acceptance criteria that an agent with zero conversation history can pick it up and implement it.
 - **Anchor to stable identifiers, not coordinates.** An issue is implemented at an unknown later time against a changed tree. Reference symbols, string literals, config keys, and search patterns — never line numbers, occurrence counts, or verbatim multi-line snapshots that the codebase will invalidate. A frozen inventory goes stale *and* misleads: the implementing agent trusts it as exhaustive and skips rediscovering occurrences added after the issue was filed. The issue points the way; the implementing agent re-discovers the exact scope.
-- **Match detail to task type.** For a narrow **bug**, preserve a tight snippet of the actual defect as investigation
-  evidence. For **features / refactors / renames / broad sweeps**, give a discovery recipe (search patterns + stable
-  anchors) and compat/invariant rules, not an enumerated file list that will go stale.
+- **Match detail to task type.** For a narrow **bug**, preserve a tight snippet of the actual defect as investigation evidence. For **features / refactors / renames / broad sweeps**, give a discovery recipe (search patterns + stable anchors) and compat/invariant rules, not an enumerated file list that will go stale.
 - **Ask for missing details.** Do not guess when scope, expected behavior, or acceptance criteria are ambiguous.
 
 ## Source complexity and decomposition
@@ -97,8 +94,7 @@ The subagent prompt must include:
 The subagent is responsible for:
 1. Reading the root `AGENTS.md` (and the relevant nested `AGENTS.md`) for architecture, conventions, correctness/performance gates, and gotchas.
 2. Using grep/glob/view to locate the work. **Scale the output to the task type** (see the "Match detail to task type" principle):
-   - **Narrow bug:** capture the exact offending lines as a short verbatim snippet with a `file:line` ref as
-     investigation evidence.
+   - **Narrow bug:** capture the exact offending lines as a short verbatim snippet with a `file:line` ref as investigation evidence.
    - **Feature / refactor / rename / broad sweep:** do **not** enumerate every hit. Identify the **distinct surfaces/categories** the work touches, give **one representative entry point** per surface (as a stable anchor — a symbol, string literal, or config key), and record the **grep/glob patterns** that locate the rest. Prefer "find the remaining refs via `<pattern>`" over a frozen file list or an occurrence count.
 3. Identifying the **component(s)** involved (e.g., `MsgpackRpc`, `NvimConnector`, `GridModel`, `HighlightTable`, `ModeInfo`, `GridItem`, `CursorItem`, `InputHandler`, a `*Model`, or a `qml/` component).
 4. Confirming the **root cause** (for bugs) by tracing the actual code — not guessing. Remember the redraw event stream is the single source of truth; `ext_hlstate` makes `hl_attr_define` a 4-element event; `paint()` must be a pure function of (`GridModel`, `HighlightTable`, `ModeInfo`, cursor state) and must never reach back into RPC state.
@@ -173,12 +169,7 @@ Pick the categories that genuinely apply (usually one primary, occasionally a se
 or `complexity: high`, matching its rating under **Source complexity and decomposition**.
 These labels supplement categories and the optional `sub-issue` label.
 
-**Spike issues.** Apply `spike` when the task is purely investigation, exploration, or research whose deliverable is
-*findings* (a decision, root-cause analysis, feasibility answer, or proposed design) and that **does not itself change
-source code or documentation**. A spike has no other category label; if code/doc changes are expected, use the matching
-category instead. Replace **Testing requirements** with **Investigation deliverables**: the concrete questions to answer
-and the artifact/output to produce, such as a written findings summary or a follow-up issue. Its **Acceptance criteria**
-are about producing findings, not tests passing. Category exclusivity permits complexity and `sub-issue` labels.
+**Spike issues.** Apply `spike` when the task is purely investigation, exploration, or research whose deliverable is *findings* (a decision, root-cause analysis, feasibility answer, or proposed design) and that **does not itself change source code or documentation**. A spike has no other category label; if code/doc changes are expected, use the matching category instead. Replace **Testing requirements** with **Investigation deliverables**: the concrete questions to answer and the artifact/output to produce, such as a written findings summary or a follow-up issue. Its **Acceptance criteria** are about producing findings, not tests passing. Category exclusivity permits complexity and `sub-issue` labels.
 
 ### 5. Draft the complete plan and present it for acceptance
 
@@ -207,11 +198,9 @@ Show provisional child names and dependencies before numbers exist; show numbers
      - **Visual gate.** For paint-path / font / cursor / selection / highlight changes, require capturing the rendered window via `scripts/screenshot_qvim.ps1` (or the `visual-validate-qvim` skill) and inspecting it — a green ctest run alone is not proof.
    - **Out of scope** — what this task must not touch.
    - Add a footer line: `Categories: <comma-separated categories>`.
-3. Create the git-ignored `tmp\` directory if needed. Write each title/body draft to its own
-   `tmp\triage_issue_<guid>.md` for user editing.
+3. Create the git-ignored `tmp\` directory if needed. Write each title/body draft to its own `tmp\triage_issue_<guid>.md` for user editing.
    Keep the path for each issue; use that draft's path wherever `<draft-path>` appears below.
-4. **Validate every draft with the rubber-duck agent — always, no exceptions.** Before presenting the plan, launch the
-   **rubber-duck** agent (via the Task tool) to review all draft paths. The prompt must include:
+4. **Validate every draft with the rubber-duck agent — always, no exceptions.** Before presenting the plan, launch the **rubber-duck** agent (via the Task tool) to review all draft paths. The prompt must include:
    - Every full drafted issue (or its path).
    - The subagent's investigation report (`surfaces`, `affected`, `searchStrategy`, `codeSnippet`, `rootCause`, `approach`, `testing`) so it can check the draft against the actual findings.
    - All parent/child drafts, `deliverables`, `mergeProposals`, `sourceComplexity`, `slices`, and recorded merge
@@ -224,8 +213,7 @@ Show provisional child names and dependencies before numbers exist; show numbers
    - The instruction to report only substantive issues (bugs, logic/design flaws, missing coverage) — not style/wording nits.
 
    Resolve substantive findings, reinvestigating factual gaps as needed, before presenting the plan.
-5. Show every proposed **title**, **categories/labels**, **source rating**, parent/child link, dependency, reused issue,
-   and leaf outcome/demo. Highlight approved merged scopes and actual ratings; note the passed rubber-duck review.
+5. Show every proposed **title**, **categories/labels**, **source rating**, parent/child link, dependency, reused issue, and leaf outcome/demo. Highlight approved merged scopes and actual ratings; note the passed rubber-duck review.
    Open each draft with mdview in the next step.
 6. **Always open the rendered draft with mdview before asking the user to accept.** Launch the viewer on the draft so the user reviews the formatted markdown, not the raw file:
 
@@ -233,9 +221,7 @@ Show provisional child names and dependencies before numbers exist; show numbers
    D:\mdview\target\release\mdview.exe <draft-path>
    ```
 
-7. **Ask the user to accept, edit, or reject** the plan with `ask_user`. For edits, wait for confirmation and re-read
-   changed drafts/categories. **Reopen changed drafts with mdview** before asking again;
-   repeat until acceptance or rejection.
+7. **Ask the user to accept, edit, or reject** the plan with `ask_user`. For edits, wait for confirmation and re-read changed drafts/categories. **Reopen changed drafts with mdview** before asking again; repeat until acceptance or rejection.
    Acceptance must explicitly cover the **whole plan** before any creation. Re-review and obtain renewed acceptance for
    scope changes, including changes discovered after acceptance.
 
