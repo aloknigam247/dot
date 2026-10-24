@@ -6,9 +6,10 @@
 #
 # Usage (run from anywhere inside the repo):
 #   & .\.github\skills\triage\scripts\new_issue.ps1 `
-#     -Draft tmp\triage_issue_<guid>.md -Label @("bug", "tech-debt") -Parent 123
+#     -Complexity low -Draft tmp\triage_issue_<guid>.md -Label @("bug", "tech-debt") -Parent 123
 
 param(
+    [Parameter(Mandatory)][ValidateSet("low", "medium", "high")][string]$Complexity,
     [Parameter(Mandatory)][string]$Draft,    # path to draft md (first '# ' line = title)
     [Parameter(Mandatory)][string[]]$Label,  # one or more category labels
     [ValidateRange(1, [int]::MaxValue)][int]$Parent
@@ -17,6 +18,14 @@ param(
 $ErrorActionPreference = "Stop"
 $labelArgs = @()
 $parentArgs = @()
+
+$complexityLabel = "complexity: $($Complexity.ToLowerInvariant())"
+foreach ($l in $Label) {
+    if ($l -imatch "^complexity\s*:\s*(.*)$" -and $Matches[1].Trim() -ine $Complexity) {
+        throw "Label '$l' conflicts with -Complexity '$Complexity'; no remote calls attempted."
+    }
+}
+$Label = @($Label | Where-Object { $_ -inotmatch "^complexity\s*:" }) + $complexityLabel
 
 # Keep the body file in the repository's ignored storage.
 $root = git rev-parse --show-toplevel
