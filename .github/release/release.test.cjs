@@ -149,7 +149,15 @@ test("conventional commits select standard SemVer bumps", async (t) => {
 
 test("semantic-release pushes synchronized version commits and tags to a local remote", (t) => {
   const directory = fixture(t, cmake.replace("1.2.3", "0.1.0"), manifest.replace("1.2.3", "0.1.0"));
-  const env = { ...process.env, GH_TOKEN: "", GITHUB_TOKEN: "", GIT_TERMINAL_PROMPT: "0" };
+  const env = {
+    ...process.env,
+    GH_TOKEN: "",
+    GITHUB_ACTIONS: "true",
+    GITHUB_EVENT_NAME: "pull_request",
+    GITHUB_REF: "refs/pull/1/merge",
+    GITHUB_TOKEN: "",
+    GIT_TERMINAL_PROMPT: "0",
+  };
   const remote = path.join(directory, "remote.git");
   const source = path.join(directory, "source");
   mkdirSync(source);
@@ -160,10 +168,11 @@ test("semantic-release pushes synchronized version commits and tags to a local r
   copyFileSync(versionScript, path.join(source, "scripts", "set_version.cjs"));
   const git = (...args) => run(source, "git", args, env);
   const cli = path.join(path.dirname(require.resolve("semantic-release")), "bin", "semantic-release.js");
+  // --no-ci disables CI verification, but branch discovery still reads Actions metadata.
   const release = () => run(source, process.execPath, [
     cli, "--no-ci", "--extends", path.join(__dirname, "release.config.cjs"),
     "--repository-url", pathToFileURL(remote).href,
-  ], env);
+  ], { ...env, GITHUB_ACTIONS: "" });
 
   git("init", "--quiet", "--bare", "--initial-branch=main", remote);
   git("init", "--quiet", "--initial-branch=main");
@@ -182,8 +191,8 @@ test("semantic-release pushes synchronized version commits and tags to a local r
   git("remote", "add", "origin", remote);
   git("push", "--quiet", "--set-upstream", "origin", "main");
 
-  release();
-  assert.equal(git("log", "-1", "--format=%s"), "chore(release): 1.0.0 [skip ci]");
+  const releaseOutput = release();
+  assert.equal(git("log", "-1", "--format=%s"), "chore(release): 1.0.0 [skip ci]", releaseOutput);
   assert.equal(JSON.parse(readFileSync(path.join(source, "vcpkg.json"), "utf8")).version, "1.0.0");
   assert.equal(readFileSync(path.join(source, "CMakeLists.txt"), "utf8"), cmake.replace("1.2.3", "1.0.0"));
   assert.match(readFileSync(path.join(source, "CHANGELOG.md"), "utf8"), /### Added/);
