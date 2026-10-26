@@ -137,7 +137,8 @@ so `cl` is on `PATH`.
 
 Coverage uses **`Microsoft.CodeCoverage.Console`**, which ships with the VS 2026 "Code coverage
 tools" component (installed by the `--includeRecommended` VCTools workload in step 1). Locate it and
-collect over a **Debug** build (RelWithDebInfo reports covered = 0 because of inlining):
+collect over a **Debug** build (RelWithDebInfo reports covered = 0 because of inlining). Generate
+checkout-specific source filters from `cov.runsettings` before collecting:
 
 ```ps1
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
@@ -145,8 +146,9 @@ $cc = Get-ChildItem "$vs\Common7\IDE\Extensions\Microsoft\CodeCoverage.Console\M
         Select-Object -First 1 -ExpandProperty FullName
 
 cmake --preset dev; cmake --build --preset dev
+pwsh -NoProfile -File scripts\coverage_settings.ps1 -OutPath _cov\coverage.runsettings
 & $cc collect --output _cov\full.cobertura --output-format cobertura `
-    --settings cov.runsettings -- ctest --preset dev
+    --settings _cov\coverage.runsettings -- ctest --preset dev
 ```
 
 Every test executable statically links `dot_lib`, so the report's own line-rate double-counts each

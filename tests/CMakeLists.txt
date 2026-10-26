@@ -20,7 +20,7 @@ endfunction()
 
 # ctest LABELS drive the parallel CI test tiers (see .github/workflows/ci.yml).
 # dot_add_test stamps each test with the current ${DOT_TEST_LABEL}; tests
-# registered by raw add_test() below (test_qml, test_deploy_manifest) are
+# registered by raw add_test() below are
 # labelled explicitly. Every test MUST carry exactly one tier label so the CI
 # union guard (unit + integration + qml == `ctest -N`) holds.
 
@@ -39,6 +39,11 @@ dot_add_test(test_config_cli_reader   unit/test_config_cli_reader.cpp)
 dot_add_test(test_config_g_reader     unit/test_config_g_reader.cpp)
 dot_add_test(test_config_registry     unit/test_config_registry.cpp)
 dot_add_test(test_copilot_bridge      unit/test_copilot_bridge.cpp)
+add_test(NAME test_coverage_settings
+    COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/check_coverage_settings.ps1"
+)
+set_tests_properties(test_coverage_settings PROPERTIES LABELS "unit" TIMEOUT 60)
 dot_add_test(test_cursor_blink        unit/test_cursor_blink.cpp)
 dot_add_test(test_cursor_item         unit/test_cursor_item.cpp)
 dot_add_test(test_grid_model          unit/test_grid_model.cpp)

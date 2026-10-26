@@ -183,9 +183,9 @@ jobs:
           }
           $ctestArgs = @('--preset','dev','-L','${{ matrix.tier }}','--output-on-failure')
           if ('${{ matrix.tier }}' -eq 'unit') { $ctestArgs += @('--parallel', $env:NUMBER_OF_PROCESSORS) }
-          New-Item -ItemType Directory -Force _cov | Out-Null
+          & scripts\coverage_settings.ps1 -OutPath _cov\coverage.runsettings
           & $cc collect --output _cov\${{ matrix.tier }}.cobertura --output-format cobertura `
-            --settings cov.runsettings -- ctest @ctestArgs
+            --settings _cov\coverage.runsettings -- ctest @ctestArgs
           if ($LASTEXITCODE -ne 0) { throw "coverage collect / ctest failed with exit code $LASTEXITCODE." }
 
       - name: Upload tier coverage
