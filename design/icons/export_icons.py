@@ -64,18 +64,6 @@ ROOT = Path(__file__).resolve().parent
 ET.register_namespace("", NS)
 
 
-def still_svg(markup):
-    svg = ET.fromstring(markup)
-    for style in svg.findall(f"{{{NS}}}style"):
-        svg.remove(style)
-    for attribute in ("data-animation", "data-duration", "style"):
-        svg.attrib.pop(attribute)
-    svg.set("class", "owl")
-    svg.set("data-motion", "still")
-    ET.indent(svg, space="  ")
-    return ET.tostring(svg, encoding="unicode") + "\n"
-
-
 def raster(page, markup, size):
     svg = ET.fromstring(markup)
     svg.set("height", str(size))
@@ -127,65 +115,6 @@ def dib_icon(images):
     return result
 
 
-def preview():
-    rows = []
-    for theme in ("dark", "light"):
-        cards = []
-        for state, label in STATES:
-            icons = "".join(
-                f'<img alt="{label}, {size} px" height="{size}" src="owl_{state}'
-                f'{"_small" if size <= 32 else ""}.svg" width="{size}">'
-                for size in (128, 48, 32, 24, 20, 16)
-            )
-            cards.append(f"<figure><figcaption>{label}</figcaption><div>{icons}</div></figure>")
-        rows.append(f'<section class="{theme}">{"".join(cards)}</section>')
-    return """<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dot icons</title>
-<link rel="icon" href="dot.svg" type="image/svg+xml">
-<style>
-  * { box-sizing: border-box; }
-  body { background: #eef0f5; color: #252938; font: 16px/1.5 "Segoe UI", sans-serif; margin: 24px; }
-  main { margin: auto; max-width: 1200px; }
-  h1, h2 { margin: 0 0 16px; }
-  header, section { border-radius: 16px; margin: 16px 0; padding: 24px; }
-  header { align-items: center; display: flex; flex-wrap: wrap; gap: 32px; }
-  section { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  .dark { background: #19212c; color: #edf2f8; }
-  .light { background: #fff; }
-  figure { margin: 0; }
-  figure div { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; min-height: 144px; }
-  figcaption { font-weight: 600; }
-  img { flex: none; }
-</style>
-<main>
-  <h1>dot icons</h1>
-  <header class="dark">
-    <img alt="dot" height="256" src="dot.svg" width="256">
-    <img alt="dot owl" height="256" src="owl_idle.svg" width="256">
-    <div><h2>Small application icon</h2>
-      <img alt="dot, 16 px" height="16" src="dot_small.svg" width="16">
-      <img alt="dot, 20 px" height="20" src="dot_small.svg" width="20">
-      <img alt="dot, 32 px" height="32" src="dot_small.svg" width="32">
-    </div>
-  </header>
-  ROWS
-  <section class="dark">
-    <figure><figcaption>Focused scan</figcaption>
-      <div><img alt="Working" height="128" src="owl_working.svg" width="128"></div>
-    </figure>
-    <figure><figcaption>Reduced-motion still</figcaption>
-      <div><img alt="Working, still" height="128" src="owl_working_still.svg" width="128">
-        <img alt="Working, still, 20 px" height="20" src="owl_working_still_small.svg" width="20"></div>
-    </figure>
-  </section>
-</main>
-</html>
-""".replace("ROWS", "\n  ".join(rows)).encode()
-
-
 def export(check):
     outputs = {}
     sources = {}
@@ -210,18 +139,21 @@ def export(check):
                 assert svg.attrib["data-animation"] == "focused-scan"
                 assert svg.attrib["data-duration"] == "1.8"
                 assert re.findall(r"@keyframes\s+([\w-]+)", markup) == ["focused-scan"]
-                outputs[f"owl_working_still{suffix}.svg"] = still_svg(markup).encode()
             else:
                 assert not svg.findall(f"{{{NS}}}style")
             sources[name] = markup
-    assert {path.stem for path in ROOT.glob("owl_*.svg")} <= {
-        *sources, "owl_working_still", "owl_working_still_small"
-    }
+    assert {path.stem for path in ROOT.glob("owl_*.svg")} <= sources.keys()
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
         page = browser.new_page(viewport={"height": 1024, "width": 1024})
         for suffix in ("", "_small"):
+            page.set_content(sources[f"owl_needs{suffix}"])
+            assert page.evaluate("""() => {
+              const eyes = [...document.querySelectorAll(".a-eye > circle")]
+                .map(eye => eye.getBoundingClientRect()).sort((left, right) => left.left - right.left);
+              return eyes.length === 2 && eyes[0].right < eyes[1].left;
+            }"""), "Needs you irises must not overlap"
             page.emulate_media(reduced_motion="no-preference")
             page.set_content(sources[f"owl_working{suffix}"])
             assert page.evaluate(MOTION_CHECK), "Pupils/highlights must scan downward together under fixed lids"
@@ -229,29 +161,15 @@ def export(check):
             assert page.evaluate("""() => {
               const svg = document.querySelector("svg");
               return svg.getAnimations({subtree: true}).length === 0 &&
-                getComputedStyle(svg.querySelector(".a-still")).display !== "none" &&
                 [...svg.querySelectorAll(".a-pu")].every(node => getComputedStyle(node).transform === "none");
-            }"""), "Reduced motion must show a distinct, non-animated working pose"
-            page.emulate_media(reduced_motion="no-preference")
-            page.set_content(outputs[f"owl_working_still{suffix}.svg"].decode())
-            assert page.evaluate("""() => {
-              const svg = document.querySelector("svg");
-              return svg.getAnimations({subtree: true}).length === 0 &&
-                getComputedStyle(svg.querySelector(".a-still")).display !== "none";
-            }"""), "The standalone still must not depend on the system motion preference"
-            for size in SIZES:
-                if (size <= 32) != (suffix == "_small"):
-                    continue
-                still = raster(page, outputs[f"owl_working_still{suffix}.svg"].decode(), size)
-                assert still.tobytes() != raster(page, sources[f"owl_idle{suffix}"], size).tobytes()
+            }"""), "Reduced motion must pause the Focused scan"
         app_images = {}
         for stem in labels:
+            if stem == "owl_working":
+                continue
             for size in SIZES:
                 suffix = "_small" if size <= 32 else ""
-                markup = (
-                    outputs[f"owl_working_still{suffix}.svg"].decode()
-                    if stem == "owl_working" else sources[f"{stem}{suffix}"]
-                )
+                markup = sources[f"{stem}{suffix}"]
                 image = raster(page, markup, size)
                 assert raster(page, markup, size).tobytes() == image.tobytes(), (
                     f"Nondeterministic raster: {stem}, {size}px"
@@ -264,7 +182,6 @@ def export(check):
         browser.close()
     outputs["android/drawable-nodpi/owl_idle.png"] = outputs["png/owl_idle_256.png"]
     outputs["dot.ico"] = dib_icon(app_images)
-    outputs["preview.html"] = preview()
     for name, content in sorted(outputs.items()):
         path = ROOT.joinpath(name)
         if check:

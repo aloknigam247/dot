@@ -2,11 +2,9 @@
   <style>
 svg { overflow: hidden; }
 .owl g[class^="a-"] { transform-box: view-box; transform-origin: 0 0; }
-.owl .a-still { display: none; }
 .an-focused-scan .a-pu{animation:focused-scan 1.8s cubic-bezier(.45,0,.55,1) infinite}@keyframes focused-scan{0%,10%,100%{transform:translateX(calc(var(--t) * -1))}50%,60%{transform:translateX(var(--t))}}
 @media (prefers-reduced-motion: reduce) {
   .owl * { animation: none !important; }
-  .owl .a-still { display: inline; }
 }
 </style>
   <defs>
@@ -73,11 +71,6 @@ svg { overflow: hidden; }
         <g transform="translate(512 612)">
           <g class="a-beak">
             <path d="M0,0L28,42L0,104L-28,42Z" fill="#e9ad57" />
-          </g>
-        </g>
-        <g class="a-still">
-          <g transform="translate(628 520)">
-            <path d="M153.6,-32.6A157,157 0 1 1 32.6,-153.6" fill="none" stroke="#cdf24a" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" />
           </g>
         </g>
       </g>

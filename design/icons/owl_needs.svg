@@ -15,7 +15,7 @@
       <circle r="118" />
     </clipPath>
     <clipPath id="shape_13">
-      <circle r="127.4" />
+      <circle r="114" />
     </clipPath>
   </defs>
   <g class="owl-face" transform="translate(512 512) scale(1.5)">
@@ -25,7 +25,7 @@
         <circle cx="628" cy="520" r="196" fill="url(#shape_2)" />
         <g transform="translate(396 520)">
           <g class="a-eye l">
-            <circle cx="0" cy="0" r="127.4" fill="url(#shape_5)" />
+            <circle cx="0" cy="0" r="114" fill="url(#shape_5)" />
             <g clip-path="url(#shape_13)">
               <g transform="translate(0 0)">
                 <g class="a-pu l">
@@ -38,7 +38,7 @@
         </g>
         <g transform="translate(628 520)">
           <g class="a-eye r">
-            <circle cx="0" cy="0" r="127.4" fill="url(#shape_5)" />
+            <circle cx="0" cy="0" r="114" fill="url(#shape_5)" />
             <g clip-path="url(#shape_13)">
               <g transform="translate(0 0)">
                 <g class="a-pu r">
