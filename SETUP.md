@@ -121,8 +121,8 @@ nvim --version   # confirm it resolves on PATH (open a new shell if winget just 
 ### clang-tidy static analysis
 
 The `tidy` CI job fails on any clang-tidy finding under `src/` or `include/`. `.clang-tidy` is the
-source of truth for the enabled check set. Install the `clang-tidy` version pinned in the
-[`tidy` CI job](.github/workflows/ci.yml) on `PATH`, then generate the Ninja-based compile database:
+source of truth for the enabled check set. Install `clang-tidy` on `PATH` as shown in the
+[`tidy` CI job](.github/workflows/ci.yml), then generate the Ninja-based compile database:
 
 ```pwsh
 cmake --preset tidy                       # generates build/tidy/compile_commands.json
