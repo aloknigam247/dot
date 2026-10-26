@@ -48,7 +48,7 @@ void TestMdnsAdvertise::advertisesTypeAndPort() {
     QCOMPARE(fake->registerCount, 1);
     QCOMPARE(fake->last.type, QStringLiteral("_dot-mirror._tcp"));
     QCOMPARE(fake->last.port, quint16(8765));
-    QVERIFY(!fake->last.instanceName.isEmpty());
+    QCOMPARE(fake->last.instanceName, QStringLiteral("dot on %1").arg(fake->last.hostName));
     QVERIFY(!fake->last.hostName.isEmpty());
     QCOMPARE(fake->last.txt.value(QStringLiteral("proto")), QStringLiteral("1"));
 }

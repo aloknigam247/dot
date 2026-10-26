@@ -96,6 +96,21 @@ dot_add_test(test_boot_perf                     integration/test_boot_perf.cpp)
 dot_add_test(test_chat_panel                    integration/test_chat_panel.cpp)
 dot_add_test(test_config_g_globals              integration/test_config_g_globals.cpp)
 dot_add_test(test_ctrl_shift_mapping            integration/test_ctrl_shift_mapping.cpp)
+qt_add_executable(test_entrypoint_driver
+    support/entrypoint_driver.cpp
+    "${CMAKE_SOURCE_DIR}/src/main.cpp"
+)
+target_compile_definitions(test_entrypoint_driver PRIVATE main=dotTestMain)
+target_link_libraries(test_entrypoint_driver PRIVATE dot_lib dot_libplugin Qt6::Quick)
+add_dependencies(test_entrypoint_driver dot)
+add_test(NAME test_entrypoint_smoke
+    COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/entrypoint_smoke.ps1"
+        -DriverPath "$<TARGET_FILE:test_entrypoint_driver>"
+        -ExePath "$<TARGET_FILE:dot>"
+)
+set_tests_properties(test_entrypoint_smoke PROPERTIES LABELS "integration" TIMEOUT 90)
+set_tests_properties(test_entrypoint_smoke test_session_cache PROPERTIES RESOURCE_LOCK "session_cache")
 dot_add_test(test_insert_and_quit               integration/test_insert_and_quit.cpp)
 dot_add_test(test_open_file_arg                 integration/test_open_file_arg.cpp)
 dot_add_test(test_pixel_snapshot                integration/test_pixel_snapshot.cpp)

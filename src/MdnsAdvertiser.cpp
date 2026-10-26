@@ -88,7 +88,9 @@ public:
             static_cast<DWORD>(keys.size()), keys.empty() ? nullptr : keys.data(),
             values.empty() ? nullptr : values.data());
         if(!instance) {
+            // no-cover:start
             qWarning("dot: mDNS DnsServiceConstructInstance failed for %ls", serviceName.c_str());
+            // no-cover:end
             return;
         }
 
@@ -103,7 +105,9 @@ public:
 
         const DWORD status = DnsServiceRegister(&reg->request, nullptr);
         if(status != DNS_REQUEST_PENDING) {
+            // no-cover:start
             qWarning("dot: mDNS DnsServiceRegister returned %lu", status);
+            // no-cover:end
             DnsServiceFreeInstance(instance);
             delete reg;
             return;
