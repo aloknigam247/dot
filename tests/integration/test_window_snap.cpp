@@ -18,8 +18,8 @@
 #include "NvimConnector.h"
 #include "ResizeCoalescer.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
@@ -42,8 +42,8 @@ class TestWindowSnap : public QObject {
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void windowSizeIsExactMultipleOfCellSize() {
@@ -52,7 +52,7 @@ private slots:
 
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("$connector"), &conn);
-        engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+        engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
         QVERIFY(!engine.rootObjects().isEmpty());
         QQuickWindow *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);
@@ -127,7 +127,7 @@ private slots:
 
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("$connector"), &conn);
-        engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+        engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
         QVERIFY(!engine.rootObjects().isEmpty());
         QQuickWindow *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);

@@ -9,20 +9,20 @@
 #include <memory>
 #include <string_view>
 
-#include "QvimMacros.h"
+#include "DotMacros.h"
 
-namespace qvim {
+namespace dot {
 
-// The DNS-SD service type qvim advertises the session mirror under. The Android
+// The DNS-SD service type dot advertises the session mirror under. The Android
 // companion browses for exactly this type.
-inline constexpr std::string_view kMirrorServiceType = "_qvim-mirror._tcp";
+inline constexpr std::string_view kMirrorServiceType = "_dot-mirror._tcp";
 
 // A resolved description of the service to advertise. Pure value type — no
 // platform state — so the advertising logic is testable without touching the
 // network.
 struct MdnsService {
-    QString type;         // e.g. "_qvim-mirror._tcp"
-    QString instanceName; // e.g. "qvim on HOSTNAME"
+    QString type;         // e.g. "_dot-mirror._tcp"
+    QString instanceName; // e.g. "dot on HOSTNAME"
     QString hostName;     // the local host label, e.g. "HOSTNAME"
     quint16 port = 0;
     QMap<QString, QString> txt; // e.g. { "proto": "1" }
@@ -47,7 +47,7 @@ class MdnsBackend {
 public:
     MdnsBackend() = default;
     virtual ~MdnsBackend() = default;
-    QVIM_DISABLE_COPY_MOVE(MdnsBackend)
+    DOT_DISABLE_COPY_MOVE(MdnsBackend)
     virtual void registerService(const MdnsService &service) = 0;
     virtual void unregisterService() = 0;
 };
@@ -102,6 +102,6 @@ private:
     quint16 m_registeredPort = 0;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

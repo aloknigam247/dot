@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "qvim-companion"
+rootProject.name = "dot-companion"
 include(":app")

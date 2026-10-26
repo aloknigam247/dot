@@ -12,7 +12,7 @@
 #include "HighlightTable.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
+using namespace dot;
 
 namespace {
 

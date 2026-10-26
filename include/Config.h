@@ -8,7 +8,7 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace qvim {
+namespace dot {
 
 enum class ConfigType {
     Bool,
@@ -18,7 +18,7 @@ enum class ConfigType {
     StringList,
 };
 
-// Central registry for qvim configuration options.
+// Central registry for dot configuration options.
 //
 // Lifetime: a single Config is created at startup before any option
 // reader runs. Each option is registered once with a name, type, and
@@ -66,6 +66,6 @@ private:
     QHash<QString, Entry> m_entries;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

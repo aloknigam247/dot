@@ -3,7 +3,7 @@
 
 #include "ResizeCoalescer.h"
 
-using namespace qvim;
+using namespace dot;
 
 class TestResizeCoalescer : public QObject {
     Q_OBJECT

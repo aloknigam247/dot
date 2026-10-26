@@ -13,7 +13,7 @@
 #include "RectNodePool.h"
 #include "TextNodePool.h"
 
-namespace qvim {
+namespace dot {
 
 class GridModel;
 struct GridRuns;
@@ -22,7 +22,7 @@ class GridItem : public QQuickItem {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(
-        qvim::NvimConnector *connector READ connector WRITE setConnector NOTIFY connectorChanged)
+        dot::NvimConnector *connector READ connector WRITE setConnector NOTIFY connectorChanged)
     Q_PROPERTY(int gridId READ gridId WRITE setGridId NOTIFY gridIdChanged)
     Q_PROPERTY(QString fontName READ fontName WRITE setFontName NOTIFY fontChanged)
     Q_PROPERTY(qreal fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
@@ -104,7 +104,7 @@ private:
     // Initial family is the OS-supplied fixed-width font (Consolas on Windows,
     // Menlo on macOS, monospace on Linux). nvim's option_set guifont overrides
     // this as soon as it arrives; the system fixed font only paints the brief
-    // window before that and is the right "no qvim default" fallback.
+    // window before that and is the right "no dot default" fallback.
     QString m_fontName;
     qreal m_fontSize = 14.0;
     QFont m_font;
@@ -128,6 +128,6 @@ private:
     TextNodePool m_textPool;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $ExePath)) {
-    throw "qvim.exe not found at '$ExePath'."
+    throw "dot.exe not found at '$ExePath'."
 }
 
 $vi = (Get-Item $ExePath).VersionInfo

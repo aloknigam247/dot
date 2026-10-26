@@ -43,8 +43,8 @@ struct BootProfile {
     QString outFile;
     QElapsedTimer timer;
     BootProfile() :
-        enabled(qEnvironmentVariableIntValue("QVIM_BOOT_PROFILE") != 0),
-        outFile(qEnvironmentVariable("QVIM_BOOT_PROFILE_FILE")) {
+        enabled(qEnvironmentVariableIntValue("DOT_BOOT_PROFILE") != 0),
+        outFile(qEnvironmentVariable("DOT_BOOT_PROFILE_FILE")) {
         if(enabled) timer.start();
     }
     void mark(const char *phase) const {
@@ -70,7 +70,7 @@ struct BootProfile {
 
 } // namespace
 
-// qvim is /SUBSYSTEM:WINDOWS, so Windows attaches no console and stdout from the -h/-v path goes
+// dot is /SUBSYSTEM:WINDOWS, so Windows attaches no console and stdout from the -h/-v path goes
 // nowhere. Attach to the invoking terminal's console so that output is visible. A non-terminal
 // launch (e.g. from Explorer) has no parent console; the attach fails and is ignored.
 static void attachParentConsole() {
@@ -91,54 +91,56 @@ static void attachParentConsole() {
 // An exception escaping main() terminates the process anyway; the Qt entry point does not wrap its
 // body in a catch-all.
 // NOLINTNEXTLINE(bugprone-exception-escape)
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
     BootProfile boot;
-    const qvim::QvimArgs cli = qvim::parseArgv(argc, argv);
+    const dot::DotArgs cli = dot::parseArgv(argc, argv);
     boot.mark("argv parsed");
     if(cli.helpRequested) {
         attachParentConsole();
-        std::fputs("Usage: qvim [qvim-options] [nvim-options] [file ...]\n"
+        std::fputs("Usage: dot [dot-options] [nvim-options] [file ...]\n"
                    "\n"
-                   "qvim is a Neovim GUI client. All arguments not in qvim's own\n"
+                   "dot is a Neovim GUI client. All arguments not in dot's own\n"
                    "namespace are forwarded to the embedded `nvim --embed` process.\n"
                    "\n"
-                   "qvim options:\n"
+                   "dot options:\n"
                    "  -h, --help       Show this help and exit.\n"
-                   "  -v, --version    Show qvim version and exit.\n"
+                   "  -v, --version    Show dot version and exit.\n"
+                   "  --dot-rounded_highlights=<groups>\n"
+                   "                   Comma-separated rounded highlight groups.\n"
                    "\n"
                    "Everything else (e.g. `foo.txt`, `-O a.txt b.txt`, `+10 foo.txt`,\n"
                    "`-c \"set number\" foo.txt`) is forwarded to nvim.\n"
                    "\n"
-                   "Reading stdin (`qvim -`):\n"
+                   "Reading stdin (`dot -`):\n"
                    "  PowerShell intercepts the literal `-` token for its own pipeline\n"
-                   "  handling, which delays spawning qvim by several seconds. Use cmd\n"
+                   "  handling, which delays spawning dot by several seconds. Use cmd\n"
                    "  or Start-Process to avoid the delay:\n"
-                   "    cmd /c \"echo hello | qvim -\"\n"
-                   "    Start-Process qvim '-' -RedirectStandardInput in.txt\n",
+                   "    cmd /c \"echo hello | dot -\"\n"
+                   "    Start-Process dot '-' -RedirectStandardInput in.txt\n",
                    stdout);
         return 0;
     }
     if(cli.versionRequested) {
         attachParentConsole();
-        std::fputs(qvim::versionString().toUtf8().constData(), stdout);
+        std::fputs(dot::versionString().toUtf8().constData(), stdout);
         std::fputc('\n', stdout);
         return 0;
     }
 
-    // `qvim -`: slurp stdin synchronously before Qt is up. Reading via the CRT
-    // works even though qvim is /SUBSYSTEM:WINDOWS — when the parent shell
-    // redirects stdin (e.g. `echo test | qvim -`), the inherited handle is a
+    // `dot -`: slurp stdin synchronously before Qt is up. Reading via the CRT
+    // works even though dot is /SUBSYSTEM:WINDOWS — when the parent shell
+    // redirects stdin (e.g. `echo test | dot -`), the inherited handle is a
     // valid pipe. QProcess gives the embedded nvim its own RPC stdin pipe, so
-    // qvim's stdin stays ours to consume.
-    // Stdin slurp happens on a background thread so the rest of qvim's boot
+    // dot's stdin stays ours to consume.
+    // Stdin slurp happens on a background thread so the rest of dot's boot
     // (Qt construction, nvim spawn, QML load) is not blocked by the pipe.
     // PowerShell's pipeline can hold the pipe writer open for seconds even
     // after the producer has exited; doing this synchronously stalled the
-    // visible launch to multi-second times for `echo X | qvim -`. The future
+    // visible launch to multi-second times for `echo X | dot -`. The future
     // is awaited later when loadStdinIntoBuffer needs the bytes.
     //
     // Only slurp when stdin is actually redirected (pipe or file). If stdin
-    // is the inherited console (the user typed `qvim -` interactively without
+    // is the inherited console (the user typed `dot -` interactively without
     // piping anything in), fread would block forever waiting for keystrokes
     // that never come. The background thread would leak.
     std::future<QByteArray> stdinFuture;
@@ -174,23 +176,23 @@ int main(int argc, char *argv[]) {
 #endif
 
     QGuiApplication app(argc, argv);
-    QGuiApplication::setApplicationName(QStringLiteral("qvim"));
-    QGuiApplication::setOrganizationName(QStringLiteral("qvim"));
-    qvim::setupApplicationIcon(app);
-    qRegisterMetaType<qvim::Notification>("qvim::Notification");
-    qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+    QGuiApplication::setApplicationName(QStringLiteral("dot"));
+    QGuiApplication::setOrganizationName(QStringLiteral("dot"));
+    dot::setupApplicationIcon(app);
+    qRegisterMetaType<dot::Notification>("dot::Notification");
+    qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     boot.mark("QGuiApplication ctor done");
 
-    qvim::Config cfg;
-    cfg.registerOption(QStringLiteral("rounded_highlights"), qvim::ConfigType::StringList,
+    dot::Config cfg;
+    cfg.registerOption(QStringLiteral("rounded_highlights"), dot::ConfigType::StringList,
                        QStringList{});
 
-    QStringList forwardArgs = cli.nvimForwardArgs;
-    qvim::ConfigCliReader::extract(forwardArgs, cfg);
+    QStringList forwardArgs = cli.editorArgs;
+    dot::ConfigCliReader::extract(forwardArgs, cfg);
     boot.mark("Config registered + CLI read");
 
-    qvim::NvimConnector connector;
-    qvim::WindowChrome windowChrome;
+    dot::NvimConnector connector;
+    dot::WindowChrome windowChrome;
     boot.mark("NvimConnector ctor done");
 
     if(!connector.start(locateNvim(), forwardArgs)) {
@@ -212,7 +214,7 @@ int main(int argc, char *argv[]) {
     // If a session cache exists with a valid (cols, rows) from the last run,
     // use those dimensions — they'll match the real geometry when the font
     // hasn't changed, eliminating the tryResize round-trip entirely.
-    const qvim::SessionCache sessionCache = qvim::SessionCache::load();
+    const dot::SessionCache sessionCache = dot::SessionCache::load();
     const int attachCols = sessionCache.isValid() ? sessionCache.cols : 80;
     const int attachRows = sessionCache.isValid() ? sessionCache.rows : 24;
     connector.attachUi(attachCols, attachRows);
@@ -221,7 +223,7 @@ int main(int argc, char *argv[]) {
     // Push the resolved rounded_highlights list into HighlightTable on
     // startup and whenever Config changes — must be wired BEFORE the
     // attachComplete handler runs ConfigGGlobalReader::read, because that
-    // will fire Config::changed once the user's g:qvim_rounded_highlights
+    // will fire Config::changed once the user's g:dot_rounded_highlights
     // resolves.
     const auto applyRounded = [&] {
         if(auto *h = connector.highlights()) {
@@ -229,17 +231,17 @@ int main(int argc, char *argv[]) {
         }
     };
     applyRounded();
-    QObject::connect(&cfg, &qvim::Config::changed, &connector, [applyRounded](const QString &name) {
+    QObject::connect(&cfg, &dot::Config::changed, &connector, [applyRounded](const QString &name) {
         if(name == QStringLiteral("rounded_highlights")) applyRounded();
     });
 
-    QObject::connect(&connector, &qvim::NvimConnector::disconnected, &app, &QCoreApplication::quit);
-    QObject::connect(&connector, &qvim::NvimConnector::attachComplete, &cfg,
+    QObject::connect(&connector, &dot::NvimConnector::disconnected, &app, &QCoreApplication::quit);
+    QObject::connect(&connector, &dot::NvimConnector::attachComplete, &cfg,
                      [&connector, &cfg, &boot] {
         boot.mark("attachComplete signal");
-        qvim::ConfigGGlobalReader::read(connector, cfg);
+        dot::ConfigGGlobalReader::read(connector, cfg);
     });
-    QObject::connect(&connector, &qvim::NvimConnector::flush, &connector, [&boot] {
+    QObject::connect(&connector, &dot::NvimConnector::flush, &connector, [&boot] {
         static bool firstFlushSeen = false;
         if(firstFlushSeen) return;
         firstFlushSeen = true;
@@ -248,7 +250,7 @@ int main(int argc, char *argv[]) {
 
     if(cli.stdinAsBuffer && stdinIsRedirected) {
         QObject::connect(
-            &connector, &qvim::NvimConnector::attachComplete, &connector,
+            &connector, &dot::NvimConnector::attachComplete, &connector,
             [&connector, fut = std::make_shared<std::future<QByteArray>>(std::move(stdinFuture))] {
             connector.loadStdinIntoBuffer(fut->get());
         });
@@ -262,7 +264,7 @@ int main(int argc, char *argv[]) {
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
 
-    engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+    engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
     boot.mark("engine.loadFromModule done");
 
     if(!engine.rootObjects().isEmpty()) {
@@ -291,11 +293,11 @@ int main(int argc, char *argv[]) {
                 // Persist the final grid dimensions so the next launch can
                 // skip the placeholder→resize round-trip.
                 if(const auto *g = connector.grid()) {
-                    qvim::SessionCache cache;
+                    dot::SessionCache cache;
                     cache.guifont = connector.guifont();
                     cache.cols = g->gridCols(1);
                     cache.rows = g->gridRows(1);
-                    if(cache.isValid()) qvim::SessionCache::save(cache);
+                    if(cache.isValid()) dot::SessionCache::save(cache);
                 }
             });
         }

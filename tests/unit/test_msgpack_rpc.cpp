@@ -7,7 +7,7 @@
 
 #include "MsgpackRpc.h"
 
-using namespace qvim;
+using namespace dot;
 
 namespace {
 QByteArray packFrame(const std::function<void(msgpack::packer<msgpack::sbuffer> &)> &fn) {
@@ -93,7 +93,7 @@ private slots:
         // drop the half-built QProcess so a later start can be retried.
         MsgpackRpc rpc;
         QSignalSpy errorSpy(&rpc, &MsgpackRpc::error);
-        QVERIFY(!rpc.startEmbeddedNvim(QStringLiteral("qvim_nonexistent_nvim_binary")));
+        QVERIFY(!rpc.startEmbeddedNvim(QStringLiteral("dot_nonexistent_nvim_binary")));
         QVERIFY(errorSpy.count() >= 1);
         QVERIFY(!rpc.isRunning());
     }
@@ -102,9 +102,9 @@ private slots:
         // connectToAddress must retire whatever transport is live before building
         // the next one, exercising both the local- and tcp-socket cleanup arms.
         MsgpackRpc rpc;
-        rpc.connectToAddress(QStringLiteral("//./pipe/qvim-nonexistent-a")); // builds local
-        rpc.connectToAddress(QStringLiteral("127.0.0.1:1"));                 // retires local
-        rpc.connectToAddress(QStringLiteral("//./pipe/qvim-nonexistent-b")); // retires tcp
+        rpc.connectToAddress(QStringLiteral("//./pipe/dot-nonexistent-a")); // builds local
+        rpc.connectToAddress(QStringLiteral("127.0.0.1:1"));                // retires local
+        rpc.connectToAddress(QStringLiteral("//./pipe/dot-nonexistent-b")); // retires tcp
         // No server backs these; we only assert the switch did not leave us running.
         QVERIFY(!rpc.isRunning());
     }

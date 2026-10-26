@@ -3,7 +3,7 @@
 #include <utility>
 #include <QHash>
 
-namespace qvim {
+namespace dot {
 
 static const QHash<int, QString> &specialKeyMap() {
     static const QHash<int, QString> m = {
@@ -188,4 +188,4 @@ InputHandler::MouseInput InputHandler::wheelFor(int deltaX, int deltaY,
     return m;
 }
 
-} // namespace qvim
+} // namespace dot

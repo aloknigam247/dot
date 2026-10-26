@@ -10,15 +10,15 @@
 #include <QString>
 
 #include "ChatModel.h"
-#include "QvimMacros.h"
+#include "DotMacros.h"
 #include "SessionEventBuffer.h"
 
 class QWebSocket;
 class QWebSocketServer;
 
-namespace qvim {
+namespace dot {
 
-// In-process plaintext WebSocket endpoint that mirrors qvim's chat session to
+// In-process plaintext WebSocket endpoint that mirrors dot's chat session to
 // LAN subscribers, backed by SessionEventBuffer. Implements the v1 wire protocol in
 // docs/protocol/session_protocol.md: on connect the server sends `hello` first;
 // the client replies `resume`; the server then streams live events.
@@ -34,14 +34,14 @@ namespace qvim {
 //
 // `active` is the single lifecycle authority: it is bound to the chat panel's
 // visibility, so the port is only bound while the panel is open and is released
-// synchronously when it closes. qvim is the sole source of truth; clients are
+// synchronously when it closes. dot is the sole source of truth; clients are
 // subscribers that never own state. Lives entirely off the redraw->paint hot
 // path.
 class SessionMirrorServer : public QObject {
     Q_OBJECT
     QML_ELEMENT
 
-    Q_PROPERTY(qvim::ChatModel *source READ source WRITE setSource NOTIFY sourceChanged)
+    Q_PROPERTY(dot::ChatModel *source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(int port READ port WRITE setPort NOTIFY portChanged)
     Q_PROPERTY(QString address READ address WRITE setAddress NOTIFY addressChanged)
@@ -50,7 +50,7 @@ class SessionMirrorServer : public QObject {
 public:
     explicit SessionMirrorServer(QObject *parent = nullptr);
     ~SessionMirrorServer() override;
-    QVIM_DISABLE_COPY_MOVE(SessionMirrorServer)
+    DOT_DISABLE_COPY_MOVE(SessionMirrorServer)
 
     ChatModel *source() const { return m_source; }
     void setSource(ChatModel *source);
@@ -109,6 +109,6 @@ private:
     QString m_address;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

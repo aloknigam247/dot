@@ -1,10 +1,10 @@
-# qvim session protocol (v1)
+# dot session protocol (v1)
 
-This is the contract between qvim (server) and the Android companion
+This is the contract between dot (server) and the Android companion
 app (client). It is intentionally minimal for this milestone; later slices extend
 it **without breaking existing frames**.
 
-qvim owns the session and is the single source of truth. The client is a subscriber that never owns
+dot owns the session and is the single source of truth. The client is a subscriber that never owns
 state. Transport for this milestone is a plaintext WebSocket (`ws://`).
 
 ## Framing
@@ -20,7 +20,7 @@ never-reused `seq` scoped to a `sessionId`.
 3. The server then streams live events. In this milestone the client always sends `lastSeq: 0`
    and the server does not replay.
 
-If a later `hello` carries a different `sessionId` (qvim restarted, `seq` numbering restarts), the
+If a later `hello` carries a different `sessionId` (dot restarted, `seq` numbering restarts), the
 client resets its transcript and `seq` cursor.
 
 ## Server → client frames
@@ -59,21 +59,21 @@ incremental backend and is a no-op for clients until one emits it.
 
 ## Discovery
 
-The client finds qvim on the local network via **mDNS / DNS-SD** — no IP address is typed by hand on
-the common path. qvim advertises the running session-mirror WebSocket, the client browses for it and
+The client finds dot on the local network via **mDNS / DNS-SD** — no IP address is typed by hand on
+the common path. dot advertises the running session-mirror WebSocket, the client browses for it and
 auto-connects to the first responder.
 
 | field         | value                                                        |
 | ------------- | ----------------------------------------------------------- |
-| service type  | `_qvim-mirror._tcp` (DNS-SD service type, `.local` domain)  |
+| service type  | `_dot-mirror._tcp` (DNS-SD service type, `.local` domain)  |
 | port          | the TCP port the mirror WebSocket is bound to (e.g. `8765`) |
 | transport     | plaintext `ws://<host>:<port>` (same as above)              |
 
-- **qvim (server)** advertises `_qvim-mirror._tcp` on Windows via the native `DnsServiceRegister`
+- **dot (server)** advertises `_dot-mirror._tcp` on Windows via the native `DnsServiceRegister`
   API while the chat panel is visible and the mirror is listening on a non-zero port. The
-  advertisement is withdrawn when the panel closes, the port changes (it re-advertises), or qvim
+  advertisement is withdrawn when the panel closes, the port changes (it re-advertises), or dot
   exits.
-- **Android (client)** browses `_qvim-mirror._tcp` with `NsdManager`, resolves the first result to
+- **Android (client)** browses `_dot-mirror._tcp` with `NsdManager`, resolves the first result to
   `host:port`, and forms `ws://host:port`. IPv6 hosts are bracketed (`ws://[fe80::1]:8765`).
 
 Discovery is **LAN-only** by design: mDNS uses link-local multicast (`224.0.0.251:5353`, not routed
@@ -85,9 +85,9 @@ enter the endpoint manually, which always wins over discovery.
 Both hosts must allow:
 
 - **UDP 5353** (mDNS multicast) inbound/outbound on the local network — for the discovery exchange.
-- **TCP `<port>`** (the mirror WebSocket, e.g. `8765`) inbound on qvim's host — for the connection
+- **TCP `<port>`** (the mirror WebSocket, e.g. `8765`) inbound on dot's host — for the connection
   itself.
 
-On Windows, allow qvim through the firewall for **Private** networks when first prompted; a blocked
+On Windows, allow dot through the firewall for **Private** networks when first prompted; a blocked
 UDP 5353 means the phone never sees the advertisement even though the WebSocket port is open.
 

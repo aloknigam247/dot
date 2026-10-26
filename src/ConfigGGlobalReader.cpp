@@ -8,9 +8,9 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace qvim {
+namespace dot {
 
-constexpr auto kGGlobalPrefix = "qvim_";
+constexpr auto kGGlobalPrefix = "dot_";
 
 static std::optional<QVariant> coerce(ConfigType type, const QVariant &raw) {
     switch(type) {
@@ -85,4 +85,4 @@ void ConfigGGlobalReader::readFromMap(const QHash<QString, QVariant> &vars, Conf
     }
 }
 
-} // namespace qvim
+} // namespace dot

@@ -8,7 +8,7 @@
 #include <QString>
 #include <QVector>
 
-#include "QvimMacros.h"
+#include "DotMacros.h"
 
 QT_BEGIN_NAMESPACE
 class QQuickWindow;
@@ -16,7 +16,7 @@ class QSGNode;
 class QSGTextNode;
 QT_END_NAMESPACE
 
-namespace qvim {
+namespace dot {
 
 // Pool of QSGTextNodes parented under a caller-owned container node.
 //
@@ -34,7 +34,7 @@ class TextNodePool {
 public:
     TextNodePool() = default;
     ~TextNodePool();
-    QVIM_DISABLE_COPY_MOVE(TextNodePool)
+    DOT_DISABLE_COPY_MOVE(TextNodePool)
 
     // parent and window must outlive the frame. Call once per updatePaintNode.
     void beginFrame(QSGNode *parent, QQuickWindow *window);
@@ -66,6 +66,6 @@ private:
     int m_used = 0;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

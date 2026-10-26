@@ -2,7 +2,7 @@
 
 #include "MdnsAdvertiser.h"
 
-using namespace qvim;
+using namespace dot;
 
 namespace {
 
@@ -46,9 +46,9 @@ void TestMdnsAdvertise::advertisesTypeAndPort() {
     advertiser.setActive(true);
 
     QCOMPARE(fake->registerCount, 1);
-    QCOMPARE(fake->last.type, QStringLiteral("_qvim-mirror._tcp"));
+    QCOMPARE(fake->last.type, QStringLiteral("_dot-mirror._tcp"));
     QCOMPARE(fake->last.port, quint16(8765));
-    QVERIFY(!fake->last.instanceName.isEmpty());
+    QCOMPARE(fake->last.instanceName, QStringLiteral("dot on %1").arg(fake->last.hostName));
     QVERIFY(!fake->last.hostName.isEmpty());
     QCOMPARE(fake->last.txt.value(QStringLiteral("proto")), QStringLiteral("1"));
 }
@@ -108,15 +108,15 @@ void TestMdnsAdvertise::inactiveDoesNotAdvertise() {
 // adapter fails loud.
 void TestMdnsAdvertise::wireFormServiceNameAndHostOrderPort() {
     const MdnsService service{
-        QStringLiteral("_qvim-mirror._tcp"),
-        QStringLiteral("qvim on DESKTOP"),
+        QStringLiteral("_dot-mirror._tcp"),
+        QStringLiteral("dot on DESKTOP"),
         QStringLiteral("DESKTOP"),
         quint16(8765),
         { { QStringLiteral("proto"), QStringLiteral("1") } },
     };
     const MdnsWireForm wire = MdnsAdvertiser::toWireForm(service);
 
-    QCOMPARE(wire.serviceName, QStringLiteral("qvim on DESKTOP._qvim-mirror._tcp.local"));
+    QCOMPARE(wire.serviceName, QStringLiteral("dot on DESKTOP._dot-mirror._tcp.local"));
     QCOMPARE(wire.hostName, QStringLiteral("DESKTOP.local"));
     // Passed through unswapped: DnsServiceConstructInstance expects host order and
     // builds the network-order SRV record itself. 8765, not 0x3D22 (15650).

@@ -6,7 +6,7 @@
 #include <qqmlregistration.h>
 #include <QQuickWindow>
 
-namespace qvim {
+namespace dot {
 
 class WindowChrome : public QObject {
     Q_OBJECT
@@ -19,7 +19,7 @@ public:
     Q_INVOKABLE void applyToWindow(QQuickWindow *window, QColor background);
 
     // Install a once-only hook that brings the window to the foreground the
-    // first time it becomes visible. qvim shows its window asynchronously long
+    // first time it becomes visible. dot shows its window asynchronously long
     // after the launching shell has returned, so without this the OS leaves
     // whatever window was already foreground on top. Call once, before the
     // window is shown.
@@ -35,6 +35,6 @@ private:
     bool m_activated = false;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

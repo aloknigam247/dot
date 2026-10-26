@@ -9,7 +9,7 @@
 #include <QUrl>
 #include <QWebSocket>
 
-namespace qvim {
+namespace dot {
 
 // The hub binds a fixed port on localhost (copilot-bridge/README.md). The
 // reference client honours COPILOT_BRIDGE_URL to point elsewhere.
@@ -213,7 +213,7 @@ void CopilotBridgeClient::onConnected() {
         { QStringLiteral("role"), QStringLiteral("client") },
         {
             QStringLiteral("data"),
-            QJsonObject{ { QStringLiteral("name"), QStringLiteral("qvim") } },
+            QJsonObject{ { QStringLiteral("name"), QStringLiteral("dot") } },
         },
     };
     m_socket->sendTextMessage(serialise(hello));
@@ -275,4 +275,4 @@ void CopilotBridgeClient::appendLine(const QString &author, const QString &text,
     m_sink->appendBlock(author, tagged);
 }
 
-} // namespace qvim
+} // namespace dot

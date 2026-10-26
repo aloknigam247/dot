@@ -14,8 +14,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
@@ -32,7 +32,7 @@ bool waitUntil(F &&predicate, int timeoutMs) {
 
 QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn) {
     engine.rootContext()->setContextProperty(QStringLiteral("$connector"), conn);
-    engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+    engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
     if(engine.rootObjects().isEmpty()) return nullptr;
     return qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 }
@@ -44,8 +44,8 @@ class TestRuntimeSetOptions : public QObject {
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     // `:set guifont=...` round-trips through nvim and arrives as an

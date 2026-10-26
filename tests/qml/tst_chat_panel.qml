@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import Qvim 1.0
+import Dot 1.0
 
 // Tier 3 — ChatPanel / ChatModel in isolation. Each test gets a fresh panel via
 // createTemporaryObject so model state never leaks between cases.

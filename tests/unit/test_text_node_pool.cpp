@@ -10,7 +10,7 @@
 
 #include "TextNodePool.h"
 
-using namespace qvim;
+using namespace dot;
 
 // The scene-graph port exists to get subpixel-antialiased glyphs (issue #15),
 // and QSGTextNode::NativeRendering is the only render type that reaches the

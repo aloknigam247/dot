@@ -6,7 +6,7 @@
 #include <QString>
 #include <QVector>
 
-namespace qvim {
+namespace dot {
 
 // Front-end chat model: a list of typed message blocks (user / assistant). It is
 // a passive transcript — the active backend (CopilotBridgeClient) pushes blocks
@@ -14,7 +14,7 @@ namespace qvim {
 // replies.
 //
 // Creatable QML_ELEMENT (unlike the nvim-owned models, which are
-// QML_UNCREATABLE): chat is qvim-native, drives no nvim RPC, and is
+// QML_UNCREATABLE): chat is dot-native, drives no nvim RPC, and is
 // instantiated directly by ChatPanel.qml — which keeps it unit-testable in
 // isolation without a live NvimConnector.
 class ChatModel : public QAbstractListModel {
@@ -83,6 +83,6 @@ private:
     quint64 m_block = 0; // id counter for appendBlock() atomic-block taps
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

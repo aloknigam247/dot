@@ -7,12 +7,12 @@
 #include <QString>
 
 #include "ChatModel.h"
-#include "QvimMacros.h"
+#include "DotMacros.h"
 
 class QTimer;
 class QWebSocket;
 
-namespace qvim {
+namespace dot {
 
 // WebSocket client for the copilot-bridge hub (protocol: copilot-bridge/CLIENT.md).
 // Connects to ws://127.0.0.1:47823 as role "client", performs the `hello`
@@ -33,7 +33,7 @@ class CopilotBridgeClient : public QObject {
     Q_OBJECT
     QML_ELEMENT
 
-    Q_PROPERTY(qvim::ChatModel *sink READ sink WRITE setSink NOTIFY sinkChanged)
+    Q_PROPERTY(dot::ChatModel *sink READ sink WRITE setSink NOTIFY sinkChanged)
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(QString url READ url WRITE setUrl NOTIFY urlChanged)
     Q_PROPERTY(bool connected READ isConnected NOTIFY connectedChanged)
@@ -42,7 +42,7 @@ class CopilotBridgeClient : public QObject {
 public:
     explicit CopilotBridgeClient(QObject *parent = nullptr);
     ~CopilotBridgeClient() override;
-    QVIM_DISABLE_COPY_MOVE(CopilotBridgeClient)
+    DOT_DISABLE_COPY_MOVE(CopilotBridgeClient)
 
     ChatModel *sink() const { return m_sink; }
     void setSink(ChatModel *sink);
@@ -91,6 +91,6 @@ private:
     bool m_showTools = true;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

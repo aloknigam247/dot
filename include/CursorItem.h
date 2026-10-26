@@ -19,7 +19,7 @@
 #include "RectNodePool.h"
 #include "TextNodePool.h"
 
-namespace qvim {
+namespace dot {
 
 class GridModel;
 class HighlightTable;
@@ -36,7 +36,7 @@ class CursorItem : public QQuickItem {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(
-        qvim::NvimConnector *connector READ connector WRITE setConnector NOTIFY connectorChanged)
+        dot::NvimConnector *connector READ connector WRITE setConnector NOTIFY connectorChanged)
     Q_PROPERTY(qreal cellWidth READ cellWidth WRITE setCellWidth NOTIFY metricsChanged)
     Q_PROPERTY(qreal cellHeight READ cellHeight WRITE setCellHeight NOTIFY metricsChanged)
     // Renamed from "baseline" — QQuickItem has a FINAL member with that name
@@ -157,6 +157,6 @@ private:
     TextNodePool m_textPool;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QTimer>
 
-namespace qvim {
+namespace dot {
 
 // Coalesces a burst of window-resize requests into a single
 // nvim_ui_try_resize RPC. While the user is dragging the window edge,
@@ -44,6 +44,6 @@ private:
     static constexpr int kDefaultIntervalMs = 0;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

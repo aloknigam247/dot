@@ -3,7 +3,7 @@
 
 #include "Config.h"
 
-using namespace qvim;
+using namespace dot;
 
 class TestConfigRegistry : public QObject {
     Q_OBJECT

@@ -3,7 +3,7 @@
 
 #include "ModeInfo.h"
 
-using namespace qvim;
+using namespace dot;
 
 class TestModeInfo : public QObject {
     Q_OBJECT

@@ -1,5 +1,5 @@
 // Verifies that forwarded argv reaches the embedded nvim — i.e. that
-// `qvim foo.txt` actually opens foo.txt. We pass the file path through the
+// `dot foo.txt` actually opens foo.txt. We pass the file path through the
 // new NvimConnector::start(extraArgs) hook and then ask nvim for the name
 // of the current buffer after attach+flush.
 
@@ -14,25 +14,25 @@
 #include "MsgpackRpc.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestOpenFileArg : public QObject {
     Q_OBJECT
 
 private slots:
     void initTestCase() {
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void forwardedFileBecomesCurrentBuffer() {
         // Write a temp file with known contents. We close before nvim opens
         // it because QTemporaryFile holds an exclusive handle on Windows.
-        QTemporaryFile tmp(QDir::tempPath() + QStringLiteral("/qvim_open_arg_XXXXXX.txt"));
+        QTemporaryFile tmp(QDir::tempPath() + QStringLiteral("/dot_open_arg_XXXXXX.txt"));
         tmp.setAutoRemove(true);
         QVERIFY(tmp.open());
-        tmp.write("qvim arg test\n");
+        tmp.write("dot arg test\n");
         tmp.flush();
         const QString path = tmp.fileName();
         tmp.close();

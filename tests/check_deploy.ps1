@@ -14,7 +14,7 @@
     whose "expected set" is DERIVED from the actual binaries/source — never a hardcoded list
     that would drift in lock-step with the deploy and catch nothing:
 
-      (A) DLL self-containment (closure). For qvim.exe and every deployed plugin/QML-plugin
+      (A) DLL self-containment (closure). For dot.exe and every deployed plugin/QML-plugin
           DLL, read its PE import table and require every Qt6*.dll it imports to be present at
           the deploy root. If a deployed binary needs a Qt DLL that was not deployed, the app
           would fail to load it at runtime -> fail here instead. Catches missing transitive
@@ -32,14 +32,14 @@
 
     WHEN THIS TEST FAILS: you do NOT edit this test. Add the missing item to the deploy list
     in the top-level CMakeLists.txt POST_BUILD block —
-      - a missing Qt6*.dll        -> add it to the QVIM_QT_RUNTIME_DLLS list;
+      - a missing Qt6*.dll        -> add it to the DOT_QT_RUNTIME_DLLS list;
       - a missing QML module dir  -> add a copy for that module directory alongside the
                                      existing QtQuick / QtQml / QtTest copies.
     The test derives what is required from the binaries + qml source, so it needs no update
     when dependencies change; only the deploy list does.
 
 .PARAMETER DeployDir
-    The directory containing the deployed qvim.exe and its Qt payload.
+    The directory containing the deployed dot.exe and its Qt payload.
 
 .PARAMETER QmlSourceDir
     The qml/ source directory whose `import` statements define the required QML modules.
@@ -57,8 +57,8 @@ function Fail($msg) { $script:failures.Add($msg) }
 if (-not (Test-Path -LiteralPath $DeployDir))    { Write-Error "deploy dir not found: $DeployDir"; exit 1 }
 if (-not (Test-Path -LiteralPath $QmlSourceDir)) { Write-Error "qml source dir not found: $QmlSourceDir"; exit 1 }
 $DeployDir = (Resolve-Path -LiteralPath $DeployDir).Path
-$exe = Join-Path $DeployDir "qvim.exe"
-if (-not (Test-Path -LiteralPath $exe)) { Write-Error "qvim.exe not found in deploy dir: $exe"; exit 1 }
+$exe = Join-Path $DeployDir "dot.exe"
+if (-not (Test-Path -LiteralPath $exe)) { Write-Error "dot.exe not found in deploy dir: $exe"; exit 1 }
 
 # --- Locate dumpbin (reads PE import tables) ---------------------------------------------
 $dumpbin = $null
@@ -100,7 +100,7 @@ foreach ($pe in $peFiles) {
             # finds sibling DLLs of the exe / of the plugin DLLs).
             if (-not (Test-Path -LiteralPath (Join-Path $DeployDir $dep))) {
                 Fail ("DLL closure: '$([IO.Path]::GetFileName($pe))' imports '$dep' but it is NOT " +
-                      "deployed. FIX: add '$($dep -replace '\.dll$','')' to QVIM_QT_RUNTIME_DLLS in CMakeLists.txt.")
+                      "deployed. FIX: add '$($dep -replace '\.dll$','')' to DOT_QT_RUNTIME_DLLS in CMakeLists.txt.")
             }
         }
     }

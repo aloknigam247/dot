@@ -16,7 +16,7 @@ public slots:
     void qmlEngineAvailable(QQmlEngine *engine) {
         // Provide a real NvimConnector but do NOT call start() — its child
         // models are valid QObjects with sensible defaults for binding tests.
-        auto *connector = new qvim::NvimConnector(this);
+        auto *connector = new dot::NvimConnector(this);
         engine->rootContext()->setContextProperty(QStringLiteral("$connector"), connector);
     }
 };

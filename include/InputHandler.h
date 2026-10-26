@@ -6,7 +6,7 @@
 #include <QString>
 #include <Qt>
 
-namespace qvim {
+namespace dot {
 
 class InputHandler {
 public:
@@ -40,6 +40,6 @@ private:
     static QString modString(Qt::KeyboardModifiers mods);
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

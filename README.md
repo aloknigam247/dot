@@ -1,25 +1,44 @@
-# qvim
+# dot
 
-[![CI](https://github.com/aloknigam247/qvim/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aloknigam247/qvim/actions/workflows/ci.yml)
+[CI workflow](.github/workflows/ci.yml)
 
 ## Overview
 
-qvim is a Neovim GUI client for Windows, written in C++23 / Qt 6.10 / QML. It drives an embedded
+dot is a Neovim GUI client for Windows, written in C++23 / Qt 6.10 / QML. It drives an embedded
 `nvim --embed` process and talks to it over msgpack-rpc. The user-facing shell is QML, the text grid
 is rendered by a `QQuickPaintedItem`, and keyboard input is translated from Qt key events into nvim
 keycodes. It is currently Windows-only (built with the Visual Studio 2026 generator and MSVC).
+The editor and its AI harness share the dot name.
 
 For building and running, see [`SETUP.md`](SETUP.md). For contributor conventions, the correctness
 and performance invariants, and the test tiers, see [`AGENTS.md`](AGENTS.md).
+Application artwork and export instructions live in [`design/icons`](design/icons/README.md).
 
-The approved UI target is defined in [`docs/design/DESIGN.md`](docs/design/DESIGN.md), with qvim composition,
+The approved UI target is defined in [`docs/design/DESIGN.md`](docs/design/DESIGN.md), with dot composition,
 implementation mappings, and reference screenshots in [`docs/design/implementation.md`](docs/design/implementation.md).
 The design is not a claim of native implementation parity.
 
+## Configuration
+
+Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` to select rounded highlight groups:
+
+```lua
+vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
+```
+
+The CLI setting takes precedence:
+
+```ps1
+dot.exe --dot-rounded_highlights=FloatBorder,NormalFloat
+```
+
+Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
+location; caches from other application identities are not imported.
+
 ## Architecture
 
-qvim is a thin, reactive layer over Neovim: Neovim owns all editing state and emits a redraw event
-stream, and qvim's job is to turn that stream into pixels and to turn user input back into nvim
+dot is a thin, reactive layer over Neovim: Neovim owns all editing state and emits a redraw event
+stream, and dot's job is to turn that stream into pixels and to turn user input back into nvim
 keycodes.
 
 ### Redraw pipeline (nvim → screen)
@@ -72,16 +91,16 @@ directly.
 
 ## Launch performance (Windows cold start)
 
-The first launch of qvim *after a build or update* can take 10-20 seconds, while every subsequent
-launch is ~1 second. This is not qvim code — it is **Microsoft Defender's real-time scanning of the
-build tree**. On a rebuild, two scans stack: a "first-sight" scan of `qvim.exe` and the Qt DLLs it
+The first launch of dot *after a build or update* can take 10-20 seconds, while every subsequent
+launch is ~1 second. This is not dot code — it is **Microsoft Defender's real-time scanning of the
+build tree**. On a rebuild, two scans stack: a "first-sight" scan of `dot.exe` and the Qt DLLs it
 loads (Defender caches its verdict by file **content hash**, so new bytes mean a new scan), and a
 scan of the several GB of freshly-written compile intermediates (`.obj`/`.pdb`/`.lib`) — which
 saturates disk I/O that the first launch then competes with.
 
 Two things keep cold start down:
 
-- **The deploy is trimmed to only the Qt modules qvim actually loads.** The post-build step copies an
+- **The deploy is trimmed to only the Qt modules dot actually loads.** The post-build step copies an
   explicit list of ~20 runtime DLLs plus the `QtQuick`, `QtQml`, and `QtTest` QML modules that are
   imported, instead of the whole Qt Quick tree (Controls/Dialogs/Particles/Effects, ~150 MB). Fewer
   and smaller files means less for Defender to scan on first sight.
@@ -94,7 +113,7 @@ Two things keep cold start down:
   ```
 
   By default it excludes the whole `build\` tree — deliberately, because the dominant cost is
-  scanning the compile intermediates, not just the deployed `qvim.exe`. Pass `-Path <dir>` for a
+  scanning the compile intermediates, not just the deployed `dot.exe`. Pass `-Path <dir>` for a
   custom location (e.g. a worktree's own `build\` dir), or `-Remove` to undo. An excluded directory
   is no longer scanned by real-time protection, so only exclude build output you produce and trust —
   never a broad location like your whole user profile or a downloads folder.

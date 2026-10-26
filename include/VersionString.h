@@ -3,10 +3,10 @@
 
 #include <QString>
 
-namespace qvim {
+namespace dot {
 
 QString versionString();
 
-} // namespace qvim
+} // namespace dot
 
 #endif // VERSIONSTRING_H

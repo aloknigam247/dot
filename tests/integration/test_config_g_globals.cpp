@@ -5,8 +5,8 @@
 #include "ConfigGGlobalReader.h"
 #include "IntegrationHelpers.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestConfigGGlobals : public QObject {
     Q_OBJECT
@@ -18,7 +18,7 @@ private slots:
         NvimConnector conn;
         const QStringList extra{
             QStringLiteral("--cmd"),
-            QStringLiteral("let g:qvim_test_value = 0.42"),
+            QStringLiteral("let g:dot_test_value = 0.42"),
         };
         QVERIFY(startTestNvim(conn, extra));
         QSignalSpy completeSpy(&conn, &NvimConnector::attachComplete);

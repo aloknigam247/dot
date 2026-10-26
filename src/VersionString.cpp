@@ -2,8 +2,8 @@
 
 #include "Version.h"
 
-namespace qvim {
+namespace dot {
 
-QString versionString() { return QStringLiteral("qvim ") + QString::fromLatin1(QVIM_VERSION); }
+QString versionString() { return QStringLiteral("dot ") + QString::fromLatin1(DOT_VERSION); }
 
-} // namespace qvim
+} // namespace dot

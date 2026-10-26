@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-    Add (or remove) a Microsoft Defender exclusion for the qvim install directory.
+    Add (or remove) a Microsoft Defender exclusion for the dot install directory.
 
 .DESCRIPTION
-    On Windows, the dominant cost of a *cold* qvim launch (first run after a build or
+    On Windows, the dominant cost of a *cold* dot launch (first run after a build or
     update — 10-20s) is Defender's real-time scanning of the build tree. Two things happen
-    on a rebuild: qvim.exe and every Qt DLL it loads get a "first-sight" scan (Defender
+    on a rebuild: dot.exe and every Qt DLL it loads get a "first-sight" scan (Defender
     caches its verdict by file content hash, so new bytes = new scan), AND the several GB
     of freshly-written compile intermediates (.obj/.pdb/.lib under build\<preset>\) get
     scanned too — saturating disk I/O that the first launch then has to compete with.
@@ -32,7 +32,7 @@
 
 .EXAMPLE
     # Exclude a specific install directory:
-    pwsh -NoProfile -File scripts\add_defender_exclusion.ps1 -Path 'C:\Tools\qvim'
+    pwsh -NoProfile -File scripts\add_defender_exclusion.ps1 -Path ".\build\release"
 
 .EXAMPLE
     # Undo:
@@ -102,5 +102,5 @@ if ($already) {
 Add-MpPreference -ExclusionPath $Path
 Write-Host "Added Defender exclusion: $Path" -ForegroundColor Green
 Write-Host ""
-Write-Host "Cold launches of qvim from this directory will now skip Defender's real-time scan."
+Write-Host "Cold launches of dot from this directory will now skip Defender's real-time scan."
 Write-Host "To undo:  pwsh -NoProfile -File scripts\add_defender_exclusion.ps1 -Remove -Path '$Path'"

@@ -13,7 +13,7 @@ constexpr DWORD kDwmwaCaptionColor = 35;
 constexpr DWORD kDwmwaTextColor = 36;
 #endif
 
-namespace qvim {
+namespace dot {
 
 WindowChrome::WindowChrome(QObject *parent) : QObject(parent) {}
 
@@ -84,4 +84,4 @@ void WindowChrome::activateNow([[maybe_unused]] QQuickWindow *window) {
 #endif
 }
 
-} // namespace qvim
+} // namespace dot

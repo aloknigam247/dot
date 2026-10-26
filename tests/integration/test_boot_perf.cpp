@@ -6,7 +6,7 @@
 // of those phases (e.g. accidentally serialising the nvim spawn behind QML
 // load again) will trip the ceiling assert.
 //
-// Skip with QVIM_SKIP_PERF=1 on machines where the absolute timing is unstable
+// Skip with DOT_SKIP_PERF=1 on machines where the absolute timing is unstable
 // (CI sometimes spawns nvim very slowly).
 
 #include <QElapsedTimer>
@@ -20,8 +20,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestBootPerf : public QObject {
     Q_OBJECT
@@ -29,12 +29,12 @@ class TestBootPerf : public QObject {
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void timeToFirstFlush() {
-        if(qEnvironmentVariableIntValue("QVIM_SKIP_PERF") != 0) { QSKIP("QVIM_SKIP_PERF set"); }
+        if(qEnvironmentVariableIntValue("DOT_SKIP_PERF") != 0) { QSKIP("DOT_SKIP_PERF set"); }
 
         QElapsedTimer t;
         t.start();
@@ -44,7 +44,7 @@ private slots:
 
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("$connector"), &conn);
-        engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+        engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
         QVERIFY(!engine.rootObjects().isEmpty());
         QQuickWindow *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);
@@ -58,7 +58,7 @@ private slots:
         // Ceiling chosen with headroom over observed values. The test runs in
         // a process that already has Qt loaded, so this is well below a true
         // cold-launch budget; a regression that doubles cost will still trip
-        // this. If the machine is slow (e.g. busy CI), set QVIM_SKIP_PERF=1.
+        // this. If the machine is slow (e.g. busy CI), set DOT_SKIP_PERF=1.
         QVERIFY2(elapsed < 3000,
                  qPrintable(QStringLiteral("Boot took %1 ms — perf regression").arg(elapsed)));
     }

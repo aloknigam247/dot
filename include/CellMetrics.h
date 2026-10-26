@@ -4,7 +4,7 @@
 #include <QFontMetricsF>
 #include <QtGlobal>
 
-namespace qvim {
+namespace dot {
 
 struct CellMetrics {
     qreal cellWidth;
@@ -14,6 +14,6 @@ struct CellMetrics {
 
 CellMetrics computeCellMetrics(const QFontMetricsF &fm, int linespace, qreal dpr = 1.0);
 
-} // namespace qvim
+} // namespace dot
 
 #endif

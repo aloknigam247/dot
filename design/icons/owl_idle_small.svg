@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="ic" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="dot owl: At rest" data-master="small" data-state="idle">
+  <defs>
+    <linearGradient id="shape_2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#35493c" />
+      <stop offset="1" stop-color="#1b2820" />
+    </linearGradient>
+    <radialGradient id="shape_5" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.36">
+      <stop offset="0" stop-color="#fbffd6" />
+      <stop offset="0.45" stop-color="#d9f750" />
+      <stop offset="0.85" stop-color="#8cbf10" />
+      <stop offset="1" stop-color="#3e5806" />
+    </radialGradient>
+  </defs>
+  <g class="owl-face" transform="translate(512 512) scale(1.5) translate(-512 -512)">
+    <circle cx="396" cy="520" r="196" fill="url(#shape_2)" />
+    <circle cx="628" cy="520" r="196" fill="url(#shape_2)" />
+    <circle cx="396" cy="520" r="118" fill="url(#shape_5)" />
+    <circle cx="402" cy="528" r="54" fill="#0b100d" />
+    <circle cx="628" cy="520" r="118" fill="url(#shape_5)" />
+    <circle cx="634" cy="528" r="54" fill="#0b100d" />
+    <path d="M236,392Q380,250 512,404Q644,250 788,392" fill="none" stroke="#cdf24a" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M512,612L540,654L512,716L484,654Z" fill="#e9ad57" />
+  </g>
+</svg>

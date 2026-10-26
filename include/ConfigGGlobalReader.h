@@ -5,12 +5,12 @@
 #include <QString>
 #include <QVariant>
 
-namespace qvim {
+namespace dot {
 
 class Config;
 class NvimConnector;
 
-// Reads `g:qvim_<name>` global variables from a running nvim and applies
+// Reads `g:dot_<name>` global variables from a running nvim and applies
 // them to `cfg` via Config::setFromGGlobal.
 //
 // Variables that are unset (nvim_get_var returns an error) are silently
@@ -25,6 +25,6 @@ public:
     static void readFromMap(const QHash<QString, QVariant> &vars, Config &cfg);
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

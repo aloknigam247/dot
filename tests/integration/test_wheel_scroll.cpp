@@ -27,14 +27,14 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
 QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn) {
     engine.rootContext()->setContextProperty(QStringLiteral("$connector"), conn);
-    engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+    engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
     if(engine.rootObjects().isEmpty()) return nullptr;
     return qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 }
@@ -73,10 +73,10 @@ private:
     // Round-trip nvim's current horizontal scroll offset through a g: var.
     // Returns -1 if the value never arrives.
     int leftcol() {
-        m_conn->execLua(QStringLiteral("vim.g.qvim_test_leftcol = vim.fn.winsaveview().leftcol"));
+        m_conn->execLua(QStringLiteral("vim.g.dot_test_leftcol = vim.fn.winsaveview().leftcol"));
         std::optional<QVariant> got;
         bool done = false;
-        m_conn->getVar(QStringLiteral("qvim_test_leftcol"), [&](std::optional<QVariant> v) {
+        m_conn->getVar(QStringLiteral("dot_test_leftcol"), [&](std::optional<QVariant> v) {
             got = v;
             done = true;
         });
@@ -102,8 +102,8 @@ private:
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void horizontalWheelPansView() {

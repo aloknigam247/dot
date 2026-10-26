@@ -27,7 +27,7 @@
       "displayName": "Debug (vcpkg + VS 2026)",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "QVIM_ENABLE_ASAN": "OFF"
+        "DOT_ENABLE_ASAN": "OFF"
       }
     },
     {
@@ -35,7 +35,7 @@
       "inherits": "dev",
       "displayName": "Debug + AddressSanitizer",
       "cacheVariables": {
-        "QVIM_ENABLE_ASAN": "ON"
+        "DOT_ENABLE_ASAN": "ON"
       }
     },
     {
@@ -44,7 +44,7 @@
       "displayName": "Release with debug info",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "QVIM_ENABLE_ASAN": "OFF"
+        "DOT_ENABLE_ASAN": "OFF"
       }
     },
     {
@@ -61,7 +61,7 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_CXX_SCAN_FOR_MODULES": "OFF",
-        "QVIM_ENABLE_ASAN": "OFF"
+        "DOT_ENABLE_ASAN": "OFF"
       }
     }
   ],

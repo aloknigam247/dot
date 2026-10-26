@@ -1,5 +1,5 @@
 import QtQuick
-import Qvim 1.0
+import Dot 1.0
 
 Item {
     id: root

@@ -1,11 +1,12 @@
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QStandardPaths>
 #include <QtTest>
 
 #include "SessionCache.h"
 
-using namespace qvim;
+using namespace dot;
 
 class TestSessionCache : public QObject {
     Q_OBJECT
@@ -14,6 +15,8 @@ private slots:
     void initTestCase() {
         // Redirect AppDataLocation to a temp dir so tests don't touch real config.
         QStandardPaths::setTestModeEnabled(true);
+        QCoreApplication::setApplicationName(QStringLiteral("dot"));
+        QCoreApplication::setOrganizationName(QStringLiteral("dot"));
         // Clean any leftover from previous test runs.
         QFile::remove(cachePath());
     }
@@ -69,6 +72,30 @@ private slots:
         QVERIFY(loaded.guifont.isEmpty());
         QCOMPARE(loaded.cols, 100);
         QCOMPARE(loaded.rows, 30);
+    }
+
+    void ignoresAnotherApplicationCache() {
+        SessionCache previous;
+        previous.cols = 90;
+        previous.rows = 40;
+        const QString dotPath = cachePath();
+        QFile::remove(dotPath);
+        QCoreApplication::setApplicationName(QStringLiteral("previous-app"));
+        QCoreApplication::setOrganizationName(QStringLiteral("previous-app"));
+        const QString previousPath = cachePath();
+        const auto cleanup = qScopeGuard([previousPath]() {
+            QFile::remove(previousPath);
+            QCoreApplication::setApplicationName(QStringLiteral("dot"));
+            QCoreApplication::setOrganizationName(QStringLiteral("dot"));
+        });
+        QVERIFY(previousPath != dotPath);
+        SessionCache::save(previous);
+        QVERIFY(QFile::exists(previousPath));
+
+        QCoreApplication::setApplicationName(QStringLiteral("dot"));
+        QCoreApplication::setOrganizationName(QStringLiteral("dot"));
+        QCOMPARE(cachePath(), dotPath);
+        QVERIFY(!SessionCache::load().isValid());
     }
 
 private:

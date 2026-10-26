@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace qvim {
+namespace dot {
 
 GridModel::GridModel(QObject *parent) : QObject(parent) {
     // The global grid (id=1) always exists.
@@ -205,4 +205,4 @@ QString GridModel::dumpAscii(int gridId) const {
     return out;
 }
 
-} // namespace qvim
+} // namespace dot

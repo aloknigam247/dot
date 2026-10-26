@@ -1,138 +1,163 @@
-set(QVIM_TEST_DLL_PATH       "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
-set(QVIM_TEST_QPA_PLUGIN_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins/platforms")
-set(QVIM_TEST_QML_IMPORT_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/qml")
-cmake_path(NATIVE_PATH QVIM_TEST_DLL_PATH        QVIM_TEST_DLL_PATH_NATIVE)
-cmake_path(NATIVE_PATH QVIM_TEST_QPA_PLUGIN_DIR  QVIM_TEST_QPA_PLUGIN_DIR_NATIVE)
-cmake_path(NATIVE_PATH QVIM_TEST_QML_IMPORT_DIR  QVIM_TEST_QML_IMPORT_DIR_NATIVE)
+set(DOT_TEST_DLL_PATH       "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
+set(DOT_TEST_QPA_PLUGIN_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins/platforms")
+set(DOT_TEST_QML_IMPORT_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/qml")
+cmake_path(NATIVE_PATH DOT_TEST_DLL_PATH        DOT_TEST_DLL_PATH_NATIVE)
+cmake_path(NATIVE_PATH DOT_TEST_QPA_PLUGIN_DIR  DOT_TEST_QPA_PLUGIN_DIR_NATIVE)
+cmake_path(NATIVE_PATH DOT_TEST_QML_IMPORT_DIR  DOT_TEST_QML_IMPORT_DIR_NATIVE)
 
-function(qvim_add_test name)
+function(dot_add_test name)
     qt_add_executable(${name} ${ARGN})
-    target_link_libraries(${name} PRIVATE qvim_lib Qt6::Test Qt6::Quick)
+    target_link_libraries(${name} PRIVATE dot_lib Qt6::Test Qt6::Quick)
     # tests/support/QuickRasterizer.h is included as "support/QuickRasterizer.h".
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES
         TIMEOUT 60
-        LABELS "${QVIM_TEST_LABEL}"
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QVIM_TEST_DLL_PATH_NATIVE}"
+        LABELS "${DOT_TEST_LABEL}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
     )
 endfunction()
 
 # ctest LABELS drive the parallel CI test tiers (see .github/workflows/ci.yml).
-# qvim_add_test stamps each test with the current ${QVIM_TEST_LABEL}; tests
-# registered by raw add_test() below (test_qml, test_deploy_manifest) are
+# dot_add_test stamps each test with the current ${DOT_TEST_LABEL}; tests
+# registered by raw add_test() below are
 # labelled explicitly. Every test MUST carry exactly one tier label so the CI
 # union guard (unit + integration + qml == `ctest -N`) holds.
 
 # Tier 1 — unit / model (guiless)
-set(QVIM_TEST_LABEL unit)
-qvim_add_test(test_app_icon            unit/test_app_icon.cpp)
-qvim_add_test(test_argv_parser         unit/test_argv_parser.cpp)
-qvim_add_test(test_cell_metrics        unit/test_cell_metrics.cpp)
-qvim_add_test(test_chat_model          unit/test_chat_model.cpp)
-qvim_add_test(test_config_cli_reader   unit/test_config_cli_reader.cpp)
-qvim_add_test(test_config_g_reader     unit/test_config_g_reader.cpp)
-qvim_add_test(test_config_registry     unit/test_config_registry.cpp)
-qvim_add_test(test_copilot_bridge      unit/test_copilot_bridge.cpp)
-qvim_add_test(test_cursor_blink        unit/test_cursor_blink.cpp)
-qvim_add_test(test_cursor_item         unit/test_cursor_item.cpp)
-qvim_add_test(test_grid_model          unit/test_grid_model.cpp)
-qvim_add_test(test_grid_runs           unit/test_grid_runs.cpp)
-qvim_add_test(test_hidpi_rendering     unit/test_hidpi_rendering.cpp)
-qvim_add_test(test_highlight_table     unit/test_highlight_table.cpp)
-qvim_add_test(test_input_fuzz          unit/test_input_fuzz.cpp)
-qvim_add_test(test_input_handler       unit/test_input_handler.cpp)
-qvim_add_test(test_mdns_advertise      unit/test_mdns_advertise.cpp)
-qvim_add_test(test_mode_info           unit/test_mode_info.cpp)
-qvim_add_test(test_mouse_input         unit/test_mouse_input.cpp)
-qvim_add_test(test_msgpack_rpc         unit/test_msgpack_rpc.cpp)
-qvim_add_test(test_option_set_dispatch unit/test_option_set_dispatch.cpp)
-qvim_add_test(test_resize_coalescer    unit/test_resize_coalescer.cpp)
-qvim_add_test(test_rounded_highlight   unit/test_rounded_highlight.cpp)
-qvim_add_test(test_scroll_perf_micro   unit/test_scroll_perf_micro.cpp)
-qvim_add_test(test_session_cache       unit/test_session_cache.cpp)
-qvim_add_test(test_session_event_buffer unit/test_session_event_buffer.cpp)
-qvim_add_test(test_session_mirror_lifecycle unit/test_session_mirror_lifecycle.cpp)
-qvim_add_test(test_text_node_pool      unit/test_text_node_pool.cpp)
-qvim_add_test(test_version             unit/test_version.cpp)
-target_compile_definitions(test_version PRIVATE QVIM_EXPECTED_VERSION=${PROJECT_VERSION})
+set(DOT_TEST_LABEL unit)
+dot_add_test(test_app_icon            unit/test_app_icon.cpp)
+target_compile_definitions(test_app_icon PRIVATE
+    DOT_APP_EXE_PATH="$<TARGET_FILE:dot>"
+    DOT_ICON_PATH="${CMAKE_SOURCE_DIR}/design/icons/dot.ico"
+)
+add_dependencies(test_app_icon dot)
+dot_add_test(test_argv_parser         unit/test_argv_parser.cpp)
+dot_add_test(test_cell_metrics        unit/test_cell_metrics.cpp)
+dot_add_test(test_chat_model          unit/test_chat_model.cpp)
+dot_add_test(test_config_cli_reader   unit/test_config_cli_reader.cpp)
+dot_add_test(test_config_g_reader     unit/test_config_g_reader.cpp)
+dot_add_test(test_config_registry     unit/test_config_registry.cpp)
+dot_add_test(test_copilot_bridge      unit/test_copilot_bridge.cpp)
+add_test(NAME test_coverage_settings
+    COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/check_coverage_settings.ps1"
+)
+set_tests_properties(test_coverage_settings PROPERTIES LABELS "unit" TIMEOUT 60)
+dot_add_test(test_cursor_blink        unit/test_cursor_blink.cpp)
+dot_add_test(test_cursor_item         unit/test_cursor_item.cpp)
+dot_add_test(test_grid_model          unit/test_grid_model.cpp)
+dot_add_test(test_grid_runs           unit/test_grid_runs.cpp)
+dot_add_test(test_hidpi_rendering     unit/test_hidpi_rendering.cpp)
+dot_add_test(test_highlight_table     unit/test_highlight_table.cpp)
+dot_add_test(test_input_fuzz          unit/test_input_fuzz.cpp)
+dot_add_test(test_input_handler       unit/test_input_handler.cpp)
+dot_add_test(test_mdns_advertise      unit/test_mdns_advertise.cpp)
+dot_add_test(test_mode_info           unit/test_mode_info.cpp)
+dot_add_test(test_mouse_input         unit/test_mouse_input.cpp)
+dot_add_test(test_msgpack_rpc         unit/test_msgpack_rpc.cpp)
+dot_add_test(test_option_set_dispatch unit/test_option_set_dispatch.cpp)
+dot_add_test(test_resize_coalescer    unit/test_resize_coalescer.cpp)
+dot_add_test(test_rounded_highlight   unit/test_rounded_highlight.cpp)
+dot_add_test(test_scroll_perf_micro   unit/test_scroll_perf_micro.cpp)
+dot_add_test(test_session_cache       unit/test_session_cache.cpp)
+dot_add_test(test_session_event_buffer unit/test_session_event_buffer.cpp)
+dot_add_test(test_session_mirror_lifecycle unit/test_session_mirror_lifecycle.cpp)
+dot_add_test(test_text_node_pool      unit/test_text_node_pool.cpp)
+dot_add_test(test_version             unit/test_version.cpp)
+target_compile_definitions(test_version PRIVATE DOT_EXPECTED_VERSION=${PROJECT_VERSION})
 
 # test_app_icon constructs QGuiApplication and needs the qico imageformat
-# plugin from vcpkg's debug Qt to decode :/icon.ico. The qvim post-build step
-# stages plugins next to qvim.exe; point QT_PLUGIN_PATH at that staging dir.
-set(QVIM_TEST_IMAGEFORMATS_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins")
-cmake_path(NATIVE_PATH QVIM_TEST_IMAGEFORMATS_DIR QVIM_TEST_IMAGEFORMATS_DIR_NATIVE)
+# plugin from vcpkg's debug Qt to decode :/dot.ico. The dot post-build step
+# stages plugins next to dot.exe; point QT_PLUGIN_PATH at that staging dir.
+set(DOT_TEST_IMAGEFORMATS_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins")
+cmake_path(NATIVE_PATH DOT_TEST_IMAGEFORMATS_DIR DOT_TEST_IMAGEFORMATS_DIR_NATIVE)
 set_tests_properties(test_app_icon PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${QVIM_TEST_QPA_PLUGIN_DIR_NATIVE};QT_PLUGIN_PATH=${QVIM_TEST_IMAGEFORMATS_DIR_NATIVE}"
+    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QT_PLUGIN_PATH=${DOT_TEST_IMAGEFORMATS_DIR_NATIVE}"
 )
 # test_option_set_dispatch uses QTEST_MAIN (QGuiApplication) so it needs a
 # resolvable platform plugin too.
 set_tests_properties(test_option_set_dispatch PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${QVIM_TEST_QPA_PLUGIN_DIR_NATIVE}"
-    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QVIM_TEST_DLL_PATH_NATIVE}"
+    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE}"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
 )
 # test_cell_metrics uses QTEST_MAIN (QGuiApplication is needed to construct
 # QFont / QFontMetricsF) and therefore also needs a resolvable platform plugin.
 set_tests_properties(test_cell_metrics PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${QVIM_TEST_QPA_PLUGIN_DIR_NATIVE}"
-    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QVIM_TEST_DLL_PATH_NATIVE}"
+    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE}"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
 )
 
 # Tier 2 — integration (offscreen QPA, real nvim --embed)
-set(QVIM_TEST_LABEL integration)
-qvim_add_test(test_attach_and_render             integration/test_attach_and_render.cpp)
-qvim_add_test(test_boot_no_resize_jump           integration/test_boot_no_resize_jump.cpp)
-qvim_add_test(test_boot_perf                     integration/test_boot_perf.cpp)
-qvim_add_test(test_chat_panel                    integration/test_chat_panel.cpp)
-qvim_add_test(test_config_g_globals              integration/test_config_g_globals.cpp)
-qvim_add_test(test_ctrl_shift_mapping            integration/test_ctrl_shift_mapping.cpp)
-qvim_add_test(test_insert_and_quit               integration/test_insert_and_quit.cpp)
-qvim_add_test(test_open_file_arg                 integration/test_open_file_arg.cpp)
-qvim_add_test(test_pixel_snapshot                integration/test_pixel_snapshot.cpp)
-qvim_add_test(test_resize                        integration/test_resize.cpp)
-qvim_add_test(test_resize_smoothness             integration/test_resize_smoothness.cpp)
-qvim_add_test(test_restart                       integration/test_restart.cpp)
-qvim_add_test(test_restart_resize_fit            integration/test_restart_resize_fit.cpp)
-qvim_add_test(test_runtime_set_options           integration/test_runtime_set_options.cpp)
-qvim_add_test(test_scroll_perf                   integration/test_scroll_perf.cpp)
-target_link_libraries(test_scroll_perf PRIVATE qvim_libplugin Qt6::Quick)
-qvim_add_test(test_session_mirror                integration/test_session_mirror.cpp)
-qvim_add_test(test_startup_activation            integration/test_startup_activation.cpp)
-target_link_libraries(test_startup_activation PRIVATE qvim_libplugin Qt6::Quick)
-qvim_add_test(test_title_updates                 integration/test_title_updates.cpp)
-qvim_add_test(test_titlebar_color                integration/test_titlebar_color.cpp)
-qvim_add_test(test_visual_on_drag                integration/test_visual_on_drag.cpp)
-target_link_libraries(test_visual_on_drag PRIVATE qvim_libplugin Qt6::Quick)
-qvim_add_test(test_wheel_scroll                  integration/test_wheel_scroll.cpp)
-target_link_libraries(test_wheel_scroll PRIVATE qvim_libplugin Qt6::Quick)
-qvim_add_test(test_window_snap                   integration/test_window_snap.cpp)
-target_link_libraries(test_window_snap PRIVATE qvim_libplugin Qt6::Quick)
+set(DOT_TEST_LABEL integration)
+dot_add_test(test_attach_and_render             integration/test_attach_and_render.cpp)
+dot_add_test(test_boot_no_resize_jump           integration/test_boot_no_resize_jump.cpp)
+dot_add_test(test_boot_perf                     integration/test_boot_perf.cpp)
+dot_add_test(test_chat_panel                    integration/test_chat_panel.cpp)
+dot_add_test(test_config_g_globals              integration/test_config_g_globals.cpp)
+dot_add_test(test_ctrl_shift_mapping            integration/test_ctrl_shift_mapping.cpp)
+qt_add_executable(test_entrypoint_driver
+    support/entrypoint_driver.cpp
+    "${CMAKE_SOURCE_DIR}/src/main.cpp"
+)
+target_compile_definitions(test_entrypoint_driver PRIVATE main=dotTestMain)
+target_link_libraries(test_entrypoint_driver PRIVATE dot_lib dot_libplugin Qt6::Quick)
+add_dependencies(test_entrypoint_driver dot)
+add_test(NAME test_entrypoint_smoke
+    COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/entrypoint_smoke.ps1"
+        -DriverPath "$<TARGET_FILE:test_entrypoint_driver>"
+        -ExePath "$<TARGET_FILE:dot>"
+)
+set_tests_properties(test_entrypoint_smoke PROPERTIES LABELS "integration" TIMEOUT 90)
+set_tests_properties(test_entrypoint_smoke test_session_cache PROPERTIES RESOURCE_LOCK "session_cache")
+dot_add_test(test_insert_and_quit               integration/test_insert_and_quit.cpp)
+dot_add_test(test_open_file_arg                 integration/test_open_file_arg.cpp)
+dot_add_test(test_pixel_snapshot                integration/test_pixel_snapshot.cpp)
+dot_add_test(test_resize                        integration/test_resize.cpp)
+dot_add_test(test_resize_smoothness             integration/test_resize_smoothness.cpp)
+dot_add_test(test_restart                       integration/test_restart.cpp)
+dot_add_test(test_restart_resize_fit            integration/test_restart_resize_fit.cpp)
+dot_add_test(test_runtime_set_options           integration/test_runtime_set_options.cpp)
+dot_add_test(test_scroll_perf                   integration/test_scroll_perf.cpp)
+target_link_libraries(test_scroll_perf PRIVATE dot_libplugin Qt6::Quick)
+dot_add_test(test_session_mirror                integration/test_session_mirror.cpp)
+dot_add_test(test_startup_activation            integration/test_startup_activation.cpp)
+target_link_libraries(test_startup_activation PRIVATE dot_libplugin Qt6::Quick)
+dot_add_test(test_title_updates                 integration/test_title_updates.cpp)
+dot_add_test(test_titlebar_color                integration/test_titlebar_color.cpp)
+dot_add_test(test_visual_on_drag                integration/test_visual_on_drag.cpp)
+target_link_libraries(test_visual_on_drag PRIVATE dot_libplugin Qt6::Quick)
+dot_add_test(test_wheel_scroll                  integration/test_wheel_scroll.cpp)
+target_link_libraries(test_wheel_scroll PRIVATE dot_libplugin Qt6::Quick)
+dot_add_test(test_window_snap                   integration/test_window_snap.cpp)
+target_link_libraries(test_window_snap PRIVATE dot_libplugin Qt6::Quick)
 
 # test_runtime_set_options loads Main.qml under one of its cases.
-target_link_libraries(test_runtime_set_options PRIVATE qvim_libplugin Qt6::Quick)
+target_link_libraries(test_runtime_set_options PRIVATE dot_libplugin Qt6::Quick)
 
 # User-POV smoke harness loads Main.qml in a real QQuickWindow and drives it
 # via QTest::keyClick — exercises the full focus chain, not just the connector.
-# Needs qvim_libplugin (registers the Qvim QML module) + Qt6::Quick (QQuickWindow).
-qvim_add_test(test_user_smoke        integration/test_user_smoke.cpp)
-target_link_libraries(test_user_smoke PRIVATE qvim_libplugin Qt6::Quick)
+# Needs dot_libplugin (registers the Dot QML module) + Qt6::Quick (QQuickWindow).
+dot_add_test(test_user_smoke        integration/test_user_smoke.cpp)
+target_link_libraries(test_user_smoke PRIVATE dot_libplugin Qt6::Quick)
 
 # Chat panel end-to-end also loads Main.qml and drives the focus chain via
 # mouse/key clicks — same QML registration link requirement.
-target_link_libraries(test_chat_panel PRIVATE qvim_libplugin Qt6::Quick)
+target_link_libraries(test_chat_panel PRIVATE dot_libplugin Qt6::Quick)
 
 # Float-click tests also load Main.qml in a real QQuickWindow and inject mouse
 # events through Qt's hit-test, so they need the same QML registration link.
-target_link_libraries(test_boot_no_resize_jump PRIVATE qvim_libplugin Qt6::Quick)
-target_link_libraries(test_boot_perf           PRIVATE qvim_libplugin Qt6::Quick)
+target_link_libraries(test_boot_no_resize_jump PRIVATE dot_libplugin Qt6::Quick)
+target_link_libraries(test_boot_perf           PRIVATE dot_libplugin Qt6::Quick)
 
 # Instantiates GridItem (a QQuickItem) to exercise GridItem::maybeResizeUi.
-target_link_libraries(test_restart_resize_fit  PRIVATE qvim_libplugin Qt6::Quick)
+target_link_libraries(test_restart_resize_fit  PRIVATE dot_libplugin Qt6::Quick)
 
 foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_session_mirror test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
     set_tests_properties(${t} PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${QVIM_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${QVIM_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${QVIM_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0;QVIM_SESSION_MIRROR_ADDRESS=127.0.0.1"
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QVIM_TEST_DLL_PATH_NATIVE}"
+        ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0;DOT_SESSION_MIRROR_ADDRESS=127.0.0.1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
     )
 endforeach()
 
@@ -146,7 +171,7 @@ set_tests_properties(test_restart PROPERTIES TIMEOUT 120)
 # < 3000ms). Under `ctest --parallel` they must not share the CPU with other
 # tests or the timing goes noisy and they flake. RUN_SERIAL makes ctest schedule
 # each one alone even inside a parallel run — they still execute and still catch
-# regressions, just never concurrently. QVIM_SKIP_PERF=1 remains the escape hatch
+# regressions, just never concurrently. DOT_SKIP_PERF=1 remains the escape hatch
 # for genuinely slow machines.
 set_tests_properties(test_boot_perf test_scroll_perf test_scroll_perf_micro PROPERTIES
     RUN_SERIAL TRUE
@@ -164,13 +189,13 @@ set_tests_properties(test_pixel_snapshot PROPERTIES
 
 # Tier 3 — QML tests (qmltest)
 qt_add_executable(test_qml qml/main_qmltest.cpp)
-target_link_libraries(test_qml PRIVATE qvim_lib qvim_libplugin Qt6::QuickTest Qt6::Qml)
+target_link_libraries(test_qml PRIVATE dot_lib dot_libplugin Qt6::QuickTest Qt6::Qml)
 add_test(NAME test_qml
     COMMAND test_qml -input ${CMAKE_CURRENT_SOURCE_DIR}/qml
 )
 set_tests_properties(test_qml PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${QVIM_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${QVIM_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${QVIM_TEST_QML_IMPORT_DIR_NATIVE}"
-    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QVIM_TEST_DLL_PATH_NATIVE}"
+    ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE}"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
     LABELS "qml"
     TIMEOUT 30
 )
@@ -190,35 +215,35 @@ set_tests_properties(
 
 # Deploy-integrity check — deterministic (no launch). Guards the EXPLICIT, hand-picked Qt
 # deploy list in the top-level CMakeLists.txt against two independent, derived expectations:
-#   (A) every Qt6*.dll imported by qvim.exe or a deployed plugin is itself deployed, and
+#   (A) every Qt6*.dll imported by dot.exe or a deployed plugin is itself deployed, and
 #   (B) every `import Qt...` in qml/ has its module directory + backing plugin deployed.
 # Every other test loads Qt from the full vcpkg tree on PATH and so cannot catch a deploy
 # omission; this one reads the deployed binaries + qml source directly, so it is not flaky.
-# It inspects the real product exe, so it depends on the qvim target (and its POST_BUILD
+# It inspects the real product exe, so it depends on the dot target (and its POST_BUILD
 # deploy) being built.
 add_test(NAME test_deploy_manifest
     COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
         -File "${CMAKE_CURRENT_SOURCE_DIR}/check_deploy.ps1"
-        -DeployDir "$<TARGET_FILE_DIR:qvim>"
+        -DeployDir "$<TARGET_FILE_DIR:dot>"
         -QmlSourceDir "${CMAKE_SOURCE_DIR}/qml"
 )
 set_tests_properties(test_deploy_manifest PROPERTIES TIMEOUT 60 LABELS "unit")
 
 # End-to-end version gates — exercise the real product exe (not a test double), so they
-# depend on the qvim target + its POST_BUILD deploy. test_cli_version proves the wired
+# depend on the dot target + its POST_BUILD deploy. test_cli_version proves the wired
 # binary prints the canonical version on `--version`; test_version_metadata proves the
 # Windows VERSIONINFO metadata equals PROJECT_VERSION exactly.
-add_test(NAME test_cli_version COMMAND qvim --version)
+add_test(NAME test_cli_version COMMAND dot --version)
 set_tests_properties(test_cli_version PROPERTIES
     TIMEOUT 60
     LABELS "unit"
-    PASS_REGULAR_EXPRESSION "^qvim ${PROJECT_VERSION}"
+    PASS_REGULAR_EXPRESSION "^dot ${PROJECT_VERSION}"
 )
 
 add_test(NAME test_version_metadata
     COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
         -File "${CMAKE_CURRENT_SOURCE_DIR}/version_metadata_check.ps1"
-        -ExePath "$<TARGET_FILE:qvim>"
+        -ExePath "$<TARGET_FILE:dot>"
         -ExpectedVersion "${PROJECT_VERSION}"
 )
 set_tests_properties(test_version_metadata PROPERTIES TIMEOUT 60 LABELS "unit")

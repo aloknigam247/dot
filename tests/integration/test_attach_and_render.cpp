@@ -1,8 +1,8 @@
 #include "IntegrationHelpers.h"
 #include <QtTest>
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestAttachAndRender : public QObject {
     Q_OBJECT

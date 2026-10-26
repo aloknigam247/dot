@@ -16,14 +16,14 @@ The top-level `CMakeLists.txt` POST_BUILD step deploys an **explicit, hand-picke
 
 **When it fails, you do NOT edit the test.** A new Qt module or QML import makes it fail with a `FIX:` hint pointing back at the deploy list. Fix it there:
 
-- missing `Qt6*.dll` → add it to `QVIM_QT_RUNTIME_DLLS` in `CMakeLists.txt`;
+- missing `Qt6*.dll` → add it to `DOT_QT_RUNTIME_DLLS` in `CMakeLists.txt`;
 - missing QML module dir → add a copy for that module alongside the existing QtQuick / QtQml / QtTest copies.
 
 The expected set is derived from the binaries + qml source, so the test needs no update when dependencies change — only the deploy list does.
 
 ## Build/test cheatsheet
 
-```pwsh
+```ps1
 ctest --preset release --output-on-failure                              # all
 ctest --preset release --output-on-failure -R '^test_grid_model$'       # single
 ctest --preset release -R 'attach_and_render|resize|insert_and_quit'    # paint
@@ -31,7 +31,7 @@ ctest --preset release -R 'test_input'                                  # InputH
 ctest --preset release -R '^test_qml$'                                  # QML
 ```
 
-Register a new test by alphabetical insert in `tests/CMakeLists.txt` via `qvim_add_test(name path)`. Tier 2 tests must also be added to the `foreach(t ...)` list that sets the nvim-required `ENVIRONMENT`.
+Register a new test by alphabetical insert in `tests/CMakeLists.txt` via `dot_add_test(name path)`. Tier 2 tests must also be added to the `foreach(t ...)` list that sets the nvim-required `ENVIRONMENT`.
 
 ## Conventions
 
@@ -43,7 +43,7 @@ Register a new test by alphabetical insert in `tests/CMakeLists.txt` via `qvim_a
 - Calling `conn.input("...")` directly from a smoke test — bypasses the focus chain. Use `QTest::keyClick(window, key)` so a focus regression actually fails the test.
 - `QQuickWindow::grabWindow()` under `minimal` QPA — returns null. Use `QQuickItem::grabToImage()` on the subtree.
 - Forgetting `QQuickWindow::setGraphicsApi(QSGRendererInterface::Software)` in `initTestCase()` for QML smoke tests — must be set before any window is created.
-- Linking only `qvim_lib` for QML smoke tests — also need `qvim_libplugin` + `Qt6::Quick` to register the `Qvim` QML module.
+- Linking only `dot_lib` for QML smoke tests — also need `dot_libplugin` + `Qt6::Quick` to register the `Dot` QML module.
 
 ## Templates
 

@@ -3,13 +3,13 @@
 #include "Config.h"
 
 #include <QDebug>
+#include <QLatin1StringView>
 #include <QStringList>
 #include <QVariant>
 
-namespace qvim {
+namespace dot {
 
-constexpr auto kPrefix = "--qvim-";
-constexpr qsizetype kPrefixLen = 7;
+constexpr QLatin1StringView kPrefix("--dot-");
 
 static std::optional<bool> parseBool(const QString &s) {
     const QString v = s.trimmed().toLower();
@@ -55,11 +55,11 @@ QStringList ConfigCliReader::extract(QStringList &args, Config &cfg) {
     QStringList kept;
     kept.reserve(args.size());
     for(const QString &arg: args) {
-        if(!arg.startsWith(QLatin1String(kPrefix))) {
+        if(!arg.startsWith(kPrefix)) {
             kept.push_back(arg);
             continue;
         }
-        const QString body = arg.mid(kPrefixLen);
+        const QString body = arg.mid(kPrefix.size());
         const qsizetype eq = body.indexOf(QLatin1Char('='));
         QString name;
         std::optional<QString> rawValue;
@@ -70,7 +70,7 @@ QStringList ConfigCliReader::extract(QStringList &args, Config &cfg) {
             rawValue = body.mid(eq + 1);
         }
         if(!cfg.has(name)) {
-            qDebug() << "ConfigCliReader: unknown --qvim option:" << arg;
+            qDebug() << "ConfigCliReader: unknown --dot option:" << arg;
             continue;
         }
         const ConfigType t = cfg.type(name);
@@ -95,4 +95,4 @@ QStringList ConfigCliReader::extract(QStringList &args, Config &cfg) {
     return args;
 }
 
-} // namespace qvim
+} // namespace dot

@@ -3,10 +3,10 @@
 
 class QGuiApplication;
 
-namespace qvim {
+namespace dot {
 
 void setupApplicationIcon(QGuiApplication &app);
 
-} // namespace qvim
+} // namespace dot
 
 #endif

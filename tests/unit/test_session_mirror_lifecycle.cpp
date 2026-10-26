@@ -7,12 +7,13 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QSignalSpy>
+#include <QTcpSocket>
 #include <QtTest>
 #include <QWebSocket>
 
 #include "SessionMirrorServer.h"
 
-using namespace qvim;
+using namespace dot;
 
 namespace {
 template <typename Pred>
@@ -77,6 +78,21 @@ private slots:
         // and the endpoint stays bound for further subscribers.
         QVERIFY(waitUntil([&] { return false; }, 200) == false);
         QVERIFY(s.serverPort() != 0);
+    }
+
+    void listenFailureIsReported() {
+        QTcpSocket blocker;
+        SessionMirrorServer server;
+        QVERIFY(blocker.bind(QHostAddress::LocalHost, 0, QAbstractSocket::DontShareAddress));
+        server.setAddress(QStringLiteral("127.0.0.1"));
+        server.setPort(blocker.localPort());
+        const QByteArray warning =
+            QStringLiteral("dot: session mirror failed to listen on ws://127.0.0.1:%1")
+                .arg(blocker.localPort())
+                .toUtf8();
+        QTest::ignoreMessage(QtWarningMsg, warning.constData());
+        server.setActive(true);
+        QCOMPARE(server.serverPort(), quint16(0));
     }
 };
 

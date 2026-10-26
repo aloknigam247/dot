@@ -1,6 +1,6 @@
 #include "CursorBlinkState.h"
 
-namespace qvim {
+namespace dot {
 
 void CursorBlinkState::setBlinkParams(int blinkWait, int blinkOn, int blinkOff) {
     m_blinkWait = blinkWait < 0 ? 0 : blinkWait;
@@ -35,4 +35,4 @@ qint64 CursorBlinkState::nextChangeMs(qint64 nowMs) const {
     return cycleStart + cycle;
 }
 
-} // namespace qvim
+} // namespace dot

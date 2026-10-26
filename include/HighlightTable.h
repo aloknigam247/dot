@@ -10,7 +10,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace qvim {
+namespace dot {
 
 struct HlAttr {
     QColor fg;
@@ -60,6 +60,6 @@ private:
     std::unordered_map<int, HlAttr> m_attrs;
 };
 
-} // namespace qvim
+} // namespace dot
 
 #endif

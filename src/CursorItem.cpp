@@ -16,7 +16,7 @@
 #include <QRawFont>
 #include <QVariant>
 
-namespace qvim {
+namespace dot {
 
 CursorItem::CursorItem(QQuickItem *parent) : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
@@ -390,4 +390,4 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     return commit();
 }
 
-} // namespace qvim
+} // namespace dot
