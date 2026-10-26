@@ -135,7 +135,7 @@ IntegerLiteralSeparator:
   Hex: 0
   HexMinDigitsInsert: 0
   HexMaxDigitsRemove: 0
-EnumTrailingComma: Remove
+EnumTrailingComma: Leave
 InsertTrailingCommas: None
 IndentAccessModifiers: false
 IndentCaseBlocks: false

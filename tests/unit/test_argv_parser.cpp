@@ -1,6 +1,7 @@
 #include <QStringList>
 #include <QtTest>
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -172,6 +173,13 @@ private slots:
         FakeArgv av{ { QStringLiteral("qvim"), QStringLiteral("\"C:\\Program Files\\foo.txt\"") } };
         const auto r = parseArgv(av.argc(), av.argv());
         QCOMPARE(r.nvimForwardArgs, QStringList{ QStringLiteral("C:\\Program Files\\foo.txt") });
+    }
+
+    void acceptsConstArguments() {
+        const std::array args{ "qvim", "--help", "file.txt" };
+        const auto result = parseArgv(static_cast<int>(args.size()), args.data());
+        QVERIFY(result.helpRequested);
+        QCOMPARE(result.nvimForwardArgs, QStringList{ QStringLiteral("file.txt") });
     }
 };
 

@@ -238,7 +238,7 @@ void MsgpackRpc::dispatchUnpacked(ObjectHandlePtr handle) {
 
     if(type == kMsgTypeResponse && arr.size == 4) {
         const uint32_t msgid = arr.ptr[1].as<uint32_t>();
-        auto it = m_pending.find(msgid);
+        const auto it = m_pending.find(msgid);
         if(it == m_pending.end()) return;
         const RpcCallback cb = it.value();
         m_pending.erase(it);

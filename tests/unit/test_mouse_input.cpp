@@ -106,6 +106,14 @@ private slots:
         const auto m = InputHandler::mouseFor(&ev, QEvent::MouseButtonDblClick);
         QVERIFY(!m.valid);
     }
+
+    void combinedModifiersSurviveTranslation() {
+        auto ev = makeEvent(QEvent::MouseMove, Qt::NoButton, Qt::LeftButton,
+                            Qt::AltModifier | Qt::ControlModifier | Qt::ShiftModifier);
+        const auto input = InputHandler::mouseFor(&ev, QEvent::MouseMove);
+        QVERIFY(input.valid);
+        QCOMPARE(input.modifier, QStringLiteral("S-C-M-"));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestMouseInput)

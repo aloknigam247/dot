@@ -23,7 +23,7 @@ void TextNodePool::addText(int key, const QString &text, const QFont &font, cons
     if(!m_parent || !m_window || text.isEmpty()) return;
 
     QSGTextNode *node = nullptr;
-    auto it = m_keyToIndex.constFind(key);
+    const auto it = m_keyToIndex.constFind(key);
     if(it != m_keyToIndex.constEnd()) {
         node = m_nodes[it.value()];
     } else {
@@ -64,7 +64,7 @@ void TextNodePool::addText(int key, const QString &text, const QFont &font, cons
         layout.endLayout();
         return;
     }
-    line.setLineWidth(static_cast<qreal>(1 << 20));
+    line.setLineWidth(static_cast<qreal>(1U << 20U));
     line.setPosition(QPointF(0, 0));
     layout.endLayout();
 

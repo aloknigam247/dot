@@ -104,8 +104,14 @@ static QString formatToolResult(const QJsonValue &value) {
     const QString raw = value.toString();
     const QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
     if(doc.isObject()) {
-        const QString text = firstString(doc.object(), { u"content", u"detailedContent", u"result",
-                                                         u"output", u"stdout", u"message" });
+        const QString text = firstString(doc.object(), {
+                                                           u"content",
+                                                           u"detailedContent",
+                                                           u"result",
+                                                           u"output",
+                                                           u"stdout",
+                                                           u"message",
+                                                       });
         return truncate(text.isEmpty() ? raw : text, 200);
     }
     return truncate(raw, 200);
@@ -205,8 +211,10 @@ void CopilotBridgeClient::onConnected() {
     const QJsonObject hello{
         { QStringLiteral("type"), QStringLiteral("hello") },
         { QStringLiteral("role"), QStringLiteral("client") },
-        { QStringLiteral("data"),
-          QJsonObject{ { QStringLiteral("name"), QStringLiteral("qvim") } } },
+        {
+            QStringLiteral("data"),
+            QJsonObject{ { QStringLiteral("name"), QStringLiteral("qvim") } },
+        },
     };
     m_socket->sendTextMessage(serialise(hello));
 }

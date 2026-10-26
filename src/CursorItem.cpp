@@ -59,13 +59,13 @@ void CursorItem::setConnector(NvimConnector *c) {
     m_conn = c;
     if(m_conn) {
         connect(m_conn, &NvimConnector::flush, this, &CursorItem::onFlush);
-        if(auto *g = grid()) {
+        if(const auto *g = grid()) {
             connect(g, &GridModel::cursorChanged, this, &CursorItem::onCursorActivity);
         }
-        if(auto *h = hl()) {
+        if(const auto *h = hl()) {
             connect(h, &HighlightTable::changed, this, &CursorItem::scheduleRepaint);
         }
-        if(auto *m = mode()) {
+        if(const auto *m = mode()) {
             connect(m, &ModeInfo::currentChanged, this, &CursorItem::onModeBlinkChanged);
             onModeBlinkChanged();
         }
@@ -234,7 +234,7 @@ void CursorItem::onCursorActivity() {
 }
 
 void CursorItem::onModeBlinkChanged() {
-    if(auto *m = mode()) {
+    if(const auto *m = mode()) {
         m_blink.setBlinkParams(m->blinkWait(), m->blinkOn(), m->blinkOff());
     } else {
         m_blink.setBlinkParams(0, 0, 0);

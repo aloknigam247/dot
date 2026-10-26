@@ -26,7 +26,7 @@ class ChatModel : public QAbstractListModel {
 public:
     enum Roles {
         AuthorRole = Qt::UserRole + 1,
-        TextRole
+        TextRole,
     };
 
     explicit ChatModel(QObject *parent = nullptr);
@@ -66,7 +66,7 @@ private:
     enum class Author {
         User,
         Assistant,
-        System
+        System,
     };
 
     struct Message {
