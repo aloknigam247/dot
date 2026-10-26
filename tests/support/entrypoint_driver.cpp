@@ -6,7 +6,7 @@
 #include <QFile>
 #include <QStandardPaths>
 
-int dotTestMain(int argc, char *argv[]);
+int dotTestMain(int argc, char **argv);
 
 static void reportIdentityAndCleanCache() {
     if(!QStandardPaths::isTestModeEnabled()) {
@@ -23,7 +23,7 @@ static void reportIdentityAndCleanCache() {
     }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
     QStandardPaths::setTestModeEnabled(true);
     qAddPostRoutine(reportIdentityAndCleanCache);
     return dotTestMain(argc, argv);

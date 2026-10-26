@@ -91,7 +91,7 @@ static void attachParentConsole() {
 // An exception escaping main() terminates the process anyway; the Qt entry point does not wrap its
 // body in a catch-all.
 // NOLINTNEXTLINE(bugprone-exception-escape)
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
     BootProfile boot;
     const dot::DotArgs cli = dot::parseArgv(argc, argv);
     boot.mark("argv parsed");
