@@ -13,7 +13,7 @@
 #include "GridModel.h"
 #include "NvimConnector.h"
 
-namespace Dot::test {
+namespace dot::test {
 
 inline QString locateNvim() {
     const QString p = QStandardPaths::findExecutable(QStringLiteral("nvim"));
@@ -71,4 +71,4 @@ inline std::optional<QVariant> evalSync(NvimConnector &conn, const QString &expr
     return getVarSync(conn, QStringLiteral("__dot_eval"), timeoutMs);
 }
 
-} // namespace Dot::test
+} // namespace dot::test

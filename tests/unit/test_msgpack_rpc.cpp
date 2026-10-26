@@ -7,7 +7,7 @@
 
 #include "MsgpackRpc.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 QByteArray packFrame(const std::function<void(msgpack::packer<msgpack::sbuffer> &)> &fn) {

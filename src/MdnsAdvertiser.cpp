@@ -9,7 +9,7 @@
 #include <windns.h>
 #endif
 
-namespace Dot {
+namespace dot {
 
 namespace {
 
@@ -207,4 +207,4 @@ void MdnsAdvertiser::reevaluate() {
     }
 }
 
-} // namespace Dot
+} // namespace dot

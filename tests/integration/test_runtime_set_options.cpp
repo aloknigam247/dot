@@ -14,8 +14,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
@@ -44,8 +44,8 @@ class TestRuntimeSetOptions : public QObject {
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<Dot::Notification>("Dot::Notification");
-        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     // `:set guifont=...` round-trips through nvim and arrives as an

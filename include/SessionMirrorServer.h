@@ -16,7 +16,7 @@
 class QWebSocket;
 class QWebSocketServer;
 
-namespace Dot {
+namespace dot {
 
 // In-process plaintext WebSocket endpoint that mirrors dot's chat session to
 // LAN subscribers, backed by SessionEventBuffer. Implements the v1 wire protocol in
@@ -41,7 +41,7 @@ class SessionMirrorServer : public QObject {
     Q_OBJECT
     QML_ELEMENT
 
-    Q_PROPERTY(Dot::ChatModel *source READ source WRITE setSource NOTIFY sourceChanged)
+    Q_PROPERTY(dot::ChatModel *source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(int port READ port WRITE setPort NOTIFY portChanged)
     Q_PROPERTY(QString address READ address WRITE setAddress NOTIFY addressChanged)
@@ -109,6 +109,6 @@ private:
     QString m_address;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

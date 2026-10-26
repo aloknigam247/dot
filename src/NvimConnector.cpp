@@ -10,7 +10,7 @@
 
 #include <algorithm>
 
-namespace Dot {
+namespace dot {
 
 static QString asQString(const msgpack::object &o) {
     if(o.type != msgpack::type::STR) return {};
@@ -398,7 +398,7 @@ void NvimConnector::onOptionSet(const QString &name, const QVariant &value) {
     qDebug() << "option_set: unhandled" << name << value;
 }
 
-void NvimConnector::onNotification(const Dot::Notification &note) {
+void NvimConnector::onNotification(const dot::Notification &note) {
     if(note.method == QStringLiteral("redraw")) {
         handleRedraw(note.params());
         return;
@@ -611,4 +611,4 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
     // hl_group_set, msg_set_pos, wildmenu_* — ignored in v0.
 }
 
-} // namespace Dot
+} // namespace dot

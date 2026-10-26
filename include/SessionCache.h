@@ -3,7 +3,7 @@
 
 #include <QString>
 
-namespace Dot {
+namespace dot {
 
 // Persists the last-known grid dimensions and guifont between sessions so that
 // the next launch can issue nvim_ui_attach with the correct (cols, rows)
@@ -28,6 +28,6 @@ struct SessionCache {
     static void save(const SessionCache &cache);
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

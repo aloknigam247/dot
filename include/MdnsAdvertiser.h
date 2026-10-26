@@ -11,7 +11,7 @@
 
 #include "DotMacros.h"
 
-namespace Dot {
+namespace dot {
 
 // The DNS-SD service type dot advertises the session mirror under. The Android
 // companion browses for exactly this type.
@@ -102,6 +102,6 @@ private:
     quint16 m_registeredPort = 0;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

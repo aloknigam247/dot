@@ -3,10 +3,10 @@
 
 class QGuiApplication;
 
-namespace Dot {
+namespace dot {
 
 void setupApplicationIcon(QGuiApplication &app);
 
-} // namespace Dot
+} // namespace dot
 
 #endif

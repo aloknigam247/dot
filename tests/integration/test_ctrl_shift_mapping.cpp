@@ -4,8 +4,8 @@
 #include "InputHandler.h"
 #include "IntegrationHelpers.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 QString encode(int key, Qt::KeyboardModifiers mods, const QString &text) {

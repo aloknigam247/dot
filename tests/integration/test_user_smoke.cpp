@@ -23,8 +23,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
@@ -63,8 +63,8 @@ private slots:
         // works. Force the QML software renderer so QQuickWindow::grabWindow()
         // produces real pixels without a GPU surface.
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<Dot::Notification>("Dot::Notification");
-        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     // Core reproduction of the "keystroke lost after ':'" focus bug. Drives a

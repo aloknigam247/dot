@@ -13,7 +13,7 @@
 #include "ChatModel.h"
 #include "SessionMirrorServer.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 QString compact(const QJsonObject &obj) {

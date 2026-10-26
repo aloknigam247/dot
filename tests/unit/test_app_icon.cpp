@@ -85,7 +85,7 @@ void TestAppIcon::nativeFrames() {
 #endif
 
 void TestAppIcon::setsNonNullWindowIcon() {
-    Dot::setupApplicationIcon(*qGuiApp);
+    dot::setupApplicationIcon(*qGuiApp);
     const QIcon icon = QGuiApplication::windowIcon();
     QVERIFY(!icon.isNull());
 }
@@ -94,7 +94,7 @@ void TestAppIcon::rasterisesEveryFrame_data() { frameSizes(); }
 
 void TestAppIcon::rasterisesEveryFrame() {
     QFETCH(int, size);
-    Dot::setupApplicationIcon(*qGuiApp);
+    dot::setupApplicationIcon(*qGuiApp);
     const QIcon icon = QGuiApplication::windowIcon();
     const QImage actual = icon.pixmap(QSize(size, size))
                               .toImage()

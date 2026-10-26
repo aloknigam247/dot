@@ -93,7 +93,7 @@ static void attachParentConsole() {
 // NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char *argv[]) {
     BootProfile boot;
-    const Dot::DotArgs cli = Dot::parseArgv(argc, argv);
+    const dot::DotArgs cli = dot::parseArgv(argc, argv);
     boot.mark("argv parsed");
     if(cli.helpRequested) {
         attachParentConsole();
@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
     }
     if(cli.versionRequested) {
         attachParentConsole();
-        std::fputs(Dot::versionString().toUtf8().constData(), stdout);
+        std::fputs(dot::versionString().toUtf8().constData(), stdout);
         std::fputc('\n', stdout);
         return 0;
     }
@@ -178,21 +178,21 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("dot"));
     QGuiApplication::setOrganizationName(QStringLiteral("dot"));
-    Dot::setupApplicationIcon(app);
-    qRegisterMetaType<Dot::Notification>("Dot::Notification");
-    qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
+    dot::setupApplicationIcon(app);
+    qRegisterMetaType<dot::Notification>("dot::Notification");
+    qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     boot.mark("QGuiApplication ctor done");
 
-    Dot::Config cfg;
-    cfg.registerOption(QStringLiteral("rounded_highlights"), Dot::ConfigType::StringList,
+    dot::Config cfg;
+    cfg.registerOption(QStringLiteral("rounded_highlights"), dot::ConfigType::StringList,
                        QStringList{});
 
     QStringList forwardArgs = cli.editorArgs;
-    Dot::ConfigCliReader::extract(forwardArgs, cfg);
+    dot::ConfigCliReader::extract(forwardArgs, cfg);
     boot.mark("Config registered + CLI read");
 
-    Dot::NvimConnector connector;
-    Dot::WindowChrome windowChrome;
+    dot::NvimConnector connector;
+    dot::WindowChrome windowChrome;
     boot.mark("NvimConnector ctor done");
 
     if(!connector.start(locateNvim(), forwardArgs)) {
@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
     // If a session cache exists with a valid (cols, rows) from the last run,
     // use those dimensions — they'll match the real geometry when the font
     // hasn't changed, eliminating the tryResize round-trip entirely.
-    const Dot::SessionCache sessionCache = Dot::SessionCache::load();
+    const dot::SessionCache sessionCache = dot::SessionCache::load();
     const int attachCols = sessionCache.isValid() ? sessionCache.cols : 80;
     const int attachRows = sessionCache.isValid() ? sessionCache.rows : 24;
     connector.attachUi(attachCols, attachRows);
@@ -231,17 +231,17 @@ int main(int argc, char *argv[]) {
         }
     };
     applyRounded();
-    QObject::connect(&cfg, &Dot::Config::changed, &connector, [applyRounded](const QString &name) {
+    QObject::connect(&cfg, &dot::Config::changed, &connector, [applyRounded](const QString &name) {
         if(name == QStringLiteral("rounded_highlights")) applyRounded();
     });
 
-    QObject::connect(&connector, &Dot::NvimConnector::disconnected, &app, &QCoreApplication::quit);
-    QObject::connect(&connector, &Dot::NvimConnector::attachComplete, &cfg,
+    QObject::connect(&connector, &dot::NvimConnector::disconnected, &app, &QCoreApplication::quit);
+    QObject::connect(&connector, &dot::NvimConnector::attachComplete, &cfg,
                      [&connector, &cfg, &boot]() {
         boot.mark("attachComplete signal");
-        Dot::ConfigGGlobalReader::read(connector, cfg);
+        dot::ConfigGGlobalReader::read(connector, cfg);
     });
-    QObject::connect(&connector, &Dot::NvimConnector::flush, &connector, [&boot]() {
+    QObject::connect(&connector, &dot::NvimConnector::flush, &connector, [&boot]() {
         static bool firstFlushSeen = false;
         if(firstFlushSeen) return;
         firstFlushSeen = true;
@@ -249,7 +249,7 @@ int main(int argc, char *argv[]) {
     });
 
     if(cli.stdinAsBuffer && stdinIsRedirected) {
-        QObject::connect(&connector, &Dot::NvimConnector::attachComplete, &connector,
+        QObject::connect(&connector, &dot::NvimConnector::attachComplete, &connector,
                          [&connector, fut = std::make_shared<std::future<QByteArray>>(
                                           std::move(stdinFuture))]() {
             connector.loadStdinIntoBuffer(fut->get());
@@ -293,11 +293,11 @@ int main(int argc, char *argv[]) {
                 // Persist the final grid dimensions so the next launch can
                 // skip the placeholder→resize round-trip.
                 if(auto *g = connector.grid()) {
-                    Dot::SessionCache cache;
+                    dot::SessionCache cache;
                     cache.guifont = connector.guifont();
                     cache.cols = g->gridCols(1);
                     cache.rows = g->gridRows(1);
-                    if(cache.isValid()) Dot::SessionCache::save(cache);
+                    if(cache.isValid()) dot::SessionCache::save(cache);
                 }
             });
         }

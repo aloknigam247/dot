@@ -51,7 +51,7 @@
 #include "HighlightTable.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 

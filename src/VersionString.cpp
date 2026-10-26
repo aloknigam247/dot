@@ -2,8 +2,8 @@
 
 #include "Version.h"
 
-namespace Dot {
+namespace dot {
 
 QString versionString() { return QStringLiteral("dot ") + QString::fromLatin1(DOT_VERSION); }
 
-} // namespace Dot
+} // namespace dot

@@ -5,7 +5,7 @@
 #include <QString>
 #include <QVariant>
 
-namespace Dot {
+namespace dot {
 
 class Config;
 class NvimConnector;
@@ -25,6 +25,6 @@ public:
     static void readFromMap(const QHash<QString, QVariant> &vars, Config &cfg);
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

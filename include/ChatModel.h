@@ -6,7 +6,7 @@
 #include <QString>
 #include <QVector>
 
-namespace Dot {
+namespace dot {
 
 // Front-end chat model: a list of typed message blocks (user / assistant). It is
 // a passive transcript — the active backend (CopilotBridgeClient) pushes blocks
@@ -83,6 +83,6 @@ private:
     quint64 m_block = 0; // id counter for appendBlock() atomic-block taps
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

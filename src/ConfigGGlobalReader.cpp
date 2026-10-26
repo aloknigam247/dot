@@ -8,7 +8,7 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace Dot {
+namespace dot {
 
 constexpr auto kGGlobalPrefix = "dot_";
 
@@ -85,4 +85,4 @@ void ConfigGGlobalReader::readFromMap(const QHash<QString, QVariant> &vars, Conf
     }
 }
 
-} // namespace Dot
+} // namespace dot

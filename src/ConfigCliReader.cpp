@@ -7,7 +7,7 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace Dot {
+namespace dot {
 
 constexpr QLatin1StringView kPrefix("--dot-");
 
@@ -95,4 +95,4 @@ QStringList ConfigCliReader::extract(QStringList &args, Config &cfg) {
     return args;
 }
 
-} // namespace Dot
+} // namespace dot

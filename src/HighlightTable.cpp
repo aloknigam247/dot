@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace Dot {
+namespace dot {
 
 static QColor fromRgb24(int rgb) {
     if(rgb < 0) return {};
@@ -138,4 +138,4 @@ HlAttr HighlightTable::resolved(int id) const {
     return a;
 }
 
-} // namespace Dot
+} // namespace dot

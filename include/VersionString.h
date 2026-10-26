@@ -3,10 +3,10 @@
 
 #include <QString>
 
-namespace Dot {
+namespace dot {
 
 QString versionString();
 
-} // namespace Dot
+} // namespace dot
 
 #endif // VERSIONSTRING_H

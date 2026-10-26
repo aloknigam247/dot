@@ -14,16 +14,16 @@
 #include "MsgpackRpc.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestOpenFileArg : public QObject {
     Q_OBJECT
 
 private slots:
     void initTestCase() {
-        qRegisterMetaType<Dot::Notification>("Dot::Notification");
-        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void forwardedFileBecomesCurrentBuffer() {

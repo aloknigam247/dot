@@ -1,6 +1,6 @@
 #include "ChatModel.h"
 
-namespace Dot {
+namespace dot {
 
 ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -73,4 +73,4 @@ ChatModel::Author ChatModel::authorFromName(const QString &name) {
     return Author::System;
 }
 
-} // namespace Dot
+} // namespace dot

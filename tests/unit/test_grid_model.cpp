@@ -3,7 +3,7 @@
 
 #include "GridModel.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 

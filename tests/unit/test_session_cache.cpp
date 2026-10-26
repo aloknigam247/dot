@@ -6,7 +6,7 @@
 
 #include "SessionCache.h"
 
-using namespace Dot;
+using namespace dot;
 
 class TestSessionCache : public QObject {
     Q_OBJECT

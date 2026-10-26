@@ -3,7 +3,7 @@
 #include <cstring>
 #include <QDebug>
 
-namespace Dot {
+namespace dot {
 
 constexpr int kMsgTypeRequest = 0;
 constexpr int kMsgTypeResponse = 1;
@@ -283,4 +283,4 @@ void MsgpackRpc::onProcessFinished(int /*exitCode*/, QProcess::ExitStatus /*stat
     emit transportClosed();
 }
 
-} // namespace Dot
+} // namespace dot

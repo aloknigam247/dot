@@ -22,7 +22,7 @@
 #include "GridRuns.h"
 #include "HighlightTable.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 

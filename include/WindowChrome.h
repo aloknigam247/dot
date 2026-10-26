@@ -6,7 +6,7 @@
 #include <qqmlregistration.h>
 #include <QQuickWindow>
 
-namespace Dot {
+namespace dot {
 
 class WindowChrome : public QObject {
     Q_OBJECT
@@ -35,6 +35,6 @@ private:
     bool m_activated = false;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

@@ -4,7 +4,7 @@
 
 #include <QJsonDocument>
 
-namespace Dot {
+namespace dot {
 
 SessionEventBuffer::SessionEventBuffer(int maxEntries) : m_maxEntries(qMax(1, maxEntries)) {}
 
@@ -18,4 +18,4 @@ BufferedEvent SessionEventBuffer::append(QJsonObject frame) {
     return event;
 }
 
-} // namespace Dot
+} // namespace dot

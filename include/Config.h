@@ -8,7 +8,7 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace Dot {
+namespace dot {
 
 enum class ConfigType {
     Bool,
@@ -66,6 +66,6 @@ private:
     QHash<QString, Entry> m_entries;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

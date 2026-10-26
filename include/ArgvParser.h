@@ -3,7 +3,7 @@
 
 #include <QStringList>
 
-namespace Dot {
+namespace dot {
 
 struct DotArgs {
     QStringList editorArgs;
@@ -20,6 +20,6 @@ struct DotArgs {
 // ConfigCliReader must extract dot options before editorArgs reaches nvim.
 DotArgs parseArgv(int argc, char **argv);
 
-} // namespace Dot
+} // namespace dot
 
 #endif

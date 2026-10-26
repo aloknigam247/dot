@@ -12,7 +12,7 @@
 
 #include "SessionMirrorServer.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 template <typename Pred>

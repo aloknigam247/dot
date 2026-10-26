@@ -3,7 +3,7 @@
 #include "CursorItem.h"
 #include "ModeInfo.h"
 
-using namespace Dot;
+using namespace dot;
 
 class TestCursorItem : public QObject {
     Q_OBJECT

@@ -27,7 +27,7 @@ private slots:
     }
 
     void cliStringIsExact() {
-        QCOMPARE(Dot::versionString(), QStringLiteral("dot ") + QString::fromLatin1(DOT_VERSION));
+        QCOMPARE(dot::versionString(), QStringLiteral("dot ") + QString::fromLatin1(DOT_VERSION));
     }
 };
 

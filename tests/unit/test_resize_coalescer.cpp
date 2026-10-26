@@ -3,7 +3,7 @@
 
 #include "ResizeCoalescer.h"
 
-using namespace Dot;
+using namespace dot;
 
 class TestResizeCoalescer : public QObject {
     Q_OBJECT

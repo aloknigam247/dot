@@ -34,8 +34,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
@@ -63,8 +63,8 @@ class TestRestartResizeFit : public QObject {
 
 private slots:
     void initTestCase() {
-        qRegisterMetaType<Dot::Notification>("Dot::Notification");
-        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void correctiveResizeSurvivesStaleModelGuard() {

@@ -7,7 +7,7 @@
 #include <QString>
 #include <QVector>
 
-namespace Dot {
+namespace dot {
 
 enum class CursorShape {
     Block,
@@ -63,6 +63,6 @@ private:
     bool m_cursorStyleEnabled = false;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

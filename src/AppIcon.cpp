@@ -6,10 +6,10 @@
 
 // Q_INIT_RESOURCE expands to a free function in the global namespace whose
 // name encodes the .qrc basename. Forward-declare it here so we can call it
-// from the Dot namespace without macro-pasting issues.
+// from the dot namespace without macro-pasting issues.
 extern int qInitResources_dot();
 
-namespace Dot {
+namespace dot {
 
 void setupApplicationIcon(QGuiApplication & /*app*/) {
     // The .qrc is linked into dot_lib (a static library). Static-lib resources
@@ -19,4 +19,4 @@ void setupApplicationIcon(QGuiApplication & /*app*/) {
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/dot.ico")));
 }
 
-} // namespace Dot
+} // namespace dot

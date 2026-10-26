@@ -8,7 +8,7 @@
 #include "Config.h"
 #include "ConfigCliReader.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 

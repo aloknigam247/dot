@@ -1,6 +1,6 @@
 #include "ResizeCoalescer.h"
 
-namespace Dot {
+namespace dot {
 
 ResizeCoalescer::ResizeCoalescer(QObject *parent) : QObject(parent) {
     m_timer.setSingleShot(true);
@@ -37,4 +37,4 @@ void ResizeCoalescer::onTimeout() {
     emit resizeRequested(m_pendingCols, m_pendingRows);
 }
 
-} // namespace Dot
+} // namespace dot

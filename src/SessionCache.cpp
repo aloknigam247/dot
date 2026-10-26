@@ -6,7 +6,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 
-namespace Dot {
+namespace dot {
 
 static QString cacheFilePath() {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -37,4 +37,4 @@ void SessionCache::save(const SessionCache &cache) {
     f.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
-} // namespace Dot
+} // namespace dot

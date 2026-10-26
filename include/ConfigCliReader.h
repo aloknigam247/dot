@@ -3,7 +3,7 @@
 
 #include <QStringList>
 
-namespace Dot {
+namespace dot {
 
 class Config;
 
@@ -28,6 +28,6 @@ public:
     static QStringList extract(QStringList &args, Config &cfg);
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

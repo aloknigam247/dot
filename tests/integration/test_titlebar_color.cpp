@@ -6,8 +6,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestTitlebarColor : public QObject {
     Q_OBJECT

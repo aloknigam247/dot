@@ -16,7 +16,7 @@
 #include "ChatModel.h"
 #include "CopilotBridgeClient.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 QString compact(const QJsonObject &obj) {

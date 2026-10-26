@@ -26,7 +26,7 @@
 #include <QVector>
 #include <QWheelEvent>
 
-namespace Dot {
+namespace dot {
 
 static void parseGuifont(const QString &guifont, QString &family, qreal &size) {
     if(guifont.isEmpty()) return;
@@ -589,4 +589,4 @@ void GridItem::wheelEvent(QWheelEvent *ev) {
     ev->accept();
 }
 
-} // namespace Dot
+} // namespace dot

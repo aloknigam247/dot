@@ -6,7 +6,7 @@
 #include <QWebSocket>
 #include <QWebSocketServer>
 
-namespace Dot {
+namespace dot {
 
 constexpr int kProtocolVersion = 1;
 // Cap on a single client input so one frame can't make a buffered event
@@ -205,4 +205,4 @@ void SessionMirrorServer::broadcast(const QByteArray &payload) {
     }
 }
 
-} // namespace Dot
+} // namespace dot

@@ -18,7 +18,7 @@
 
 #include "DotMacros.h"
 
-namespace Dot {
+namespace dot {
 
 // Maps an nvim listen_addr pipe form to what QLocalSocket::connectToServer expects.
 // nvim emits `//./pipe/<name>`; on Windows QLocalSocket wants `\\.\pipe\<name>`. An
@@ -79,7 +79,7 @@ public:
     void shutdownAndWait(int timeoutMs = 1000);
 
 signals:
-    void notification(const Dot::Notification &note);
+    void notification(const dot::Notification &note);
     void connected();       // socket transport reached ConnectedState (reconnect)
     void transportClosed(); // internal: active transport hit EOF / finished
     void transportError(const QString &message); // socket connect / runtime error
@@ -108,9 +108,9 @@ private:
 
 inline std::string toStd(const QString &s) { return s.toStdString(); }
 
-} // namespace Dot
+} // namespace dot
 
-Q_DECLARE_METATYPE(Dot::ObjectHandlePtr)
-Q_DECLARE_METATYPE(Dot::Notification)
+Q_DECLARE_METATYPE(dot::ObjectHandlePtr)
+Q_DECLARE_METATYPE(dot::Notification)
 
 #endif

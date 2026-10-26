@@ -21,8 +21,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 namespace {
 
@@ -54,8 +54,8 @@ private slots:
             QSKIP("DOT_SKIP_PERF=1 — skipping perf integration test");
         }
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<Dot::Notification>("Dot::Notification");
-        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
+        qRegisterMetaType<dot::Notification>("dot::Notification");
+        qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
     void holdingJStaysSnappy() {

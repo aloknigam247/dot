@@ -5,7 +5,7 @@
 #include <QByteArray>
 #include <QJsonObject>
 
-namespace Dot {
+namespace dot {
 
 // One buffered server→client frame: its assigned sequence number plus the exact
 // compact-JSON bytes broadcast on the wire.
@@ -46,6 +46,6 @@ private:
     std::deque<BufferedEvent> m_events;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

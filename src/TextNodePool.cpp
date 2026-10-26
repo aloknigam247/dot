@@ -7,7 +7,7 @@
 #include <QTextLine>
 #include <QTextOption>
 
-namespace Dot {
+namespace dot {
 
 TextNodePool::~TextNodePool() = default;
 
@@ -88,4 +88,4 @@ void TextNodePool::forget() {
     m_parent = nullptr;
 }
 
-} // namespace Dot
+} // namespace dot

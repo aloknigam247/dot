@@ -10,7 +10,7 @@
 
 #include "CellMetrics.h"
 
-using namespace Dot;
+using namespace dot;
 
 namespace {
 

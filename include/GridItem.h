@@ -13,7 +13,7 @@
 #include "RectNodePool.h"
 #include "TextNodePool.h"
 
-namespace Dot {
+namespace dot {
 
 class GridModel;
 struct GridRuns;
@@ -22,7 +22,7 @@ class GridItem : public QQuickItem {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(
-        Dot::NvimConnector *connector READ connector WRITE setConnector NOTIFY connectorChanged)
+        dot::NvimConnector *connector READ connector WRITE setConnector NOTIFY connectorChanged)
     Q_PROPERTY(int gridId READ gridId WRITE setGridId NOTIFY gridIdChanged)
     Q_PROPERTY(QString fontName READ fontName WRITE setFontName NOTIFY fontChanged)
     Q_PROPERTY(qreal fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
@@ -128,6 +128,6 @@ private:
     TextNodePool m_textPool;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

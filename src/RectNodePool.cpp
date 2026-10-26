@@ -4,7 +4,7 @@
 #include <QSGNode>
 #include <QSGRectangleNode>
 
-namespace Dot {
+namespace dot {
 
 RectNodePool::~RectNodePool() = default;
 
@@ -45,4 +45,4 @@ void RectNodePool::forget() {
     m_parent = nullptr;
 }
 
-} // namespace Dot
+} // namespace dot

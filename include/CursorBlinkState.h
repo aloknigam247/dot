@@ -3,7 +3,7 @@
 
 #include <QtGlobal>
 
-namespace Dot {
+namespace dot {
 
 // Pure state machine driving the cursor blink. Time is passed in as monotonic
 // milliseconds; the class itself owns no clock so it can be exercised under
@@ -41,6 +41,6 @@ private:
     qint64 m_activityAt = 0;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

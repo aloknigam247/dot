@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace Dot {
+namespace dot {
 
 // PowerShell 7 (with the default PSNativeCommandArgumentPassing=Legacy) mangles
 // native-exe invocations when any arg contains `.\`, `/`, or other special
@@ -49,4 +49,4 @@ DotArgs parseArgv(int argc, char **argv) {
     return out;
 }
 
-} // namespace Dot
+} // namespace dot

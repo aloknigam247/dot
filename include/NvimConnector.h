@@ -22,16 +22,16 @@
 #include "ResizeCoalescer.h"
 #include <msgpack.hpp>
 
-namespace Dot {
+namespace dot {
 
 class NvimConnector : public QObject {
     Q_OBJECT
     QML_ELEMENT
     QML_UNCREATABLE("Provided via context property $connector")
 
-    Q_PROPERTY(Dot::GridModel *grid READ grid CONSTANT)
-    Q_PROPERTY(Dot::HighlightTable *highlights READ highlights CONSTANT)
-    Q_PROPERTY(Dot::ModeInfo *modeInfo READ modeInfo CONSTANT)
+    Q_PROPERTY(dot::GridModel *grid READ grid CONSTANT)
+    Q_PROPERTY(dot::HighlightTable *highlights READ highlights CONSTANT)
+    Q_PROPERTY(dot::ModeInfo *modeInfo READ modeInfo CONSTANT)
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(QString guifont READ guifont NOTIFY guifontChanged)
     // Parsed convenience accessors so any QML overlay can do
@@ -101,7 +101,7 @@ public:
     // only from tests / programmatic resize where the synchronous behaviour
     // is required.
     Q_INVOKABLE void requestResize(int cols, int rows);
-    Dot::ResizeCoalescer *resizeCoalescer() const { return m_resizeCoalescer; }
+    dot::ResizeCoalescer *resizeCoalescer() const { return m_resizeCoalescer; }
     Q_INVOKABLE void paste(const QString &text);
     Q_INVOKABLE void command(const QString &cmd);
     Q_INVOKABLE void execLua(const QString &code);
@@ -125,7 +125,7 @@ signals:
     void nvimRequestedResize(int cols, int rows);
     void bell();
     void disconnected();
-    void customNotification(const Dot::Notification &note);
+    void customNotification(const dot::Notification &note);
     void arabicshapeChanged();
     void ambiwidthChanged();
     void emojiChanged();
@@ -139,7 +139,7 @@ signals:
     void termguicolorsChanged();
 
 private:
-    Q_SLOT void onNotification(const Dot::Notification &note);
+    Q_SLOT void onNotification(const dot::Notification &note);
     Q_SLOT void onRpcDisconnected();
     Q_SLOT void onRestartConnected();
     Q_SLOT void onRestartFailed();
@@ -195,6 +195,6 @@ private:
     bool m_termguicolors = false;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

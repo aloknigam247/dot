@@ -13,7 +13,7 @@ class QSGNode;
 class QSGRectangleNode;
 QT_END_NAMESPACE
 
-namespace Dot {
+namespace dot {
 
 // Pool of solid-colour rectangle nodes parented under a caller-owned container.
 // Backs every flat fill the renderer emits: the default-background clear, the
@@ -62,6 +62,6 @@ private:
     int m_used = 0;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

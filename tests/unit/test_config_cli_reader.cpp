@@ -3,7 +3,7 @@
 #include "Config.h"
 #include "ConfigCliReader.h"
 
-using namespace Dot;
+using namespace dot;
 
 class TestConfigCliReader : public QObject {
     Q_OBJECT

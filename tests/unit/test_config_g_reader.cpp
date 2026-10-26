@@ -4,7 +4,7 @@
 #include "Config.h"
 #include "ConfigGGlobalReader.h"
 
-using namespace Dot;
+using namespace dot;
 
 class TestConfigGReader : public QObject {
     Q_OBJECT

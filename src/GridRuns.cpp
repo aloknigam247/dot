@@ -3,7 +3,7 @@
 #include "GridModel.h"
 #include "HighlightTable.h"
 
-namespace Dot {
+namespace dot {
 
 bool isPuaChar(QChar c) {
     const ushort u = c.unicode();
@@ -156,4 +156,4 @@ GridRuns buildGridRuns(const GridModel &grid, const HighlightTable &hl, int grid
     return out;
 }
 
-} // namespace Dot
+} // namespace dot

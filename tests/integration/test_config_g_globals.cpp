@@ -5,8 +5,8 @@
 #include "ConfigGGlobalReader.h"
 #include "IntegrationHelpers.h"
 
-using namespace Dot;
-using namespace Dot::test;
+using namespace dot;
+using namespace dot::test;
 
 class TestConfigGGlobals : public QObject {
     Q_OBJECT

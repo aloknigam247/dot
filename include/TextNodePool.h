@@ -16,7 +16,7 @@ class QSGNode;
 class QSGTextNode;
 QT_END_NAMESPACE
 
-namespace Dot {
+namespace dot {
 
 // Pool of QSGTextNodes parented under a caller-owned container node.
 //
@@ -66,6 +66,6 @@ private:
     int m_used = 0;
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif

@@ -9,7 +9,7 @@
 #include <QUrl>
 #include <QWebSocket>
 
-namespace Dot {
+namespace dot {
 
 // The hub binds a fixed port on localhost (copilot-bridge/README.md). The
 // reference client honours COPILOT_BRIDGE_URL to point elsewhere.
@@ -267,4 +267,4 @@ void CopilotBridgeClient::appendLine(const QString &author, const QString &text,
     m_sink->appendBlock(author, tagged);
 }
 
-} // namespace Dot
+} // namespace dot

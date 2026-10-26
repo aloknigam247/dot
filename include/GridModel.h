@@ -8,7 +8,7 @@
 #include <QString>
 #include <QVector>
 
-namespace Dot {
+namespace dot {
 
 struct Cell {
     QString text;
@@ -155,6 +155,6 @@ private:
     int m_active = 1; // grid id of the active cursor target
 };
 
-} // namespace Dot
+} // namespace dot
 
 #endif
