@@ -1,13 +1,7 @@
 name: Android CI
 
 on:
-  # Mirror of ci.yml's `paths-ignore: android/**`: that pipeline skips a run only
-  # when every changed file is under android/, so the two filters are complementary
-  # — a mixed PR runs both, a qvim-only PR runs only ci.yml, an android-only PR runs
-  # only this one. The workflow file is in its own filter so changes to it self-test.
-  #
-  # Required-check caveat: because the filters are complementary, an android-only PR
-  # never reports ci.yml's checks and a qvim-only PR never reports these. If any job
+  # Required-check caveat: path-filtered workflows do not run for every PR. If any job
   # here or in ci.yml is marked *required* in branch protection, a filtered-out
   # (never-triggered) job shows as "expected but never reported" and blocks merge
   # forever. Keep both pipelines' jobs non-required, or gate on a merge-queue /
@@ -16,11 +10,13 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-ci.yml"
+      - "design/icons/**"
   push:
     branches: [main]
     paths:
       - "android/**"
       - ".github/workflows/android-ci.yml"
+      - "design/icons/**"
 
 # A newer push to the same ref cancels the in-flight run.
 concurrency:

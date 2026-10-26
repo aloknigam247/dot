@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 4.2)
-project(qvim LANGUAGES CXX VERSION 0.1.0) # x-release-please-version
+project(dot LANGUAGES CXX VERSION 0.1.0) # x-release-please-version
 
 # vcpkg reads vcpkg.json's version before CMake runs, so it is a second persisted copy
 # of the canonical project() version rather than a generated one. release-please bumps
 # both in the same release commit; this guard fails the configure the moment they drift.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" QVIM_VCPKG_JSON)
-string(JSON QVIM_VCPKG_VERSION GET "${QVIM_VCPKG_JSON}" version)
-if(NOT "${QVIM_VCPKG_VERSION}" STREQUAL "${PROJECT_VERSION}")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" DOT_VCPKG_JSON)
+string(JSON DOT_VCPKG_VERSION GET "${DOT_VCPKG_JSON}" version)
+if(NOT "${DOT_VCPKG_VERSION}" STREQUAL "${PROJECT_VERSION}")
     message(FATAL_ERROR
-        "Version mismatch: vcpkg.json version '${QVIM_VCPKG_VERSION}' != project() VERSION "
+        "Version mismatch: vcpkg.json version '${DOT_VCPKG_VERSION}' != project() VERSION "
         "'${PROJECT_VERSION}'. Keep them in sync (release-please bumps both together).")
 endif()
 
@@ -19,8 +19,8 @@ configure_file(
     "${CMAKE_BINARY_DIR}/generated/Version.h" @ONLY)
 if(WIN32)
     configure_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources/qvim_version.rc.in"
-        "${CMAKE_BINARY_DIR}/generated/qvim_version.rc" @ONLY)
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/dot_version.rc.in"
+        "${CMAKE_BINARY_DIR}/generated/dot_version.rc" @ONLY)
 endif()
 
 set(CMAKE_CXX_STANDARD 23)
@@ -31,8 +31,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-option(QVIM_ENABLE_ASAN "Build with MSVC AddressSanitizer" OFF)
-option(QVIM_WERROR "Treat qvim's own compiler warnings as errors (CI gate)" OFF)
+option(DOT_ENABLE_ASAN "Build with MSVC AddressSanitizer" OFF)
+option(DOT_WERROR "Treat dot's own compiler warnings as errors (CI gate)" OFF)
 option(BUILD_TESTING "Build the test suites" ON)
 
 find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickTest Test WebSockets)
@@ -48,29 +48,29 @@ if(MSVC)
     add_compile_options(/W4 /permissive- /Zc:__cplusplus /Zc:preprocessor /utf-8
                         /external:anglebrackets /external:W0)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
-    if(QVIM_ENABLE_ASAN)
+    if(DOT_ENABLE_ASAN)
         add_compile_options(/fsanitize=address)
     endif()
 endif()
 
-# Warnings-as-errors, scoped to qvim's OWN targets only — never Qt/vcpkg/msgpack.
+# Warnings-as-errors, scoped to dot's OWN targets only — never Qt/vcpkg/msgpack.
 # A global /WX breaks on Qt headers' C4702 unreachable-code warnings even with
 # /external:anglebrackets /external:W0, so it can't live in the add_compile_options
 # above. Instead this interface carrier applies /WX per target and is opted in by
-# CI with -DQVIM_WERROR=ON. Link it PRIVATE into each first-party target.
-add_library(qvim_warnings INTERFACE)
+# CI with -DDOT_WERROR=ON. Link it PRIVATE into each first-party target.
+add_library(dot_warnings INTERFACE)
 if(MSVC)
     # /WX promotes ALL warnings to errors, including C4702 (unreachable code)
     # emitted from Qt's <QtCore/qnumeric.h> during code generation. That warning
     # is NOT suppressed by /external:anglebrackets /external:W0 (a known MSVC
     # limitation: codegen-phase diagnostics ignore /external), so it would break
     # a /WX build even though it originates entirely in Qt. Disable just C4702
-    # under WERROR; every other warning in qvim's own code is still an error.
-    target_compile_options(qvim_warnings INTERFACE
-        $<$<BOOL:${QVIM_WERROR}>:/WX;/wd4702>)
+    # under WERROR; every other warning in dot's own code is still an error.
+    target_compile_options(dot_warnings INTERFACE
+        $<$<BOOL:${DOT_WERROR}>:/WX;/wd4702>)
 endif()
 
-set(QVIM_LIB_SOURCES
+set(DOT_LIB_SOURCES
     src/AppIcon.cpp             include/AppIcon.h
     src/ArgvParser.cpp          include/ArgvParser.h
     src/CellMetrics.cpp         include/CellMetrics.h
@@ -100,11 +100,11 @@ set(QVIM_LIB_SOURCES
     src/WindowChrome.cpp        include/WindowChrome.h
 )
 
-qt_add_library(qvim_lib STATIC ${QVIM_LIB_SOURCES} resources/qvim.qrc)
-target_include_directories(qvim_lib PUBLIC
+qt_add_library(dot_lib STATIC ${DOT_LIB_SOURCES} resources/dot.qrc)
+target_include_directories(dot_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_BINARY_DIR}/generated)
-target_link_libraries(qvim_lib
+target_link_libraries(dot_lib
     PUBLIC
         Qt6::Core
         Qt6::Gui
@@ -114,13 +114,13 @@ target_link_libraries(qvim_lib
         Qt6::WebSockets
         msgpack-cxx
 )
-target_link_libraries(qvim_lib PRIVATE $<$<PLATFORM_ID:Windows>:dwmapi>)
-target_link_libraries(qvim_lib PRIVATE $<$<PLATFORM_ID:Windows>:dnsapi>)
-target_link_libraries(qvim_lib PRIVATE qvim_warnings)
-set_target_properties(qvim_lib PROPERTIES AUTOMOC ON)
+target_link_libraries(dot_lib PRIVATE $<$<PLATFORM_ID:Windows>:dwmapi>)
+target_link_libraries(dot_lib PRIVATE $<$<PLATFORM_ID:Windows>:dnsapi>)
+target_link_libraries(dot_lib PRIVATE dot_warnings)
+set_target_properties(dot_lib PROPERTIES AUTOMOC ON)
 
-qt_add_qml_module(qvim_lib
-    URI Qvim
+qt_add_qml_module(dot_lib
+    URI Dot
     VERSION 1.0
     QML_FILES
         qml/ChatPanel.qml
@@ -129,13 +129,15 @@ qt_add_qml_module(qvim_lib
 )
 
 if(WIN32)
-    qt_add_executable(qvim src/main.cpp resources/qvim.rc "${CMAKE_BINARY_DIR}/generated/qvim_version.rc")
+    set_property(SOURCE resources/dot.rc APPEND PROPERTY
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/design/icons/dot.ico")
+    qt_add_executable(dot src/main.cpp resources/dot.rc "${CMAKE_BINARY_DIR}/generated/dot_version.rc")
 else()
-    qt_add_executable(qvim src/main.cpp)
+    qt_add_executable(dot src/main.cpp)
 endif()
-target_link_libraries(qvim PRIVATE qvim_lib qvim_libplugin)
-target_link_libraries(qvim PRIVATE qvim_warnings)
-set_target_properties(qvim PROPERTIES WIN32_EXECUTABLE TRUE)
+target_link_libraries(dot PRIVATE dot_lib dot_libplugin)
+target_link_libraries(dot PRIVATE dot_warnings)
+set_target_properties(dot PROPERTIES WIN32_EXECUTABLE TRUE)
 
 if(WIN32)
     # vcpkg's Qt install splits debug/release across separate prefixes, and
@@ -143,16 +145,16 @@ if(WIN32)
     # minimum runtime ourselves: Qt DLLs, the platform plugin, and the QML
     # modules our QML files actually import.
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(QVIM_VCPKG_PREFIX "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug")
-        set(QVIM_QT_DLL_SUFFIX "d")
+        set(DOT_VCPKG_PREFIX "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug")
+        set(DOT_QT_DLL_SUFFIX "d")
     else()
-        set(QVIM_VCPKG_PREFIX "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
-        set(QVIM_QT_DLL_SUFFIX "")
+        set(DOT_VCPKG_PREFIX "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
+        set(DOT_QT_DLL_SUFFIX "")
     endif()
-    set(QVIM_QT_BIN     "${QVIM_VCPKG_PREFIX}/bin")
-    set(QVIM_QT_PLUGINS "${QVIM_VCPKG_PREFIX}/Qt6/plugins")
-    set(QVIM_QT_QML     "${QVIM_VCPKG_PREFIX}/Qt6/qml")
-    set(QVIM_OUT_DIR    "$<TARGET_FILE_DIR:qvim>")
+    set(DOT_QT_BIN     "${DOT_VCPKG_PREFIX}/bin")
+    set(DOT_QT_PLUGINS "${DOT_VCPKG_PREFIX}/Qt6/plugins")
+    set(DOT_QT_QML     "${DOT_VCPKG_PREFIX}/Qt6/qml")
+    set(DOT_OUT_DIR    "$<TARGET_FILE_DIR:dot>")
 
     # qt.conf tells Qt to look in the local dir for plugins + QML modules.
     file(WRITE "${CMAKE_BINARY_DIR}/qt.conf"
@@ -161,11 +163,11 @@ Plugins = .
 Qml2Imports = .
 ")
 
-    # Explicit list of the Qt6 runtime DLLs qvim actually loads (measured from
+    # Explicit list of the Qt6 runtime DLLs dot actually loads (measured from
     # Process.Modules on a real launch). This replaces a blanket
     # `file(GLOB Qt6*.dll)` that copied EVERY Qt6 module — Qt6Widgets,
     # Qt6PrintSupport, Qt6ShaderTools, every QuickControls2 style — none of which
-    # qvim loads. Those unused files still cost cold-start time: Qt's plugin/QML
+    # dot loads. Those unused files still cost cold-start time: Qt's plugin/QML
     # discovery stats+reads them and Windows Defender scans each on first sight.
     # VCPKG_APPLOCAL_DEPS continues to supply the non-Qt transitive deps
     # (freetype/harfbuzz/icu/pcre2/zlib/brotli/...), which windeployqt does NOT.
@@ -173,7 +175,7 @@ Qml2Imports = .
     # GUARDED BY tests/check_deploy.ps1 (ctest: test_deploy_manifest). If you add a
     # Qt module or a QML import and forget to deploy it here, that test fails with a
     # FIX hint pointing back at this block — you never edit the test, only this list.
-    set(QVIM_QT_RUNTIME_DLLS
+    set(DOT_QT_RUNTIME_DLLS
         Qt6Core
         Qt6Gui
         Qt6Network
@@ -184,61 +186,61 @@ Qml2Imports = .
         Qt6Quick
         Qt6WebSockets
     )
-    set(QVIM_QT_DLL_PATHS "")
-    foreach(_qtdll ${QVIM_QT_RUNTIME_DLLS})
-        list(APPEND QVIM_QT_DLL_PATHS
-            "${QVIM_QT_BIN}/${_qtdll}${QVIM_QT_DLL_SUFFIX}.dll")
+    set(DOT_QT_DLL_PATHS "")
+    foreach(_qtdll ${DOT_QT_RUNTIME_DLLS})
+        list(APPEND DOT_QT_DLL_PATHS
+            "${DOT_QT_BIN}/${_qtdll}${DOT_QT_DLL_SUFFIX}.dll")
     endforeach()
 
-    add_custom_command(TARGET qvim POST_BUILD
-        # qt.conf next to qvim.exe so plugin/QML lookup is self-contained
+    add_custom_command(TARGET dot POST_BUILD
+        # qt.conf next to dot.exe so plugin/QML lookup is self-contained
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_BINARY_DIR}/qt.conf"
-            "${QVIM_OUT_DIR}/qt.conf"
-        # Only the Qt6 modules qvim loads (not the whole Qt6*.dll set)
+            "${DOT_OUT_DIR}/qt.conf"
+        # Only the Qt6 modules dot loads (not the whole Qt6*.dll set)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${QVIM_QT_DLL_PATHS}
-            "${QVIM_OUT_DIR}/"
+            ${DOT_QT_DLL_PATHS}
+            "${DOT_OUT_DIR}/"
         # Platform plugin (always required)
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${QVIM_OUT_DIR}/platforms"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DOT_OUT_DIR}/platforms"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${QVIM_QT_PLUGINS}/platforms/qwindows${QVIM_QT_DLL_SUFFIX}.dll"
-            "${QVIM_OUT_DIR}/platforms/qwindows${QVIM_QT_DLL_SUFFIX}.dll"
+            "${DOT_QT_PLUGINS}/platforms/qwindows${DOT_QT_DLL_SUFFIX}.dll"
+            "${DOT_OUT_DIR}/platforms/qwindows${DOT_QT_DLL_SUFFIX}.dll"
         # Minimal platform (for tests under QT_QPA_PLATFORM=minimal)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${QVIM_QT_PLUGINS}/platforms/qminimal${QVIM_QT_DLL_SUFFIX}.dll"
-            "${QVIM_OUT_DIR}/platforms/qminimal${QVIM_QT_DLL_SUFFIX}.dll"
-        # ICO image format plugin (needed to load :/icon.ico for window icon)
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${QVIM_OUT_DIR}/imageformats"
+            "${DOT_QT_PLUGINS}/platforms/qminimal${DOT_QT_DLL_SUFFIX}.dll"
+            "${DOT_OUT_DIR}/platforms/qminimal${DOT_QT_DLL_SUFFIX}.dll"
+        # ICO image format plugin (needed to load :/dot.ico for window icon)
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DOT_OUT_DIR}/imageformats"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${QVIM_QT_PLUGINS}/imageformats/qico${QVIM_QT_DLL_SUFFIX}.dll"
-            "${QVIM_OUT_DIR}/imageformats/qico${QVIM_QT_DLL_SUFFIX}.dll"
-        # QML modules — ONLY what qvim imports (QtQuick + QtQuick.Window) plus the
+            "${DOT_QT_PLUGINS}/imageformats/qico${DOT_QT_DLL_SUFFIX}.dll"
+            "${DOT_OUT_DIR}/imageformats/qico${DOT_QT_DLL_SUFFIX}.dll"
+        # QML modules — ONLY what dot imports (QtQuick + QtQuick.Window) plus the
         # QtQml core they depend on. Previously the whole QtQuick tree (~70MB with
         # Controls/Dialogs/Particles/Effects/Shapes/NativeStyle + PDBs) was copied
         # wholesale — the dominant cold-start payload source.
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${QVIM_OUT_DIR}/QtQuick"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DOT_OUT_DIR}/QtQuick"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${QVIM_QT_QML}/QtQuick/qmldir"
-            "${QVIM_QT_QML}/QtQuick/plugins.qmltypes"
-            "${QVIM_QT_QML}/QtQuick/qtquick2plugin${QVIM_QT_DLL_SUFFIX}.dll"
-            "${QVIM_OUT_DIR}/QtQuick/"
+            "${DOT_QT_QML}/QtQuick/qmldir"
+            "${DOT_QT_QML}/QtQuick/plugins.qmltypes"
+            "${DOT_QT_QML}/QtQuick/qtquick2plugin${DOT_QT_DLL_SUFFIX}.dll"
+            "${DOT_OUT_DIR}/QtQuick/"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            "${QVIM_QT_QML}/QtQuick/Window"   "${QVIM_OUT_DIR}/QtQuick/Window"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${QVIM_OUT_DIR}/QtQml"
+            "${DOT_QT_QML}/QtQuick/Window"   "${DOT_OUT_DIR}/QtQuick/Window"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DOT_OUT_DIR}/QtQml"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${QVIM_QT_QML}/QtQml/qmldir"
-            "${QVIM_QT_QML}/QtQml/plugins.qmltypes"
-            "${QVIM_QT_QML}/QtQml/qmlplugin${QVIM_QT_DLL_SUFFIX}.dll"
-            "${QVIM_OUT_DIR}/QtQml/"
+            "${DOT_QT_QML}/QtQml/qmldir"
+            "${DOT_QT_QML}/QtQml/plugins.qmltypes"
+            "${DOT_QT_QML}/QtQml/qmlplugin${DOT_QT_DLL_SUFFIX}.dll"
+            "${DOT_OUT_DIR}/QtQml/"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            "${QVIM_QT_QML}/QtQml/Models"        "${QVIM_OUT_DIR}/QtQml/Models"
+            "${DOT_QT_QML}/QtQml/Models"        "${DOT_OUT_DIR}/QtQml/Models"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            "${QVIM_QT_QML}/QtQml/WorkerScript"  "${QVIM_OUT_DIR}/QtQml/WorkerScript"
+            "${DOT_QT_QML}/QtQml/WorkerScript"  "${DOT_OUT_DIR}/QtQml/WorkerScript"
         # QtTest QML module — tier-3 qmltest needs it; harmless for the app.
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            "${QVIM_QT_QML}/QtTest"           "${QVIM_OUT_DIR}/QtTest"
-        COMMENT "Deploying trimmed Qt runtime (loaded DLLs + imported QML modules) next to qvim.exe"
+            "${DOT_QT_QML}/QtTest"           "${DOT_OUT_DIR}/QtTest"
+        COMMENT "Deploying trimmed Qt runtime (loaded DLLs + imported QML modules) next to dot.exe"
         VERBATIM
     )
 
@@ -249,12 +251,12 @@ Qml2Imports = .
     # debug deploy looks for quickwindowplugin.dll and fails. Deploy an unsuffixed
     # copy of the debug plugin so the declared name resolves — it is a valid debug
     # binary, and Qt still prefers the suffixed variant at runtime. Release already
-    # ships quickwindowplugin.dll, so this is debug-only (QVIM_QT_DLL_SUFFIX set).
-    if(QVIM_QT_DLL_SUFFIX)
-        add_custom_command(TARGET qvim POST_BUILD
+    # ships quickwindowplugin.dll, so this is debug-only (DOT_QT_DLL_SUFFIX set).
+    if(DOT_QT_DLL_SUFFIX)
+        add_custom_command(TARGET dot POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${QVIM_QT_QML}/QtQuick/Window/quickwindowplugin${QVIM_QT_DLL_SUFFIX}.dll"
-                "${QVIM_OUT_DIR}/QtQuick/Window/quickwindowplugin.dll"
+                "${DOT_QT_QML}/QtQuick/Window/quickwindowplugin${DOT_QT_DLL_SUFFIX}.dll"
+                "${DOT_OUT_DIR}/QtQuick/Window/quickwindowplugin.dll"
             COMMENT "Deploying unsuffixed QtQuick.Window plugin alias for the debug deploy-manifest check"
             VERBATIM
         )
@@ -272,14 +274,14 @@ endif()
 # prefix layout, so we only run this for Release-style builds.
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
     qt_generate_deploy_app_script(
-        TARGET qvim
+        TARGET dot
         OUTPUT_SCRIPT deploy_script
         NO_UNSUPPORTED_PLATFORM_ERROR
     )
     install(SCRIPT ${deploy_script})
 endif()
 
-install(TARGETS qvim
+install(TARGETS dot
     RUNTIME DESTINATION bin
     BUNDLE DESTINATION .
 )

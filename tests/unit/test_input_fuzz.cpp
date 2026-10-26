@@ -19,7 +19,7 @@
 
 #include "InputHandler.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 

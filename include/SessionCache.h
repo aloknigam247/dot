@@ -3,14 +3,14 @@
 
 #include <QString>
 
-namespace qvim {
+namespace Dot {
 
 // Persists the last-known grid dimensions and guifont between sessions so that
 // the next launch can issue nvim_ui_attach with the correct (cols, rows)
 // immediately — eliminating the placeholder→resize round-trip when the font
 // hasn't changed.
 //
-// Storage: %APPDATA%/qvim/session.json.
+// Storage: %APPDATA%/dot/session.json.
 struct SessionCache {
     QString guifont;
     int cols = 0;
@@ -28,6 +28,6 @@ struct SessionCache {
     static void save(const SessionCache &cache);
 };
 
-} // namespace qvim
+} // namespace Dot
 
 #endif

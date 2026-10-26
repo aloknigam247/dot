@@ -4,7 +4,7 @@
 
 #include "InputHandler.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 // Build a QMouseEvent matching what Qt's event system delivers for a given

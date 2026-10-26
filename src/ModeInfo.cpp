@@ -1,6 +1,6 @@
 #include "ModeInfo.h"
 
-namespace qvim {
+namespace Dot {
 
 static QString mapKeyStr(const msgpack::object &mapObj, const char *key) {
     if(mapObj.type != msgpack::type::MAP) return {};
@@ -78,4 +78,4 @@ void ModeInfo::reset() {
     emit currentChanged();
 }
 
-} // namespace qvim
+} // namespace Dot

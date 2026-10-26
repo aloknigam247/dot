@@ -1,4 +1,4 @@
-# qvim — Setup & Build Runbook
+# dot — Setup & Build Runbook
 
 > All steps run in **PowerShell 7 (`pwsh`)** on Windows. Versions below are the ones that actually built successfully (May 2026).
 
@@ -8,7 +8,7 @@
 
 Download and run the bootstrapper directly:
 
-```pwsh
+```ps1
 $dest = "$env:TEMP\vs_buildtools.exe"
 Invoke-WebRequest -Uri "https://aka.ms/vs/18/stable/vs_buildtools.exe" -OutFile $dest -UseBasicParsing
 Start-Process -FilePath $dest -ArgumentList @(
@@ -22,7 +22,7 @@ UAC prompt → Yes. A VS installer UI appears with progress; leave it open until
 
 Verify (`vswhere` needs `-prerelease` because VS 2026 is still flagged that way in some catalogs):
 
-```pwsh
+```ps1
 & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -prerelease -products * -format value -property installationPath
 ```
 
@@ -32,19 +32,19 @@ Should print `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools`. The
 
 Your existing CMake 3.31.6 is too old — the `Visual Studio 18 2026` generator was added in CMake 4.2.
 
-```pwsh
+```ps1
 winget install --id Kitware.CMake --version 4.3.2 --accept-package-agreements --accept-source-agreements
 ```
 
 UAC → Yes. Verify:
 
-```pwsh
+```ps1
 cmake --version   # should print 4.3.x
 ```
 
 ## 3. Bootstrap vcpkg
 
-```pwsh
+```ps1
 git clone https://github.com/microsoft/vcpkg.git D:\vcpkg
 & D:\vcpkg\bootstrap-vcpkg.bat
 [Environment]::SetEnvironmentVariable("VCPKG_ROOT", "D:\vcpkg", "User")
@@ -54,38 +54,39 @@ git clone https://github.com/microsoft/vcpkg.git D:\vcpkg
 
 ## 4. Pin the vcpkg baseline
 
-```pwsh
+```ps1
 $sha = git -C $env:VCPKG_ROOT rev-parse HEAD
-(Get-Content D:\qvim\vcpkg-configuration.json -Raw) -replace 'REPLACE_WITH_CURRENT_BASELINE_COMMIT_SHA', $sha | Set-Content D:\qvim\vcpkg-configuration.json -NoNewline
+(Get-Content .\vcpkg-configuration.json -Raw) -replace 'REPLACE_WITH_CURRENT_BASELINE_COMMIT_SHA', $sha | Set-Content .\vcpkg-configuration.json -NoNewline
 ```
 
 > Note: the dependency in `vcpkg.json` is named **`msgpack`** (not `msgpack-cxx`). The vcpkg port "msgpack" v7.0.0 IS the C++ msgpack-cxx library; the CMake `find_package(msgpack-cxx CONFIG REQUIRED)` call in `CMakeLists.txt` still works.
 
 ## 5. First configure — slow (Qt compile)
 
-```pwsh
-cd D:\qvim
+```ps1
+Set-Location (git rev-parse --show-toplevel)
 cmake --preset release   # or: cmake --preset dev  (Debug escape hatch)
 ```
 
 The first configure runs vcpkg, which **compiles Qt 6.10.3 from source — expect 1–3 hours**. Subsequent configures reuse the cache (~10s).
 
-Produces `D:\qvim\build\release\qvim.sln` (or `build\dev\qvim.sln` for Debug) plus MSBuild project files.
+Produces `build\release\dot.sln` (or `build\dev\dot.sln` for Debug) plus MSBuild project files.
 
 ## 6. Build
 
-```pwsh
+```ps1
 cmake --build --preset release --parallel   # or: cmake --build --preset dev --parallel
 ```
 
 `--parallel` (no number) uses all cores (MSBuild `/m`) — the same flag CI uses. To avoid typing it,
 set `$env:CMAKE_BUILD_PARALLEL_LEVEL` in your PowerShell profile.
 
-Produces `D:\qvim\build\release\RelWithDebInfo\qvim.exe` (Debug: `D:\qvim\build\dev\Debug\qvim.exe`) and 11 test binaries. With `windeployqt` wired into post-build (see CMakeLists.txt), Qt DLLs + plugins are copied next to each `.exe` automatically — no env vars needed at launch.
+Produces `build\release\RelWithDebInfo\dot.exe` (Debug: `build\dev\Debug\dot.exe`) and the test binaries.
+The post-build deployment in `CMakeLists.txt` copies the required Qt runtime next to the executable.
 
 ## 7. Run the tests
 
-```pwsh
+```ps1
 ctest --preset release   # or: ctest --preset dev
 ```
 
@@ -97,8 +98,8 @@ Total wall clock: <30s. Expected result: **11/11 passing**.
 
 ## 8. Launch
 
-```pwsh
-D:\qvim\build\release\RelWithDebInfo\qvim.exe   # or: D:\qvim\build\dev\Debug\qvim.exe
+```ps1
+.\build\release\RelWithDebInfo\dot.exe   # or: .\build\dev\Debug\dot.exe
 ```
 
 A window opens, attaches to nvim, and you'll see a `[No Name]` buffer with cursor in normal mode.
@@ -113,7 +114,7 @@ build/test (steps 1–8) does not require them.
 The Tier-2 integration tests spawn a real `nvim --embed` and locate it with
 `QStandardPaths::findExecutable("nvim")`, so `nvim` must be on `PATH`:
 
-```pwsh
+```ps1
 winget install --id Neovim.Neovim --accept-package-agreements --accept-source-agreements
 nvim --version   # confirm it resolves on PATH (open a new shell if winget just added it)
 ```
@@ -124,7 +125,7 @@ The `tidy` CI job fails on any clang-tidy finding under `src/` or `include/`. `.
 source of truth for the enabled check set. To run the same gate locally you need `clang-tidy` on
 `PATH` (`pip install clang-tidy`) and the Ninja-based compile database:
 
-```pwsh
+```ps1
 cmake --preset tidy                       # generates build/tidy/compile_commands.json
 clang-tidy -p build/tidy --quiet (git ls-files 'src/*.cpp')
 ```
@@ -138,7 +139,7 @@ Coverage uses **`Microsoft.CodeCoverage.Console`**, which ships with the VS 2026
 tools" component (installed by the `--includeRecommended` VCTools workload in step 1). Locate it and
 collect over a **Debug** build (RelWithDebInfo reports covered = 0 because of inlining):
 
-```pwsh
+```ps1
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
 $cc = Get-ChildItem "$vs\Common7\IDE\Extensions\Microsoft\CodeCoverage.Console\Microsoft.CodeCoverage.Console.exe" |
         Select-Object -First 1 -ExpandProperty FullName
@@ -148,11 +149,11 @@ cmake --preset dev; cmake --build --preset dev
     --settings cov.runsettings -- ctest --preset dev
 ```
 
-Every test executable statically links `qvim_lib`, so the report's own line-rate double-counts each
+Every test executable statically links `dot_lib`, so the report's own line-rate double-counts each
 source line once per test module. `scripts/coverage_union.ps1` collapses that into a real union
 figure over `src/` + `include/` and fails if it regresses below the floor:
 
-```pwsh
+```ps1
 pwsh -NoProfile -File scripts\coverage_union.ps1 -CoberturaPath _cov\full.cobertura
 ```
 
@@ -179,16 +180,16 @@ cold-builds Qt (1–3 h) and then publishes the blob. Two one-time requirements:
 | vcpkg complains the baseline doesn't contain `msgpack-cxx` | The vcpkg port is named `msgpack` (not `msgpack-cxx`). Already corrected in `vcpkg.json`. |
 | `find_package(Qt6 6.11 ...)` version mismatch | vcpkg baseline ships Qt 6.10.3, not 6.11.x. `CMakeLists.txt` is set to `6.10`. |
 | Test executables hang at exactly 60s timeout | DLL not found at launch. `windeployqt` post-build step should prevent this; verify it ran. |
-| MSVC Runtime Library error dialog at launch | Missing platform plugin. Confirm `qwindowsd.dll` exists next to `qvim.exe` under `platforms/`. |
-| `qvim.exe` runs but window doesn't appear (Hwnd=0) | QML failed to load. Run with `QT_FORCE_STDERR_LOGGING=1 QT_ASSUME_STDERR_HAS_CONSOLE=1` and read stderr. |
-| `Module "Qvim" plugin "qvim_libplugin" not found` | The plugin needs to be statically linked into the consumer. Both `qvim` and `test_qml` link it in `CMakeLists.txt`. |
-| Orphan `nvim.exe` processes after qvim crashes | Normal — kill them: `Get-Process nvim \| Stop-Process -Force`. The main app now wires `disconnected → app.quit()`, so this only happens on crashes. |
+| MSVC Runtime Library error dialog at launch | Missing platform plugin. Confirm `qwindowsd.dll` exists next to `dot.exe` under `platforms/`. |
+| `dot.exe` runs but window doesn't appear (Hwnd=0) | QML failed to load. Run with `QT_FORCE_STDERR_LOGGING=1 QT_ASSUME_STDERR_HAS_CONSOLE=1` and read stderr. |
+| `Module "Dot" plugin "dot_libplugin" not found` | The plugin needs to be statically linked into the consumer. Both `dot` and `test_qml` link it in `CMakeLists.txt`. |
+| Orphan `nvim.exe` processes after dot crashes | Normal — kill them: `Get-Process nvim \| Stop-Process -Force`. The main app now wires `disconnected → app.quit()`, so this only happens on crashes. |
 
 ## Updating dependencies later
 
-```pwsh
+```ps1
 git -C $env:VCPKG_ROOT pull
 $sha = git -C $env:VCPKG_ROOT rev-parse HEAD
-(Get-Content D:\qvim\vcpkg-configuration.json -Raw) -replace '"baseline": "[a-f0-9]+"', "`"baseline`": `"$sha`"" | Set-Content D:\qvim\vcpkg-configuration.json -NoNewline
+(Get-Content .\vcpkg-configuration.json -Raw) -replace '"baseline": "[a-f0-9]+"', "`"baseline`": `"$sha`"" | Set-Content .\vcpkg-configuration.json -NoNewline
 cmake --preset release   # vcpkg picks up the new baseline  (or: cmake --preset dev)
 ```

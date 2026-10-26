@@ -2,7 +2,7 @@
 
 #include "CursorBlinkState.h"
 
-using namespace qvim;
+using namespace Dot;
 
 class TestCursorBlink : public QObject {
     Q_OBJECT

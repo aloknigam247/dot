@@ -26,7 +26,7 @@
 #include <QVector>
 #include <QWheelEvent>
 
-namespace qvim {
+namespace Dot {
 
 static void parseGuifont(const QString &guifont, QString &family, qreal &size) {
     if(guifont.isEmpty()) return;
@@ -221,7 +221,7 @@ void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h) {
     const QVector<PillSpan> &spans = runs.pills;
 
     // Union bounding box of everything this layer draws. Both features are rare
-    // (pills need g:qvim_rounded_highlights, undercurl needs diagnostics), so
+    // (pills need g:dot_rounded_highlights, undercurl needs diagnostics), so
     // the common frame finds nothing and skips the texture entirely.
     QRectF bbox;
     for(const PillSpan &s: spans) {
@@ -420,8 +420,8 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
         return root;
     }
 
-    // Optional micro-benchmark: enable with QVIM_PROFILE_PAINT=1.
-    static const bool kProfilePaint = qEnvironmentVariableIntValue("QVIM_PROFILE_PAINT") != 0;
+    // Optional micro-benchmark: enable with DOT_PROFILE_PAINT=1.
+    static const bool kProfilePaint = qEnvironmentVariableIntValue("DOT_PROFILE_PAINT") != 0;
     QElapsedTimer paintTimer;
     if(kProfilePaint) paintTimer.start();
 
@@ -521,7 +521,7 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
 
     if(kProfilePaint) {
         const qint64 ns = paintTimer.nsecsElapsed();
-        qDebug("qvim paint: %lld us (%dx%d, %d hl entries cached)", ns / 1000, cols, rows,
+        qDebug("dot paint: %lld us (%dx%d, %d hl entries cached)", ns / 1000, cols, rows,
                fontCache.size());
     }
 
@@ -589,4 +589,4 @@ void GridItem::wheelEvent(QWheelEvent *ev) {
     ev->accept();
 }
 
-} // namespace qvim
+} // namespace Dot

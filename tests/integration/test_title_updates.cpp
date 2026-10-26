@@ -4,8 +4,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 namespace {
 bool waitFor(std::function<bool()> pred, int timeoutMs = 5000) {

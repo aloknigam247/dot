@@ -24,7 +24,7 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 
-namespace qvim {
+namespace Dot {
 
 class QuickRasterizer {
 public:
@@ -62,4 +62,4 @@ private:
     QQuickWindow m_window;
 };
 
-} // namespace qvim
+} // namespace Dot

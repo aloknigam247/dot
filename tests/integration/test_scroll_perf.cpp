@@ -5,7 +5,7 @@
 // paint pipeline. Bypassing focus via conn.input() would hide focus-class
 // regressions per AGENTS.md smoke-harness guidance.
 //
-// Skippable with QVIM_SKIP_PERF=1.
+// Skippable with DOT_SKIP_PERF=1.
 
 #include <QElapsedTimer>
 #include <QGuiApplication>
@@ -21,14 +21,14 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 namespace {
 
 QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn) {
     engine.rootContext()->setContextProperty(QStringLiteral("$connector"), conn);
-    engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+    engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
     if(engine.rootObjects().isEmpty()) return nullptr;
     return qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 }
@@ -50,12 +50,12 @@ class TestScrollPerf : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() {
-        if(qEnvironmentVariableIntValue("QVIM_SKIP_PERF") != 0) {
-            QSKIP("QVIM_SKIP_PERF=1 — skipping perf integration test");
+        if(qEnvironmentVariableIntValue("DOT_SKIP_PERF") != 0) {
+            QSKIP("DOT_SKIP_PERF=1 — skipping perf integration test");
         }
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<Dot::Notification>("Dot::Notification");
+        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
     }
 
     void holdingJStaysSnappy() {

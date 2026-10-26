@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="owl" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="dot owl: Error" data-master="large" data-state="error">
+  <defs>
+    <linearGradient id="shape_2" gradientUnits="userSpaceOnUse" x1="0" y1="324" x2="0" y2="716">
+      <stop offset="0" stop-color="#35493c" />
+      <stop offset="1" stop-color="#1b2820" />
+    </linearGradient>
+    <radialGradient id="shape_5" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.36">
+      <stop offset="0" stop-color="#ffe6e4" />
+      <stop offset="0.4" stop-color="#f8a3a3" />
+      <stop offset="0.62" stop-color="#f2777a" />
+      <stop offset="0.88" stop-color="#b4383c" />
+      <stop offset="1" stop-color="#541214" />
+    </radialGradient>
+    <clipPath id="shape_11">
+      <circle r="118" />
+    </clipPath>
+    <clipPath id="shape_13">
+      <circle r="127.4" />
+    </clipPath>
+  </defs>
+  <g class="owl-face" transform="translate(512 512) scale(1.5)">
+    <g class="a-face">
+      <g transform="translate(-512 -512)">
+        <circle cx="396" cy="520" r="196" fill="url(#shape_2)" />
+        <circle cx="628" cy="520" r="196" fill="url(#shape_2)" />
+        <g transform="translate(396 520)">
+          <g class="a-eye l">
+            <circle cx="0" cy="0" r="118" fill="url(#shape_5)" />
+            <g clip-path="url(#shape_11)">
+              <g transform="translate(0 25.2)">
+                <g class="a-pu l">
+                  <circle cx="0" cy="0" r="54" fill="#0b100d" />
+                  <circle cx="31.8" cy="-37.5" r="17.7" fill="#fff" opacity="0.9" />
+                </g>
+              </g>
+            </g>
+            <path d="M-108.1,-47.2A118,118 0 0 1 108.1,-47.2Z" fill="#1a261d" transform="rotate(-14)" />
+            <path d="M-108.1,-47.2L108.1,-47.2" fill="none" stroke="#704642" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-14)" />
+          </g>
+        </g>
+        <g transform="translate(628 520)">
+          <g class="a-eye r">
+            <circle cx="0" cy="0" r="118" fill="url(#shape_5)" />
+            <g clip-path="url(#shape_11)">
+              <g transform="translate(0 25.2)">
+                <g class="a-pu r">
+                  <circle cx="0" cy="0" r="54" fill="#0b100d" />
+                  <circle cx="31.8" cy="-37.5" r="17.7" fill="#fff" opacity="0.9" />
+                </g>
+              </g>
+            </g>
+            <path d="M-108.1,-47.2A118,118 0 0 1 108.1,-47.2Z" fill="#1a261d" transform="rotate(14)" />
+            <path d="M-108.1,-47.2L108.1,-47.2" fill="none" stroke="#704642" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" transform="rotate(14)" />
+          </g>
+        </g>
+        <g class="a-brow">
+          <g transform="translate(0 0) rotate(-9 396 520)">
+            <g transform="translate(512 404)">
+              <g class="a-bl">
+                <path d="M0,0Q-132,-154 -276,-12" fill="none" stroke="#f2777a" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+              </g>
+            </g>
+          </g>
+          <g transform="translate(0 0) rotate(9 628 520)">
+            <g transform="translate(512 404)">
+              <g class="a-br">
+                <path d="M0,0Q132,-154 276,-12" fill="none" stroke="#f2777a" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+              </g>
+            </g>
+          </g>
+        </g>
+        <g transform="translate(512 612)">
+          <g class="a-beak">
+            <path d="M0,0L28,42L0,104L-28,42Z" fill="#e9ad57" />
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

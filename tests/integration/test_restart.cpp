@@ -1,8 +1,8 @@
 #include "IntegrationHelpers.h"
 #include <QtTest>
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 class TestRestart : public QObject {
     Q_OBJECT
@@ -23,7 +23,7 @@ private slots:
 
         // Marker + pid on the ORIGINAL server; neither survives a real handoff to a
         // freshly spawned server.
-        conn.command(QStringLiteral("let g:qvim_before_restart = 1"));
+        conn.command(QStringLiteral("let g:dot_before_restart = 1"));
         const auto oldPid = evalSync(conn, QStringLiteral("getpid()"));
         QVERIFY(oldPid && oldPid->toInt() > 0);
 
@@ -56,7 +56,7 @@ private slots:
         QVERIFY2(newPidVal != 0, "did not reconnect to a new nvim process after :restart");
 
         // ...and it is fresh: the pre-restart marker did not survive.
-        const auto exists = evalSync(conn, QStringLiteral("exists('g:qvim_before_restart')"), 5000);
+        const auto exists = evalSync(conn, QStringLiteral("exists('g:dot_before_restart')"), 5000);
         QVERIFY(exists);
         QCOMPARE(exists->toInt(), 0);
 

@@ -5,9 +5,10 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/owl_idle"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.QvimCompanion">
+        android:theme="@style/Theme.DotCompanion">
         <activity
             android:name=".MainActivity"
             android:exported="true"

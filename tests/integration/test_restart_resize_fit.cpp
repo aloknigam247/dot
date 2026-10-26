@@ -1,6 +1,6 @@
 // Regression guard: a cell-metric change must never leave the grid overshot.
 //
-// Reported symptom: after :restart the nvim grid ends up TALLER than the qvim
+// Reported symptom: after :restart the nvim grid ends up TALLER than the dot
 // window (last rows / statusline pushed off the bottom) and stays there.
 //
 // Root cause (in GridItem::maybeResizeUi): on :restart the freshly spawned nvim
@@ -34,8 +34,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 namespace {
 
@@ -63,8 +63,8 @@ class TestRestartResizeFit : public QObject {
 
 private slots:
     void initTestCase() {
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<Dot::Notification>("Dot::Notification");
+        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
     }
 
     void correctiveResizeSurvivesStaleModelGuard() {

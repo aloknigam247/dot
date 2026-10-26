@@ -2,7 +2,7 @@
 
 #include <QDebug>
 
-namespace qvim {
+namespace Dot {
 
 Config::Config(QObject *parent) : QObject(parent) {}
 
@@ -73,4 +73,4 @@ void Config::setFromCli(const QString &name, QVariant value) {
     applyAndNotify(name, *it, before);
 }
 
-} // namespace qvim
+} // namespace Dot

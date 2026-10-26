@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Window
-import Qvim 1.0
+import Dot 1.0
 
 Window {
     id: window
@@ -12,7 +12,7 @@ Window {
     // tryResize has reached the real geometry — otherwise the user sees the
     // window pop up at 80x24 and visibly jump to 1200x780 a moment later.
     visible: false
-    title: $connector.title || "qvim"
+    title: $connector.title || "dot"
     color: "#1e1e1e"
 
     // Target grid size requested by Component.onCompleted. Set once; the

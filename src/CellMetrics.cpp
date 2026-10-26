@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace qvim {
+namespace Dot {
 
 CellMetrics computeCellMetrics(const QFontMetricsF &fm, int linespace, qreal dpr) {
     // Snap cell dimensions to a unit that is integer in BOTH logical and
@@ -37,4 +37,4 @@ CellMetrics computeCellMetrics(const QFontMetricsF &fm, int linespace, qreal dpr
     return CellMetrics{ width, height, baseline };
 }
 
-} // namespace qvim
+} // namespace Dot

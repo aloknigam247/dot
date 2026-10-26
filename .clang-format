@@ -1,4 +1,4 @@
-# qvim clang-format standard (issue #41).
+# dot clang-format standard (issue #41).
 # Authoritative tool version: clang-format 22.1.8. Output can differ across releases; format with
 # this version. Applies to C++ under src/, include/, tests/ only (qml/ uses qmlformat; android/
 # builds separately).

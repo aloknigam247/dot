@@ -3,7 +3,7 @@
 
 #include "InputHandler.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 QString translate(int key, Qt::KeyboardModifiers mods, const QString &text) {

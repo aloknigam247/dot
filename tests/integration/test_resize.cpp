@@ -1,8 +1,8 @@
 #include "IntegrationHelpers.h"
 #include <QtTest>
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 class TestResize : public QObject {
     Q_OBJECT

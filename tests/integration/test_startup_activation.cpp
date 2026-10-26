@@ -1,6 +1,6 @@
 // Once-only startup-activation lifecycle guard for issue #69.
 //
-// qvim shipped no startup foreground/activation logic, so on launch its window
+// dot shipped no startup foreground/activation logic, so on launch its window
 // could open behind other windows. The fix adds WindowChrome::activateOnShow(),
 // a once-only hook that fires the first time the window becomes visible and
 // brings it to the foreground.
@@ -22,8 +22,8 @@
 #include "NvimConnector.h"
 #include "WindowChrome.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 namespace {
 
@@ -46,8 +46,8 @@ class TestStartupActivation : public QObject {
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<Dot::Notification>("Dot::Notification");
+        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
     }
 
     void activatesExactlyOnceOnFirstShow() {
@@ -57,7 +57,7 @@ private slots:
 
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("$connector"), &conn);
-        engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+        engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
         QVERIFY(!engine.rootObjects().isEmpty());
         QQuickWindow *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);

@@ -16,7 +16,7 @@
 #include "ChatModel.h"
 #include "CopilotBridgeClient.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 QString compact(const QJsonObject &obj) {
@@ -386,13 +386,13 @@ void TestCopilotBridge::propertyMutatorsAndSessionFrames() {
         QJsonObject{ { QStringLiteral("type"), QStringLiteral("session.start") },
                      { QStringLiteral("sessionId"), QStringLiteral("s1") },
                      { QStringLiteral("data"),
-                       QJsonObject{ { QStringLiteral("cwd"), QStringLiteral("D:/qvim") } } } });
+                       QJsonObject{ { QStringLiteral("cwd"), QStringLiteral("D:\\project") } } } });
     hub.send(QJsonObject{ { QStringLiteral("type"), QStringLiteral("session.end") },
                           { QStringLiteral("sessionId"), QStringLiteral("s1") } });
 
     QVERIFY(waitUntil([&] { return model.count() >= 2; }, 5000));
     QVERIFY(model.textAt(0).contains(QStringLiteral("session started")));
-    QVERIFY(model.textAt(0).contains(QStringLiteral("D:/qvim")));
+    QVERIFY(model.textAt(0).contains(QStringLiteral("D:\\project")));
     QVERIFY(model.textAt(1).contains(QStringLiteral("session ended")));
 
     // Rebinding the URL while active tears down and reopens against the new

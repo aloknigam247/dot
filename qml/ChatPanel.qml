@@ -1,5 +1,5 @@
 import QtQuick
-import Qvim 1.0
+import Dot 1.0
 
 // Dockable chat panel. Long-lived item (never a Repeater delegate) so its
 // focus, the ChatModel instance, and per-delegate state survive nvim window

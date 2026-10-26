@@ -10,7 +10,7 @@
 
 #include <algorithm>
 
-namespace qvim {
+namespace Dot {
 
 static QString asQString(const msgpack::object &o) {
     if(o.type != msgpack::type::STR) return {};
@@ -30,7 +30,7 @@ static int64_t asInt(const msgpack::object &o, int64_t def = 0) {
 
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
-// diverge. qvim renders the single global grid: rgb + ext_linegrid + ext_hlstate.
+// diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
 static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows) {
     pk.pack_array(3);
     pk.pack(static_cast<int64_t>(cols));
@@ -67,7 +67,7 @@ bool NvimConnector::start(const QString &nvimExe, const QStringList &nvimForward
 // so QML overlays can bind via Q_PROPERTY without duplicating the regex.
 // Before nvim's first option_set arrives we defer to the OS-supplied fixed
 // font (Consolas on Windows, Menlo on macOS, system monospace on Linux) so
-// qvim doesn't impose its own font choice.
+// dot doesn't impose its own font choice.
 constexpr qreal kDefaultGuifontSize = 14.0;
 
 static QString systemFixedFontFamily() {
@@ -398,7 +398,7 @@ void NvimConnector::onOptionSet(const QString &name, const QVariant &value) {
     qDebug() << "option_set: unhandled" << name << value;
 }
 
-void NvimConnector::onNotification(const qvim::Notification &note) {
+void NvimConnector::onNotification(const Dot::Notification &note) {
     if(note.method == QStringLiteral("redraw")) {
         handleRedraw(note.params());
         return;
@@ -611,4 +611,4 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
     // hl_group_set, msg_set_pos, wildmenu_* — ignored in v0.
 }
 
-} // namespace qvim
+} // namespace Dot

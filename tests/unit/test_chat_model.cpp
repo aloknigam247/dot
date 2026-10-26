@@ -3,7 +3,7 @@
 
 #include "ChatModel.h"
 
-using namespace qvim;
+using namespace Dot;
 
 class TestChatModel : public QObject {
     Q_OBJECT

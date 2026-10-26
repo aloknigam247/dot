@@ -16,9 +16,9 @@
 
 #include <msgpack.hpp>
 
-#include "QvimMacros.h"
+#include "DotMacros.h"
 
-namespace qvim {
+namespace Dot {
 
 // Maps an nvim listen_addr pipe form to what QLocalSocket::connectToServer expects.
 // nvim emits `//./pipe/<name>`; on Windows QLocalSocket wants `\\.\pipe\<name>`. An
@@ -58,7 +58,7 @@ class MsgpackRpc : public QObject {
 public:
     explicit MsgpackRpc(QObject *parent = nullptr);
     ~MsgpackRpc() override;
-    QVIM_DISABLE_COPY_MOVE(MsgpackRpc)
+    DOT_DISABLE_COPY_MOVE(MsgpackRpc)
 
     bool startEmbeddedNvim(const QString &nvimExe, const QStringList &extraArgs = {});
     // Connects to an already-running nvim server's listen address (Windows named
@@ -75,11 +75,11 @@ public:
 
     // Best-effort bounded shutdown of the current server: sends `qa!`, flushes the
     // written bytes, then waits up to timeoutMs for the transport to close. Used to
-    // avoid orphaning a socket-attached server (after :restart) when qvim exits.
+    // avoid orphaning a socket-attached server (after :restart) when dot exits.
     void shutdownAndWait(int timeoutMs = 1000);
 
 signals:
-    void notification(const qvim::Notification &note);
+    void notification(const Dot::Notification &note);
     void connected();       // socket transport reached ConnectedState (reconnect)
     void transportClosed(); // internal: active transport hit EOF / finished
     void transportError(const QString &message); // socket connect / runtime error
@@ -108,9 +108,9 @@ private:
 
 inline std::string toStd(const QString &s) { return s.toStdString(); }
 
-} // namespace qvim
+} // namespace Dot
 
-Q_DECLARE_METATYPE(qvim::ObjectHandlePtr)
-Q_DECLARE_METATYPE(qvim::Notification)
+Q_DECLARE_METATYPE(Dot::ObjectHandlePtr)
+Q_DECLARE_METATYPE(Dot::Notification)
 
 #endif

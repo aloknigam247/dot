@@ -5,7 +5,7 @@
 #include <QString>
 #include <QVector>
 
-namespace qvim {
+namespace Dot {
 
 class GridModel;
 class HighlightTable;
@@ -79,6 +79,6 @@ bool isPuaChar(QChar c);
 // is what makes it unit-testable headlessly.
 GridRuns buildGridRuns(const GridModel &grid, const HighlightTable &hl, int gridId);
 
-} // namespace qvim
+} // namespace Dot
 
 #endif

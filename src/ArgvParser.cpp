@@ -1,10 +1,9 @@
 #include "ArgvParser.h"
 
-#include <QDebug>
 #include <QString>
 #include <QStringList>
 
-namespace qvim {
+namespace Dot {
 
 // PowerShell 7 (with the default PSNativeCommandArgumentPassing=Legacy) mangles
 // native-exe invocations when any arg contains `.\`, `/`, or other special
@@ -26,8 +25,8 @@ static void appendNormalized(const QString &raw, QStringList &out) {
     out << raw;
 }
 
-QvimArgs parseArgv(int argc, char **argv) {
-    QvimArgs out;
+DotArgs parseArgv(int argc, char **argv) {
+    DotArgs out;
     QStringList logical;
     for(int i = 1; i < argc; ++i) { appendNormalized(QString::fromLocal8Bit(argv[i]), logical); }
     for(const QString &arg: logical) {
@@ -39,21 +38,15 @@ QvimArgs parseArgv(int argc, char **argv) {
             out.versionRequested = true;
             continue;
         }
-        if(arg.startsWith(QStringLiteral("--qvim-"))) {
-            // Reserved namespace for future qvim-only options. Swallowed here
-            // so it never leaks into nvim's argv, where it would be rejected.
-            qDebug() << "qvim: ignoring reserved option" << arg;
-            continue;
-        }
         if(arg == QStringLiteral("-")) {
-            // Consumed by qvim — forwarding to nvim --embed would conflict
+            // Consumed by dot — forwarding to nvim --embed would conflict
             // with the RPC channel that already owns nvim's stdin.
             out.stdinAsBuffer = true;
             continue;
         }
-        out.nvimForwardArgs << arg;
+        out.editorArgs << arg;
     }
     return out;
 }
 
-} // namespace qvim
+} // namespace Dot

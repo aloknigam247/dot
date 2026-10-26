@@ -22,16 +22,16 @@
 #include "ResizeCoalescer.h"
 #include <msgpack.hpp>
 
-namespace qvim {
+namespace Dot {
 
 class NvimConnector : public QObject {
     Q_OBJECT
     QML_ELEMENT
     QML_UNCREATABLE("Provided via context property $connector")
 
-    Q_PROPERTY(qvim::GridModel *grid READ grid CONSTANT)
-    Q_PROPERTY(qvim::HighlightTable *highlights READ highlights CONSTANT)
-    Q_PROPERTY(qvim::ModeInfo *modeInfo READ modeInfo CONSTANT)
+    Q_PROPERTY(Dot::GridModel *grid READ grid CONSTANT)
+    Q_PROPERTY(Dot::HighlightTable *highlights READ highlights CONSTANT)
+    Q_PROPERTY(Dot::ModeInfo *modeInfo READ modeInfo CONSTANT)
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(QString guifont READ guifont NOTIFY guifontChanged)
     // Parsed convenience accessors so any QML overlay can do
@@ -66,7 +66,7 @@ public:
 
     // Issues `nvim_get_var(name)` and invokes `cb` with the unpacked value on
     // success, or with an empty optional if the variable is unset / errored.
-    // Used by ConfigGGlobalReader to populate Config from g:qvim_* globals.
+    // Used by ConfigGGlobalReader to populate Config from g:dot_* globals.
     using GetVarCallback = std::function<void(std::optional<QVariant>)>;
     void getVar(const QString &name, GetVarCallback cb);
 
@@ -101,12 +101,12 @@ public:
     // only from tests / programmatic resize where the synchronous behaviour
     // is required.
     Q_INVOKABLE void requestResize(int cols, int rows);
-    qvim::ResizeCoalescer *resizeCoalescer() const { return m_resizeCoalescer; }
+    Dot::ResizeCoalescer *resizeCoalescer() const { return m_resizeCoalescer; }
     Q_INVOKABLE void paste(const QString &text);
     Q_INVOKABLE void command(const QString &cmd);
     Q_INVOKABLE void execLua(const QString &code);
     // Populates the current buffer with `bytes`, splitting on \n and trimming
-    // trailing \r. Used to implement `qvim -` (read stdin into buffer 1).
+    // trailing \r. Used to implement `dot -` (read stdin into buffer 1).
     void loadStdinIntoBuffer(const QByteArray &bytes);
     // Direct option_set entry point. Used by the redraw dispatch (after
     // unpacking the msgpack value to QVariant) and by unit tests that don't
@@ -125,7 +125,7 @@ signals:
     void nvimRequestedResize(int cols, int rows);
     void bell();
     void disconnected();
-    void customNotification(const qvim::Notification &note);
+    void customNotification(const Dot::Notification &note);
     void arabicshapeChanged();
     void ambiwidthChanged();
     void emojiChanged();
@@ -139,7 +139,7 @@ signals:
     void termguicolorsChanged();
 
 private:
-    Q_SLOT void onNotification(const qvim::Notification &note);
+    Q_SLOT void onNotification(const Dot::Notification &note);
     Q_SLOT void onRpcDisconnected();
     Q_SLOT void onRestartConnected();
     Q_SLOT void onRestartFailed();
@@ -150,7 +150,7 @@ private:
     // Called on :restart just before the new server's first redraw batch.
     void resetUiState();
 
-    // Bounds the :restart reconnect so a dead listen_addr can't hang qvim open.
+    // Bounds the :restart reconnect so a dead listen_addr can't hang dot open.
     static constexpr int kRestartTimeoutMs = 5000;
 
     MsgpackRpc *m_rpc = nullptr;
@@ -174,7 +174,7 @@ private:
     int m_currentCols = 0;
     int m_currentRows = 0;
 
-    // FIFO of (cols, rows) sizes qvim asked nvim for via attachUi/tryResize,
+    // FIFO of (cols, rows) sizes dot asked nvim for via attachUi/tryResize,
     // awaiting their grid_resize ack. A grid_resize whose size is absent here
     // is nvim-originated (e.g. :set columns) and drives a window resize. Bounded
     // so a never-matched entry can't grow it without limit.
@@ -195,6 +195,6 @@ private:
     bool m_termguicolors = false;
 };
 
-} // namespace qvim
+} // namespace Dot
 
 #endif

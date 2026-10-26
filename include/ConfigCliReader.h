@@ -3,11 +3,11 @@
 
 #include <QStringList>
 
-namespace qvim {
+namespace Dot {
 
 class Config;
 
-// Extracts `--qvim-<name>[=<value>]` arguments from `args`.
+// Extracts `--dot-<name>[=<value>]` arguments from `args`.
 //
 // Side effects:
 //   * For every recognised option (registered in `cfg` with a matching type),
@@ -16,19 +16,18 @@ class Config;
 //     forwarded to nvim verbatim.
 //
 // Forms accepted:
-//   --qvim-name=value   — value parsed per registered ConfigType
-//   --qvim-name         — Bool only; equivalent to value=true
+//   --dot-name=value   — value parsed per registered ConfigType
+//   --dot-name         — Bool only; equivalent to value=true
 //
 // Bool values accept: 1/0, true/false, yes/no, on/off (case-insensitive).
 // StringList values are comma-separated.
 //
-// Unknown names are logged via qDebug and left in `args` so nvim can complain
-// if they were not intended for qvim.
+// Unknown dot options are logged via qDebug and removed from args.
 class ConfigCliReader {
 public:
     static QStringList extract(QStringList &args, Config &cfg);
 };
 
-} // namespace qvim
+} // namespace Dot
 
 #endif

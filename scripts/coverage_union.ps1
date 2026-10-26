@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Compute UNION line coverage over qvim's own src/ + include/ from a cobertura
+    Compute UNION line coverage over dot's own src/ + include/ from a cobertura
     report and enforce a floor. Fails (exit 1) if coverage regresses below it.
 
 .DESCRIPTION
-    Every qvim test executable statically links qvim_lib, so a cobertura report
+    Every dot test executable statically links dot_lib, so a cobertura report
     produced by Microsoft.CodeCoverage.Console contains one <class> per (source
     file, test module) pair — the same source line appears dozens of times, once
     per module that linked it. The report's own line-rate / lines-covered totals
@@ -12,7 +12,7 @@
 
     This script collapses that: a source line counts as covered if ANY module
     hit it, and each (file, line) is counted exactly once. Only files under
-    qvim's src/ or include/ are considered (the collector's runsettings already
+    dot's src/ or include/ are considered (the collector's runsettings already
     restricts Sources, but we re-filter defensively so a stray path can't skew
     the number).
 

@@ -3,7 +3,7 @@
 // regressions in the model's cell-move routine surface in tier-1 CI rather
 // than only manifesting as visible lag in the integration smoke test.
 //
-// Skippable with QVIM_SKIP_PERF=1 for sanitizer / debug-CI runs where wall
+// Skippable with DOT_SKIP_PERF=1 for sanitizer / debug-CI runs where wall
 // timings are uninformative.
 
 #include <algorithm>
@@ -14,7 +14,7 @@
 
 #include "GridModel.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 
@@ -37,8 +37,8 @@ class TestScrollPerfMicro : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() {
-        if(qEnvironmentVariableIntValue("QVIM_SKIP_PERF") != 0) {
-            QSKIP("QVIM_SKIP_PERF=1 — skipping perf micro-benchmark");
+        if(qEnvironmentVariableIntValue("DOT_SKIP_PERF") != 0) {
+            QSKIP("DOT_SKIP_PERF=1 — skipping perf micro-benchmark");
         }
     }
 

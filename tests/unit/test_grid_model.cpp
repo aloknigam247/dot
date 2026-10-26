@@ -3,7 +3,7 @@
 
 #include "GridModel.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 

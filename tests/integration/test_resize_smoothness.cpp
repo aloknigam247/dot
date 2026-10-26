@@ -6,8 +6,8 @@
 #include "NvimConnector.h"
 #include "ResizeCoalescer.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 class TestResizeSmoothness : public QObject {
     Q_OBJECT

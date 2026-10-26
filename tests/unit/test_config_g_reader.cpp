@@ -4,7 +4,7 @@
 #include "Config.h"
 #include "ConfigGGlobalReader.h"
 
-using namespace qvim;
+using namespace Dot;
 
 class TestConfigGReader : public QObject {
     Q_OBJECT
@@ -15,9 +15,9 @@ private slots:
         cfg.registerOption(QStringLiteral("padding"), ConfigType::Int, 0);
 
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_opacity"), 0.7);
-        vars.insert(QStringLiteral("qvim_padding"), 8);
-        vars.insert(QStringLiteral("qvim_unknown_var"), 42);
+        vars.insert(QStringLiteral("dot_opacity"), 0.7);
+        vars.insert(QStringLiteral("dot_padding"), 8);
+        vars.insert(QStringLiteral("dot_unknown_var"), 42);
 
         ConfigGGlobalReader::readFromMap(vars, cfg);
 
@@ -30,7 +30,7 @@ private slots:
         Config cfg;
         cfg.registerOption(QStringLiteral("fallback"), ConfigType::StringList, QStringList{});
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_fallback"), QVariant(QStringList{ "a", "b", "c" }));
+        vars.insert(QStringLiteral("dot_fallback"), QVariant(QStringList{ "a", "b", "c" }));
         ConfigGGlobalReader::readFromMap(vars, cfg);
         const QStringList expected{ "a", "b", "c" };
         QCOMPARE(cfg.value(QStringLiteral("fallback")).toStringList(), expected);
@@ -50,7 +50,7 @@ private slots:
         Config cfg;
         cfg.registerOption(QStringLiteral("frameless"), ConfigType::Bool, false);
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_frameless"), 1);
+        vars.insert(QStringLiteral("dot_frameless"), 1);
         ConfigGGlobalReader::readFromMap(vars, cfg);
         QCOMPARE(cfg.value(QStringLiteral("frameless")).toBool(), true);
     }
@@ -61,7 +61,7 @@ private slots:
         Config cfg;
         cfg.registerOption(QStringLiteral("frameless"), ConfigType::Bool, false);
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_frameless"), QStringLiteral("hello"));
+        vars.insert(QStringLiteral("dot_frameless"), QStringLiteral("hello"));
         ConfigGGlobalReader::readFromMap(vars, cfg);
         QCOMPARE(cfg.value(QStringLiteral("frameless")).toBool(), false);
     }
@@ -70,7 +70,7 @@ private slots:
         Config cfg;
         cfg.registerOption(QStringLiteral("theme"), ConfigType::String, QStringLiteral("light"));
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_theme"), QStringLiteral("dark"));
+        vars.insert(QStringLiteral("dot_theme"), QStringLiteral("dark"));
         ConfigGGlobalReader::readFromMap(vars, cfg);
         QCOMPARE(cfg.value(QStringLiteral("theme")).toString(), QStringLiteral("dark"));
     }
@@ -79,7 +79,7 @@ private slots:
         Config cfg;
         cfg.registerOption(QStringLiteral("fallback"), ConfigType::StringList, QStringList{});
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_fallback"), QStringLiteral("solo"));
+        vars.insert(QStringLiteral("dot_fallback"), QStringLiteral("solo"));
         ConfigGGlobalReader::readFromMap(vars, cfg);
         QCOMPARE(cfg.value(QStringLiteral("fallback")).toStringList(),
                  QStringList{ QStringLiteral("solo") });
@@ -93,12 +93,20 @@ private slots:
         cfg.registerOption(QStringLiteral("fallback"), ConfigType::StringList,
                            QStringList{ QStringLiteral("def") });
         QHash<QString, QVariant> vars;
-        vars.insert(QStringLiteral("qvim_theme"), QVariant(QVariantMap{ { "k", 1 } }));
-        vars.insert(QStringLiteral("qvim_fallback"), QVariant(QVariantMap{ { "k", 1 } }));
+        vars.insert(QStringLiteral("dot_theme"), QVariant(QVariantMap{ { "k", 1 } }));
+        vars.insert(QStringLiteral("dot_fallback"), QVariant(QVariantMap{ { "k", 1 } }));
         ConfigGGlobalReader::readFromMap(vars, cfg);
         QCOMPARE(cfg.value(QStringLiteral("theme")).toString(), QStringLiteral("light"));
         QCOMPARE(cfg.value(QStringLiteral("fallback")).toStringList(),
                  QStringList{ QStringLiteral("def") });
+    }
+
+    void unrelatedPrefixDoesNotApply() {
+        Config cfg;
+        cfg.registerOption(QStringLiteral("padding"), ConfigType::Int, 0);
+        const QHash<QString, QVariant> vars{ { QStringLiteral("previous_app_padding"), 9 } };
+        ConfigGGlobalReader::readFromMap(vars, cfg);
+        QCOMPARE(cfg.value(QStringLiteral("padding")).toInt(), 0);
     }
 };
 

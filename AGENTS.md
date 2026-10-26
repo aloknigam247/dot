@@ -1,6 +1,6 @@
-# qvim — agent guide
+# dot — agent guide
 
-qvim is a Neovim GUI client written in C++23 / Qt 6.10 / QML, talking to an embedded `nvim --embed` process over msgpack-rpc. The shell is QML, the grid renderer is a `QQuickPaintedItem`, and tests run against a real `nvim` binary through the offscreen QPA.
+dot is a Neovim GUI client written in C++23 / Qt 6.10 / QML, talking to an embedded `nvim --embed` process over msgpack-rpc. The shell is QML, the grid renderer is a `QQuickPaintedItem`, and tests run against a real `nvim` binary through the offscreen QPA.
 
 ## Compatibility
 
@@ -36,7 +36,7 @@ their own sake.
 - For changes to `InputHandler`: `test_input_handler` must pass, and prefer adding a fuzz case if you touched key encoding.
 - For changes that affect QML: `test_qml` must pass.
 - Don't claim "should work" — run the test.
-- **Treat agent reports as claims, not proof.** A single green ctest run can mask: (a) flaky tests that pass intermittently — rerun any new tier-2 test 5–10× before trusting it; (b) tests using `qWarning` / soft thresholds instead of `QVERIFY` for the actual feature signal — read the test source and confirm the strong assertion is a hard fail; (c) pixel-band heuristics that respond to kerning or sub-pixel changes without proving the feature works — for visual features, capture the rendered window (`scripts/screenshot_qvim.ps1`) and inspect.
+- **Treat agent reports as claims, not proof.** A single green ctest run can mask: (a) flaky tests that pass intermittently — rerun any new tier-2 test 5–10× before trusting it; (b) tests using `qWarning` / soft thresholds instead of `QVERIFY` for the actual feature signal — read the test source and confirm the strong assertion is a hard fail; (c) pixel-band heuristics that respond to kerning or sub-pixel changes without proving the feature works — for visual features, capture the rendered window (`scripts/screenshot_dot.ps1`) and inspect.
 
 ## Layout
 
@@ -62,7 +62,7 @@ Directory-scoped instructions live in nested `AGENTS.md` files that auto-load wh
 
 ## Build
 
-```pwsh
+```ps1
 cmake --preset release
 cmake --build --preset release --parallel
 ctest --preset release
@@ -73,11 +73,11 @@ uses, so local and CI builds parallelize identically. There is no "all cores" va
 `jobs` field (it needs a fixed integer), so the flag is the portable way; to avoid typing it, set
 `$env:CMAKE_BUILD_PARALLEL_LEVEL` in your PowerShell profile.
 
-Output: `build/release/RelWithDebInfo/qvim.exe`. Do NOT use `cmake --build --preset dev --config Release` — that produces a Release build under the dev preset's multi-config solution (`build/dev/Release/`), which is not the intended release binary.
+Output: `build/release/RelWithDebInfo/dot.exe`. Do NOT use `cmake --build --preset dev --config Release` — that produces a Release build under the dev preset's multi-config solution (`build/dev/Release/`), which is not the intended release binary.
 
 **Debug build** (breakpoints, sanitizers, assert-heavy inspection — the escape hatch):
 
-```pwsh
+```ps1
 cmake --preset dev
 cmake --build --preset dev --parallel
 ctest --preset dev
@@ -85,7 +85,7 @@ ctest --preset dev
 
 **Which build to use.** When implementing or validating a feature, prefer the **Release** preset — that's the binary users actually run. Use the Debug (`dev`) build **only** when you actually need to debug (breakpoints, sanitizers, assert-heavy inspection). If there's no active reason for Debug, build and test Release.
 
-The post-build step in `CMakeLists.txt` deploys Qt DLLs + `qt.conf` + platform plugins + QML modules next to `qvim.exe` for BOTH Debug and Release builds. The block is parameterised on `CMAKE_BUILD_TYPE` (debug DLLs use the `d` suffix, debug vcpkg prefix has the extra `debug/` segment). `qt_generate_deploy_app_script` + `install(SCRIPT ...)` is still wired up for non-Debug consumers running `cmake --install` — but the build-tree exe at `build/<preset>/<Config>/qvim.exe` is launchable directly without an install step.
+The post-build step in `CMakeLists.txt` deploys Qt DLLs + `qt.conf` + platform plugins + QML modules next to `dot.exe` for BOTH Debug and Release builds. The block is parameterised on `CMAKE_BUILD_TYPE` (debug DLLs use the `d` suffix, debug vcpkg prefix has the extra `debug/` segment). `qt_generate_deploy_app_script` + `install(SCRIPT ...)` is still wired up for non-Debug consumers running `cmake --install` — but the build-tree exe at `build/<preset>/<Config>/dot.exe` is launchable directly without an install step.
 
 ## Conventions
 
@@ -106,24 +106,24 @@ Three tiers (see `tests/CMakeLists.txt`):
 - **Tier 3** `tests/qml/` — `qmltest` `TestCase {}` against QML in isolation.
 
 **User-POV smoke harness** (`tests/integration/test_user_smoke.cpp` is the template):
-1. `QQmlApplicationEngine.loadFromModule("Qvim", "Main")` after `setContextProperty("$connector", ...)`.
+1. `QQmlApplicationEngine.loadFromModule("Dot", "Main")` after `setContextProperty("$connector", ...)`.
 2. Drive input via `QTest::keyClick(window, key)` — routes through Qt's `activeFocusItem` lookup, so a focus regression makes the assertion fail. Never call `conn.input()` directly from a smoke test; that bypasses the bug class smoke tests are meant to catch.
 3. Wait on async nvim state with a `waitUntil(pred, timeoutMs)` helper that calls `QCoreApplication::processEvents` between checks.
 4. **Visual confirmation**: `QQuickItem::grabToImage()` on the subtree, then assert >1 distinct pixel colour. Catches black-on-black / opacity-0 / z-order render bugs. **Do not** use `QQuickWindow::grabWindow()` — returns null under `minimal` QPA.
 5. Set `QQuickWindow::setGraphicsApi(QSGRendererInterface::Software)` in `initTestCase()` so the software renderer is selected before any window is created.
-6. Test target must link `qvim_libplugin` + `Qt6::Quick` to register the Qvim QML module statically.
+6. Test target must link `dot_libplugin` + `Qt6::Quick` to register the Dot QML module statically.
 
 ## Gotchas
 
 - vcpkg's Qt deploys only `minimal`, `windows`, `direct2d` QPA plugins — no `offscreen`. Smoke tests use `minimal` + software renderer.
-- Concurrent builds against `D:\qvim\build\dev` contend on `vcpkg-running.lock` and `qvim_lib.pdb`. Serialise builds when running multiple agents, or build individual `.vcxproj` targets via MSBuild to skip the vcpkg-configure step.
+- Concurrent builds against the same `build\dev` directory contend on `vcpkg-running.lock` and `dot_lib.pdb`. Serialise builds when running multiple agents, or build individual `.vcxproj` targets via MSBuild to skip the vcpkg-configure step.
 - `QQuickPaintedItem::paint()` runs on the SceneGraph **render thread**, not the GUI thread. Any `QRawFont` / `QFontEngine`-backed object must be constructed AND destroyed on the render thread (the dtor also asserts thread affinity). If you cache one, hook `QQuickWindow::sceneGraphInvalidated` with `Qt::DirectConnection` to release it before the SceneGraph tears down.
-- After merging library-only `.cpp` changes into main, the incremental linker may skip relinking `qvim.exe` — the .lib changes, the .exe doesn't. Always force-rebuild with `cmake --build --preset dev --target qvim` before asking the user to verify a fix; otherwise they're testing a stale binary. Same trap exists for an agent's worktree exe: ctest can pass against the new .lib while `<worktree>/build/dev/Debug/qvim.exe` is still from an earlier build. Before validating an agent's worktree binary, check `Get-Item <worktree>/build/dev/Debug/qvim.exe` mtime against `git log -1 --format=%ci <branch>` — if the exe is older, delete it and rerun `cmake --build --preset dev --target qvim`.
+- After merging library-only `.cpp` changes into main, the incremental linker may skip relinking `dot.exe` — the .lib changes, the .exe doesn't. Always force-rebuild with `cmake --build --preset dev --target dot` before asking the user to verify a fix; otherwise they're testing a stale binary. Same trap exists for an agent's worktree exe: ctest can pass against the new .lib while `<worktree>/build/dev/Debug/dot.exe` is still from an earlier build. Before validating an agent's worktree binary, check `Get-Item <worktree>/build/dev/Debug/dot.exe` mtime against `git log -1 --format=%ci <branch>` — if the exe is older, delete it and rerun `cmake --build --preset dev --target dot`.
 - `Q_PROPERTY(qreal baseline ...)` on a `QQuickPaintedItem` subclass silently fails: Qt's MOC emits "Final member baseline is overridden. The override won't be used." and QML treats the property as read-only (bindings like `cursorItem.baseline: baseGrid.baseline` produce "Invalid property assignment: baseline is a read-only property"). The trap is that the warning is on the property *override*, not the original — QQuickItem has an internal FINAL `baseline` member that shadows any subclass property of the same name. Rename to anything else (`cellBaseline`, `textBaseline`) to avoid the clash. Other Qt-reserved-name candidates that should not be Q_PROPERTYs on QQuickItem subclasses include `baselineOffset` (real Q_PROPERTY), `clip`, `enabled`, `focus`, `visible`, etc. — when in doubt, prefix with a domain word.
-- The `powershell` tool runs each command in a **fresh process** — working directory, environment variables, and shell state do not persist across calls. Cherry-picking and other parent-checkout operations must `cd D:\qvim` (or use `git -C D:\qvim ...`) explicitly in the same command — otherwise you commit/build/test in the wrong tree.
-- Boot-profile instrumentation is gated behind `QVIM_BOOT_PROFILE=1`. Phase timings go to `qDebug` (invisible under `/SUBSYSTEM:WINDOWS` launched from Explorer) **and** to the path in `QVIM_BOOT_PROFILE_FILE` when set. Use the file form for windowed launches: `$env:QVIM_BOOT_PROFILE=1; $env:QVIM_BOOT_PROFILE_FILE='D:\qvim\_boot.log'; qvim.exe`.
-- Qt 6.10 on Windows: `QFont::setFeature(QFont::Tag("liga"), 1)` / `setFeature("calt", 1)` does NOT enable OpenType ligatures for monospace fonts even though the API exists. Cascadia Code / JetBrainsMono ligatures that render in VS Code and Windows Terminal will NOT form in qvim through this path. A working ligature implementation needs a different approach (custom shaping via `QRawFont` + HarfBuzz directly, or `QTextLayout` with explicit feature config) — and a test that asserts on actual ligature *glyph substitution*, not pixel-band density (which responds to kerning changes alone, producing false positives).
-- PowerShell's `Set-Content` writes CRLF on Windows. nvim's `-u init.vim` reads CRLF as a `^M` literal at the end of each line, so commands like `autocmd VimEnter * startinsert` become `startinsert^M` and fail with `E488: Trailing characters`. When generating init.vim from a script (e.g. `scripts/screenshot_qvim.ps1` test fixtures), use `[IO.File]::WriteAllText($path, "set ...`n...")` instead — backtick-n in a double-quoted PowerShell string is a single LF.
+- The `powershell` tool runs each command in a **fresh process** — working directory, environment variables, and shell state do not persist across calls. Cherry-picking and other parent-checkout operations must use `Set-Location <checkout>` (or `git -C <checkout> ...`) explicitly in the same command — otherwise you commit/build/test in the wrong tree.
+- Boot-profile instrumentation is gated behind `DOT_BOOT_PROFILE=1`. Phase timings go to `qDebug` (invisible under `/SUBSYSTEM:WINDOWS` launched from Explorer) **and** to the path in `DOT_BOOT_PROFILE_FILE` when set. Use the file form for windowed launches: `$env:DOT_BOOT_PROFILE=1; $env:DOT_BOOT_PROFILE_FILE=(Join-Path $PWD "_boot.log"); dot.exe`.
+- Qt 6.10 on Windows: `QFont::setFeature(QFont::Tag("liga"), 1)` / `setFeature("calt", 1)` does NOT enable OpenType ligatures for monospace fonts even though the API exists. Cascadia Code / JetBrainsMono ligatures that render in VS Code and Windows Terminal will NOT form in dot through this path. A working ligature implementation needs a different approach (custom shaping via `QRawFont` + HarfBuzz directly, or `QTextLayout` with explicit feature config) — and a test that asserts on actual ligature *glyph substitution*, not pixel-band density (which responds to kerning changes alone, producing false positives).
+- PowerShell's `Set-Content` writes CRLF on Windows. nvim's `-u init.vim` reads CRLF as a `^M` literal at the end of each line, so commands like `autocmd VimEnter * startinsert` become `startinsert^M` and fail with `E488: Trailing characters`. When generating init.vim from a script (e.g. `scripts/screenshot_dot.ps1` test fixtures), use `[IO.File]::WriteAllText($path, "set ...`n...")` instead — backtick-n in a double-quoted PowerShell string is a single LF.
 
 ## Fanning out subagents
 
@@ -138,7 +138,7 @@ When fanning out a batch that touches any shared file:
 
 1. Agents commit to their worktree branch and **STOP** — no self-merge. Self-merging racing on shared files (CMakeLists, main.cpp, tests/CMakeLists.txt) reliably loses commits via `reset --hard $prevHead` on build-failure paths.
 2. The parent (you) cherry-picks branches into main sequentially. Use `git cherry-pick <sha>`, not rebase — rebase replays through every intermediate commit and conflicts on each one; cherry-pick re-applies just the target's delta against current main.
-3. After each merge: `cmake --build --preset release` to verify, then force-rebuild qvim if only the .lib changed (see Gotchas).
+3. After each merge: `cmake --build --preset release` to verify, then force-rebuild dot if only the .lib changed (see Gotchas).
 4. Delete the worktree + branch only AFTER the user verifies the merged behaviour. A test-passing branch can still produce a visually broken binary; keep the worktree until the manual smoke confirms.
 5. If a cherry-picked commit must be backed out, prefer `git rebase --onto <good-base> <bad-commit> main` to drop it cleanly from history instead of `git revert`. Revert commits clutter the log and leave the original commit + its revert both visible. Use revert only when the bad commit has been pushed and others may have based work on it.
 
@@ -146,18 +146,18 @@ When fanning out a batch that touches any shared file:
 
 Agents launched with `isolation: "worktree"` get a dedicated worktree checkout but **do not get path translation**. The edit/create tools take absolute paths verbatim.
 
-- **Never** use `D:\qvim\` in agent edit/create/powershell calls — those writes go to main, bypass isolation, and stomp other agents.
+- **Never** use the main checkout's absolute path in agent edit/create/powershell calls — those writes bypass isolation and stomp other agents.
 - Always derive paths from `git rev-parse --show-toplevel` or `$PWD` — never hardcode the main checkout path in an agent's edit/create/powershell calls.
 
 ## Visual validation
 
-For paint-path / font / cursor / selection changes, the authoritative validation is a screenshot of the rendered qvim window (tests can pass while the user-visible feature is broken — see "Verify, don't assume" above). The `visual-validate-qvim` skill under `.github/skills/` automates this.
+For paint-path / font / cursor / selection changes, the authoritative validation is a screenshot of the rendered dot window (tests can pass while the user-visible feature is broken — see "Verify, don't assume" above). The `visual-validate-dot` skill under `.github/skills/` automates this.
 
-```pwsh
-pwsh scripts/screenshot_qvim.ps1 -File D:\path\to\test.txt -InitFile D:\path\to\init.vim -OutPath D:\out.png
+```ps1
+pwsh scripts/screenshot_dot.ps1 -File D:\path\to\test.txt -InitFile D:\path\to\init.vim -OutPath D:\out.png
 ```
 
 Then view the PNG and inspect. Notes on the capture pipeline:
 - Qt Quick's SceneGraph doesn't honor `WM_PRINTCLIENT`, so naive `PrintWindow` returns a black client area. The script uses `PrintWindow` with `PW_RENDERFULLCONTENT (0x2)`, which captures DirectComposition / hardware surfaces.
-- Windows blocks `SetForegroundWindow` from non-foreground processes; the script does its best with `ShowWindow(SW_RESTORE)` + `SetForegroundWindow`, but if the captured image shows another window's content, the qvim window wasn't actually foregrounded — bump `-SettleMs` or launch into a non-overlapping rect.
+- Windows blocks `SetForegroundWindow` from non-foreground processes; the script does its best with `ShowWindow(SW_RESTORE)` + `SetForegroundWindow`, but if the captured image shows another window's content, the dot window wasn't actually foregrounded — bump `-SettleMs` or launch into a non-overlapping rect.
 - Pass `-u <init.vim>` (not `-c "set ..."`) for guifont with spaces — `-c` args get re-tokenised by nvim and `Cascadia\ Code` gets mis-split.

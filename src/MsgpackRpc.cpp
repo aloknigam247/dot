@@ -3,7 +3,7 @@
 #include <cstring>
 #include <QDebug>
 
-namespace qvim {
+namespace Dot {
 
 constexpr int kMsgTypeRequest = 0;
 constexpr int kMsgTypeResponse = 1;
@@ -56,10 +56,10 @@ bool MsgpackRpc::startEmbeddedNvim(const QString &nvimExe, const QStringList &ex
 
     QStringList args;
     // Announce ourselves to init.vim *before* it is sourced so users can do
-    // `if exists("g:qvim")` at the top level — same pattern neovide uses with
+    // `if exists("g:dot")` at the top level — same pattern neovide uses with
     // its `--cmd "let g:neovide = v:true"`. The value v:true (not 1) matches
     // neovide so consumers can compare identically.
-    args << QStringLiteral("--cmd") << QStringLiteral("let g:qvim = v:true");
+    args << QStringLiteral("--cmd") << QStringLiteral("let g:dot = v:true");
     args << QStringLiteral("--embed");
     args.append(extraArgs);
 
@@ -283,4 +283,4 @@ void MsgpackRpc::onProcessFinished(int /*exitCode*/, QProcess::ExitStatus /*stat
     emit transportClosed();
 }
 
-} // namespace qvim
+} // namespace Dot

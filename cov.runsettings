@@ -16,8 +16,8 @@
             </ModulePaths>
             <Sources>
               <Include>
-                <Source>.*\\qvim\\src\\.*</Source>
-                <Source>.*\\qvim\\include\\.*</Source>
+                <Source>.*\\dot\\src\\.*</Source>
+                <Source>.*\\dot\\include\\.*</Source>
               </Include>
             </Sources>
           </CodeCoverage>

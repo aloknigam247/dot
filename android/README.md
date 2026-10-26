@@ -1,8 +1,11 @@
-# qvim companion (Android)
+# dot companion (Android)
 
 A minimal Android client that connects to Microsoft [Agent Host Protocol](https://microsoft.github.io/agent-host-protocol/)
 (AHP) servers over a WebSocket and mirrors their chat sessions: it subscribes to every session and
 chat on each host, renders the transcript, and streams assistant replies live as they arrive.
+
+The application ID is `com.dot.companion`. Preferences from other application IDs are not imported.
+Its launcher uses the [at-rest owl](../design/icons/owl_idle.svg).
 
 It points at a **cptower** multiplexer rather than a single AHP host: cptower
 discovers every live Copilot AHP host on a machine and exposes them behind one port, and the app
@@ -36,7 +39,7 @@ android/
   settings.gradle.kts, build.gradle.kts, gradle.properties
   app/
     build.gradle.kts
-    src/main/java/com/qvim/companion/
+    src/main/java/com/dot/companion/
       model/SessionInfo.kt            # a selectable session, tagged with its cptower host
       model/UiMessage.kt              # one rendered transcript row
       net/  ConnectionState.kt        # Disconnected / Connecting / Connected
@@ -46,7 +49,7 @@ android/
       ChatViewModel.kt                # owns one connection per host, merges sessions + transcript
       ui/ChatScreen.kt                # Compose transcript + input + endpoint bar + session picker
       MainActivity.kt
-    src/test/java/com/qvim/companion/AhpTranscriptTest.kt   # reducer fold + projection (pure JVM)
+    src/test/java/com/dot/companion/AhpTranscriptTest.kt   # reducer fold + projection (pure JVM)
     src/debug/                        # debug-only cleartext network-security config
 ```
 
@@ -92,7 +95,7 @@ USB-debugging device on the same network:
 ```ps1
 $adb = "$env:ANDROID_HOME\platform-tools\adb.exe"
 & $adb install -r app\build\outputs\apk\debug\app-debug.apk
-& $adb shell am start -n com.qvim.companion/.MainActivity
+& $adb shell am start -n com.dot.companion/.MainActivity
 ```
 
 In the app, set the endpoint to `<HOST-LAN-IP>:8770` and Connect. The session picker lists every

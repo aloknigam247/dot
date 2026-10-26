@@ -4,7 +4,7 @@
 
 #include <QJsonDocument>
 
-namespace qvim {
+namespace Dot {
 
 SessionEventBuffer::SessionEventBuffer(int maxEntries) : m_maxEntries(qMax(1, maxEntries)) {}
 
@@ -18,4 +18,4 @@ BufferedEvent SessionEventBuffer::append(QJsonObject frame) {
     return event;
 }
 
-} // namespace qvim
+} // namespace Dot

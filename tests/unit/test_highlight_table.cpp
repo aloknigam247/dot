@@ -3,7 +3,7 @@
 
 #include "HighlightTable.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 

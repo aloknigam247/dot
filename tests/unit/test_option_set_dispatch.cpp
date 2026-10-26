@@ -13,7 +13,7 @@
 
 #include "NvimConnector.h"
 
-using namespace qvim;
+using namespace Dot;
 
 class TestOptionSetDispatch : public QObject {
     Q_OBJECT

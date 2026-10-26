@@ -6,7 +6,7 @@
 #include <QWebSocket>
 #include <QWebSocketServer>
 
-namespace qvim {
+namespace Dot {
 
 constexpr int kProtocolVersion = 1;
 // Cap on a single client input so one frame can't make a buffered event
@@ -18,10 +18,10 @@ static QByteArray serialise(const QJsonObject &frame) {
 }
 
 SessionMirrorServer::SessionMirrorServer(QObject *parent) :
-    QObject(parent), m_server(new QWebSocketServer(QStringLiteral("qvim-session-mirror"),
+    QObject(parent), m_server(new QWebSocketServer(QStringLiteral("dot-session-mirror"),
                                                    QWebSocketServer::NonSecureMode, this)),
     m_sessionId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
-    m_address(qEnvironmentVariable("QVIM_SESSION_MIRROR_ADDRESS", QStringLiteral("0.0.0.0"))) {
+    m_address(qEnvironmentVariable("DOT_SESSION_MIRROR_ADDRESS", QStringLiteral("0.0.0.0"))) {
     connect(m_server, &QWebSocketServer::newConnection, this,
             &SessionMirrorServer::onNewConnection);
 }
@@ -72,7 +72,7 @@ void SessionMirrorServer::startListening() {
     if(!m_server->listen(addr, static_cast<quint16>(m_port))) {
         // A failed listen (e.g. port already in use) is non-fatal — editing and
         // the local panel do not depend on the mirror.
-        qWarning("qvim: session mirror failed to listen on ws://%s:%d", qPrintable(m_address),
+        qWarning("dot: session mirror failed to listen on ws://%s:%d", qPrintable(m_address),
                  m_port);
     }
     emit boundPortChanged();
@@ -205,4 +205,4 @@ void SessionMirrorServer::broadcast(const QByteArray &payload) {
     }
 }
 
-} // namespace qvim
+} // namespace Dot

@@ -9,7 +9,7 @@
 #include <windns.h>
 #endif
 
-namespace qvim {
+namespace Dot {
 
 namespace {
 
@@ -55,7 +55,7 @@ class Win32MdnsBackend : public MdnsBackend {
 public:
     Win32MdnsBackend() = default;
     ~Win32MdnsBackend() override { Win32MdnsBackend::unregisterService(); }
-    QVIM_DISABLE_COPY_MOVE(Win32MdnsBackend)
+    DOT_DISABLE_COPY_MOVE(Win32MdnsBackend)
 
     void registerService(const MdnsService &service) override {
         if(m_reg) { unregisterService(); }
@@ -88,7 +88,7 @@ public:
             static_cast<DWORD>(keys.size()), keys.empty() ? nullptr : keys.data(),
             values.empty() ? nullptr : values.data());
         if(!instance) {
-            qWarning("qvim: mDNS DnsServiceConstructInstance failed for %ls", serviceName.c_str());
+            qWarning("dot: mDNS DnsServiceConstructInstance failed for %ls", serviceName.c_str());
             return;
         }
 
@@ -103,7 +103,7 @@ public:
 
         const DWORD status = DnsServiceRegister(&reg->request, nullptr);
         if(status != DNS_REQUEST_PENDING) {
-            qWarning("qvim: mDNS DnsServiceRegister returned %lu", status);
+            qWarning("dot: mDNS DnsServiceRegister returned %lu", status);
             DnsServiceFreeInstance(instance);
             delete reg;
             return;
@@ -176,7 +176,7 @@ MdnsService MdnsAdvertiser::currentService() const {
     const QString host = QHostInfo::localHostName();
     return MdnsService{
         QString::fromLatin1(kMirrorServiceType),
-        QStringLiteral("qvim on %1").arg(host),
+        QStringLiteral("dot on %1").arg(host),
         host,
         static_cast<quint16>(m_port),
         { { QStringLiteral("proto"), QStringLiteral("1") } },
@@ -207,4 +207,4 @@ void MdnsAdvertiser::reevaluate() {
     }
 }
 
-} // namespace qvim
+} // namespace Dot

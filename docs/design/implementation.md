@@ -1,11 +1,11 @@
-# qvim application of Surfaces
+# dot application of Surfaces
 
 This is the approved UI implementation target, not a claim that the native apps already implement it.
 The screenshots are static design references, not native application captures. Identity squares and gradient preview
 surrounds are presentation placeholders, not final product artwork or application surfaces.
 
 [DESIGN.md](DESIGN.md) owns the rules, metrics, profiles, palette, and change-control policy.
-This guide defines their qvim-specific composition and implementation mapping for both dark and light themes.
+This guide defines their dot-specific composition and implementation mapping for both dark and light themes.
 Use the canonical tokens rather than introducing component-specific values.
 
 ## Applicable rules
@@ -19,18 +19,18 @@ Use the canonical tokens rather than introducing component-specific values.
 
 ## Color bindings
 
-The design defines the color roles and their visual meaning. Whether a value comes through Neovim or qvim is an
+The design defines the color roles and their visual meaning. Whether a value comes through Neovim or dot is an
 implementation detail; the provider does not change which role or state a component uses.
 
 - **Content bindings:** Neovim highlights supply pane background, primary foreground, cursor, text-range selection,
   and overlay/menu colors. Non-diff buffer syntax remains part of the rendered content.
-- **Fixed chrome:** qvim binds frame, resting, raised, selection, muted, and status roles to the design palette.
+- **Fixed chrome:** dot binds frame, resting, raised, selection, muted, and status roles to the design palette.
   Changing a content theme does not recalculate these tones.
 - **Materials:** map Neovim transparency settings to the material intensity defined in
   [Translucency](DESIGN.md#5-translucency), without dimming foreground text or icons.
 - **Resolution:** for configurable content roles, use an explicit user setting, then the corresponding Neovim value,
   then the matching palette entry when no value is available. A missing cursor color uses the reversed Text/Pane pair.
-  This resolution order belongs to qvim's bindings, not to the design language.
+  This resolution order belongs to dot's bindings, not to the design language.
 
 ## Desktop editor
 
@@ -41,7 +41,7 @@ implementation detail; the provider does not change which role or state a compon
 The editor is a pane on the window frame. Neovim splits are regions within that pane, not independently elevated
 surfaces. Completion, command-line completion, hover, and tab overflow use the shared overlay rules.
 
-| Area | qvim binding |
+| Area | dot binding |
 |------|--------------|
 | Caption and frame | Window title, native caption controls, and chat entry point share the frame |
 | Completion and command line | Map Neovim-provided content to menu/overlay geometry without altering its cells |
@@ -204,7 +204,7 @@ Connect these component families to the existing native integration surfaces:
 
 | Native integration surface | Reference responsibility |
 |----------------------------|--------------------------|
-| [Android UI](../../android/app/src/main/java/com/qvim/companion/ui/ChatScreen.kt) | Touch-screen composition and conversation presentation |
+| [Android UI](../../android/app/src/main/java/com/dot/companion/ui/ChatScreen.kt) | Touch-screen composition and conversation presentation |
 | [ChatPanel.qml](../../qml/ChatPanel.qml) | Desktop chat pane, transcript, and composer |
 | [Main.qml](../../qml/Main.qml), [WindowChrome.h](../../include/WindowChrome.h) | Window frame, caption integration, and editor/chat composition |
 | [Shell.qml](../../qml/Shell.qml) | Grid host, cursor overlay, and focus ownership |

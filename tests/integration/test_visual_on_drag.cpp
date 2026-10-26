@@ -19,14 +19,14 @@
 #include "ModeInfo.h"
 #include "NvimConnector.h"
 
-using namespace qvim;
-using namespace qvim::test;
+using namespace Dot;
+using namespace Dot::test;
 
 namespace {
 
 QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn) {
     engine.rootContext()->setContextProperty(QStringLiteral("$connector"), conn);
-    engine.loadFromModule(QStringLiteral("Qvim"), QStringLiteral("Main"));
+    engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
     if(engine.rootObjects().isEmpty()) return nullptr;
     return qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 }
@@ -61,8 +61,8 @@ class TestVisualOnDrag : public QObject {
 private slots:
     void initTestCase() {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-        qRegisterMetaType<qvim::Notification>("qvim::Notification");
-        qRegisterMetaType<qvim::ObjectHandlePtr>("qvim::ObjectHandlePtr");
+        qRegisterMetaType<Dot::Notification>("Dot::Notification");
+        qRegisterMetaType<Dot::ObjectHandlePtr>("Dot::ObjectHandlePtr");
     }
 
     void leftDragEntersVisualMode() {
@@ -138,7 +138,7 @@ private slots:
         QVERIFY(g);
         QString row1;
         for(int c = 0; c < g->gridCols(1); ++c) { row1 += g->cell(1, 1, c).text; }
-        // nvim columns from getpos() are 1-based, so the start at qvim col 2
+        // nvim columns from getpos() are 1-based, so the start at dot col 2
         // → nvim col 3 and end at col 7 → nvim col 8. We don't pin the exact
         // numbers (Qt subpixel rounding could shift by 1) but assert the start
         // is strictly less than the end and both lie in [2..9] inclusive.

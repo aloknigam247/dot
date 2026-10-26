@@ -16,11 +16,11 @@ jacoco {
 }
 
 android {
-    namespace = "com.qvim.companion"
+    namespace = "com.dot.companion"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.qvim.companion"
+        applicationId = "com.dot.companion"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -49,6 +49,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    sourceSets.named("main") {
+        res.srcDir(rootProject.file("../design/icons/android"))
     }
 }
 

@@ -5,7 +5,7 @@
 
 #include "SessionEventBuffer.h"
 
-using namespace qvim;
+using namespace Dot;
 
 namespace {
 QJsonObject frame(const QString &text) {
