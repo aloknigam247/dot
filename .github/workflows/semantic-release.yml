@@ -1,0 +1,50 @@
+name: Version updates
+
+on:
+  schedule:
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: semantic-release-${{ github.repository }}-main
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+    steps:
+      - name: Require versioning token
+        run: |
+          if (-not $env:GH_TOKEN) {
+            throw "Set RELEASE_TOKEN to a PAT with Contents write permission that can push commits and tags to main."
+          }
+
+      - name: Check out main and version history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: main
+
+      - name: Set up Node.js for versioning
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.15.0"
+
+      - name: Install locked versioning tools
+        run: npm --prefix .github/release ci --ignore-scripts --no-audit --no-fund
+
+      - name: Commit version updates and Git tags only
+        run: |
+          node .github/release/node_modules/semantic-release/bin/semantic-release.js `
+            --extends ./.github/release/release.config.cjs

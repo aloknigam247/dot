@@ -29,3 +29,4 @@ android/app/build/
 *.aab
 *.keystore
 __pycache__/
+.github/release/node_modules/
