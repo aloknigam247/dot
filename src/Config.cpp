@@ -50,7 +50,7 @@ void Config::applyAndNotify(const QString &name, Entry &e, const QVariant &befor
 }
 
 void Config::setFromDefault(const QString &name, QVariant value) {
-    auto it = m_entries.find(name);
+    const auto it = m_entries.find(name);
     if(it == m_entries.end()) return;
     const QVariant before = resolve(*it);
     it->defaultValue = std::move(value);
@@ -58,7 +58,7 @@ void Config::setFromDefault(const QString &name, QVariant value) {
 }
 
 void Config::setFromGGlobal(const QString &name, QVariant value) {
-    auto it = m_entries.find(name);
+    const auto it = m_entries.find(name);
     if(it == m_entries.end()) return;
     const QVariant before = resolve(*it);
     it->gGlobal = std::move(value);
@@ -66,7 +66,7 @@ void Config::setFromGGlobal(const QString &name, QVariant value) {
 }
 
 void Config::setFromCli(const QString &name, QVariant value) {
-    auto it = m_entries.find(name);
+    const auto it = m_entries.find(name);
     if(it == m_entries.end()) return;
     const QVariant before = resolve(*it);
     it->cli = std::move(value);

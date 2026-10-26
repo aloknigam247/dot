@@ -12,7 +12,7 @@ namespace qvim {
 enum class CursorShape {
     Block,
     Horizontal,
-    Vertical
+    Vertical,
 };
 
 struct ModeDescriptor {

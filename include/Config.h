@@ -15,7 +15,7 @@ enum class ConfigType {
     Int,
     Float,
     String,
-    StringList
+    StringList,
 };
 
 // Central registry for qvim configuration options.
