@@ -21,13 +21,24 @@ The design is not a claim of native implementation parity.
 ## Versioning
 
 The [version workflow](.github/workflows/semantic-release.yml) runs on its configured schedule or by manual dispatch on
-`main`. [semantic-release](.github/release/release.config.cjs) uses conventional commits: `feat:` bumps minor, `fix:` and
-`perf:` bump patch, and breaking changes (`!` or a `BREAKING CHANGE:` footer) bump major. Without an existing version tag,
-the first version is `1.0.0`. Non-breaking documentation, chore, and refactor commits alone do not trigger a version.
+`main`. It versions Android and desktop dot independently, running them sequentially to avoid competing pushes.
 
-The workflow updates `CHANGELOG.md`, keeps the versions in `CMakeLists.txt` and `vcpkg.json` synchronized, and pushes a
-version commit and `vX.Y.Z` tag. It does not create release PRs, GitHub Releases, or publish binaries or registry packages.
-The C++ version and Windows executable metadata are generated from CMake's project version.
+| Component | Tag | Version files | Changelog |
+| --- | --- | --- | --- |
+| Android | `android-vX.Y.Z` | `android/app/build.gradle.kts` | `android/CHANGELOG.md` |
+| Desktop dot | `dot-vX.Y.Z` | `CMakeLists.txt`, `vcpkg.json` | `CHANGELOG.md` |
+
+[Component ownership and shared inputs](.github/release/release.config.cjs) determine which commits enter each component's
+version calculation and changelog. Only commits changing that component's files count; qualifying mixed or shared-input
+changes can release both. Commit scopes do not select the component.
+
+semantic-release uses conventional commits: `feat:` bumps minor, `fix:` and `perf:` bump patch, and breaking changes
+(`!` or a `BREAKING CHANGE:` footer) bump major. Without an existing component tag, its first version is `1.0.0`.
+Non-breaking documentation, chore, and refactor commits alone do not trigger a version.
+
+Android's `versionName` follows its semantic version; `versionCode` increases once per new Android version. Desktop
+versions stay synchronized, and C++/Windows executable metadata is generated from CMake's project version. The workflow
+pushes version commits and tags only: no release PRs, GitHub Releases, binaries, or registry packages.
 
 Set the repository Actions secret `RELEASE_TOKEN` to a repository-scoped PAT with **Contents: read/write**. Its identity
 must be allowed to push directly to `main` and create tags. Checkout uses a read-only workflow token without persisting

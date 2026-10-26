@@ -44,7 +44,16 @@ jobs:
       - name: Install locked versioning tools
         run: npm --prefix .github/release ci --ignore-scripts --no-audit --no-fund
 
-      - name: Commit version updates and Git tags only
+      - name: Version Android
+        env:
+          RELEASE_COMPONENT: android
+        run: |
+          node .github/release/node_modules/semantic-release/bin/semantic-release.js `
+            --extends ./.github/release/release.config.cjs
+
+      - name: Version dot
+        env:
+          RELEASE_COMPONENT: dot
         run: |
           node .github/release/node_modules/semantic-release/bin/semantic-release.js `
             --extends ./.github/release/release.config.cjs

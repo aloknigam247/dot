@@ -86,6 +86,10 @@ The app tracks the AHP client's Kotlin toolchain (Kotlin 2.3.21, Compose compile
 `org.jetbrains.kotlin.plugin.compose` plugin), so the newer-Kotlin AHP artifact is consumed directly
 with no metadata-version workarounds.
 
+## Versioning
+
+See the repository's [independent component versioning](../README.md#versioning).
+
 ## Run against cptower
 
 Start the cptower multiplexer on the host machine (a separate host-side tool); it listens on
