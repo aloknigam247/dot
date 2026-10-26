@@ -253,3 +253,23 @@ jobs:
           $base = "${{ github.event.pull_request.base.sha }}"
           if (-not $base) { $base = "origin/main" }
           & scripts\coverage_patch.ps1 -ReportPath $reports -BaseRef $base
+
+  version-tools:
+    name: version-tools
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.15.0"
+
+      - name: Install locked versioning tools
+        run: npm --prefix .github/release ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test versioning
+        run: npm --prefix .github/release test

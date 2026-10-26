@@ -18,6 +18,21 @@ The approved UI target is defined in [`docs/design/DESIGN.md`](docs/design/DESIG
 implementation mappings, and reference screenshots in [`docs/design/implementation.md`](docs/design/implementation.md).
 The design is not a claim of native implementation parity.
 
+## Versioning
+
+The [version workflow](.github/workflows/semantic-release.yml) runs on its configured schedule or by manual dispatch on
+`main`. [semantic-release](.github/release/release.config.cjs) uses conventional commits: `feat:` bumps minor, `fix:` and
+`perf:` bump patch, and breaking changes (`!` or a `BREAKING CHANGE:` footer) bump major. Without an existing version tag,
+the first version is `1.0.0`. Non-breaking documentation, chore, and refactor commits alone do not trigger a version.
+
+The workflow updates `CHANGELOG.md`, keeps the versions in `CMakeLists.txt` and `vcpkg.json` synchronized, and pushes a
+version commit and `vX.Y.Z` tag. It does not create release PRs, GitHub Releases, or publish binaries or registry packages.
+The C++ version and Windows executable metadata are generated from CMake's project version.
+
+Set the repository Actions secret `RELEASE_TOKEN` to a repository-scoped PAT with **Contents: read/write**. Its identity
+must be allowed to push directly to `main` and create tags. Checkout uses a read-only workflow token without persisting
+credentials; a missing or invalid release token fails the workflow. Do not delete or move version tags.
+
 ## Configuration
 
 Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` to select rounded highlight groups:

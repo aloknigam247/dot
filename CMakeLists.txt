@@ -1,15 +1,14 @@
 cmake_minimum_required(VERSION 4.2)
-project(dot LANGUAGES CXX VERSION 0.1.0) # x-release-please-version
+project(dot LANGUAGES CXX VERSION 0.1.0)
 
 # vcpkg reads vcpkg.json's version before CMake runs, so it is a second persisted copy
-# of the canonical project() version rather than a generated one. release-please bumps
-# both in the same release commit; this guard fails the configure the moment they drift.
+# of the canonical project() version rather than a generated one.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" DOT_VCPKG_JSON)
 string(JSON DOT_VCPKG_VERSION GET "${DOT_VCPKG_JSON}" version)
 if(NOT "${DOT_VCPKG_VERSION}" STREQUAL "${PROJECT_VERSION}")
     message(FATAL_ERROR
         "Version mismatch: vcpkg.json version '${DOT_VCPKG_VERSION}' != project() VERSION "
-        "'${PROJECT_VERSION}'. Keep them in sync (release-please bumps both together).")
+        "'${PROJECT_VERSION}'. Keep CMakeLists.txt and vcpkg.json in sync.")
 endif()
 
 # Generate the single source of truth for the C++ version and the Windows exe metadata

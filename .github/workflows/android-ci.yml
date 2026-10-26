@@ -79,8 +79,6 @@ jobs:
           & scripts/coverage_patch.ps1 -ReportPath $report -BaseRef $base -Format jacoco -DiffPath android/app/src/main
 
       # assembleDebug is build verification: it catches manifest/resource/AAPT
-      # packaging failures that the JVM unit tests can't. The APK is not uploaded —
-      # publishing a signed, optimized release APK belongs with the semver
-      # release-please flow, tracked separately.
+      # packaging failures that the JVM unit tests can't. This step does not publish the APK.
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug
