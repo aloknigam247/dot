@@ -6,7 +6,7 @@ namespace dot {
 
 static QColor fromRgb24(int rgb) {
     if(rgb < 0) return {};
-    return QColor::fromRgb((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
+    return QColor::fromRgb(static_cast<QRgb>(rgb));
 }
 
 static int findKey(const msgpack::object &mapObj, const char *key) {
@@ -118,13 +118,13 @@ void HighlightTable::setRoundedHighlights(const QStringList &names) {
 }
 
 HlAttr HighlightTable::attr(int id) const {
-    auto it = m_attrs.find(id);
+    const auto it = m_attrs.find(id);
     if(it == m_attrs.end()) return {};
     return it->second;
 }
 
 bool HighlightTable::isRounded(int id) const {
-    auto it = m_attrs.find(id);
+    const auto it = m_attrs.find(id);
     if(it == m_attrs.end()) return false;
     return it->second.isRounded;
 }

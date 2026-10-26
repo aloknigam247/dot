@@ -1,5 +1,6 @@
 #include "InputHandler.h"
 
+#include <utility>
 #include <QHash>
 
 namespace dot {
@@ -59,7 +60,7 @@ QString InputHandler::keyToNvim(QKeyEvent *ev) {
     }
 
     const auto &special = specialKeyMap();
-    auto it = special.find(key);
+    const auto it = special.find(key);
     if(it != special.end()) {
         const QString &name = it.value();
         return QStringLiteral("<%1%2>").arg(modString(mods), name);
@@ -96,7 +97,7 @@ QString InputHandler::keyToNvim(QKeyEvent *ev) {
 
             Qt::KeyboardModifiers rest = mods;
             // Shift is already encoded by uppercase when text reflects it; strip it.
-            if(!ctrlShiftLetter) rest &= ~Qt::ShiftModifier;
+            if(!ctrlShiftLetter) rest.setFlag(Qt::ShiftModifier, false);
             // Inside a <...> token the angle brackets themselves must be
             // referred to by name, otherwise the keycode is ambiguous
             // (e.g. <C-<lt>> would nest brackets; <C->> would terminate early).
@@ -166,7 +167,7 @@ InputHandler::MouseInput InputHandler::mouseFor(QMouseEvent *ev, QEvent::Type ty
     if(mods & Qt::ShiftModifier) mod += QStringLiteral("S-");
     if(mods & Qt::ControlModifier) mod += QStringLiteral("C-");
     if(mods & Qt::AltModifier) mod += QStringLiteral("M-");
-    m.modifier = mod;
+    m.modifier = std::move(mod);
     m.valid = true;
     return m;
 }

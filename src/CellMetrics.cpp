@@ -25,7 +25,7 @@ CellMetrics computeCellMetrics(const QFontMetricsF &fm, int linespace, qreal dpr
             break;
         }
     }
-    auto snapUnit = [unit](qreal v) -> qreal {
+    const auto snapUnit = [unit](qreal v) -> qreal {
         const auto u = static_cast<qreal>(unit);
         return std::max(u, std::round(v / u) * u);
     };

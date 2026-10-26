@@ -43,7 +43,7 @@ void WindowChrome::applyToWindow([[maybe_unused]] QQuickWindow *window,
 
 void WindowChrome::activateOnShow(QQuickWindow *window) {
     if(!window) return;
-    QObject::connect(window, &QQuickWindow::visibleChanged, this, [this, window]() {
+    QObject::connect(window, &QQuickWindow::visibleChanged, this, [this, window] {
         if(m_activated) return;
         if(!window->isVisible()) return;
         // Set the guard before activating: native show/activation can

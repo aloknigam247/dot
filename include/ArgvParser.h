@@ -18,7 +18,7 @@ struct DotArgs {
 
 // Consumes help, version and stdin flags, and normalizes the remaining argv.
 // ConfigCliReader must extract dot options before editorArgs reaches nvim.
-DotArgs parseArgv(int argc, char **argv);
+DotArgs parseArgv(int argc, const char *const *argv);
 
 } // namespace dot
 

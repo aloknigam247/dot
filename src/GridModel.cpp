@@ -10,12 +10,12 @@ GridModel::GridModel(QObject *parent) : QObject(parent) {
 }
 
 GridSurface *GridModel::surface(int gridId) {
-    auto it = m_grids.find(gridId);
+    const auto it = m_grids.find(gridId);
     return it == m_grids.end() ? nullptr : &it.value();
 }
 
 const GridSurface *GridModel::surface(int gridId) const {
-    auto it = m_grids.constFind(gridId);
+    const auto it = m_grids.constFind(gridId);
     return it == m_grids.constEnd() ? nullptr : &it.value();
 }
 

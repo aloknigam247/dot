@@ -25,7 +25,7 @@ static void appendNormalized(const QString &raw, QStringList &out) {
     out << raw;
 }
 
-DotArgs parseArgv(int argc, char **argv) {
+DotArgs parseArgv(int argc, const char *const *argv) {
     DotArgs out;
     QStringList logical;
     for(int i = 1; i < argc; ++i) { appendNormalized(QString::fromLocal8Bit(argv[i]), logical); }

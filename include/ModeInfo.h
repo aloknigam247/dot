@@ -12,7 +12,7 @@ namespace dot {
 enum class CursorShape {
     Block,
     Horizontal,
-    Vertical
+    Vertical,
 };
 
 struct ModeDescriptor {

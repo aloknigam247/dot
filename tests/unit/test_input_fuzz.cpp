@@ -234,6 +234,7 @@ private slots:
         QKeyEvent ev(QEvent::KeyPress, Qt::Key_Less, Qt::ControlModifier | Qt::ShiftModifier,
                      QStringLiteral("<"));
         const QString out = InputHandler::keyToNvim(&ev);
+        QCOMPARE(out, QStringLiteral("<C-lt>"));
         const QString err = validateBrackets(out);
         QVERIFY2(err.isEmpty(),
                  qPrintable(QStringLiteral("Ctrl+Shift+< produced \"%1\": %2").arg(out, err)));
@@ -253,6 +254,16 @@ private slots:
             QVERIFY2(err.isEmpty(),
                      qPrintable(QStringLiteral("Ctrl+Shift+i produced \"%1\": %2").arg(out, err)));
         }
+    }
+
+    void regression_shiftedPunctuationKeepsOtherModifiers() {
+        QKeyEvent ev(QEvent::KeyPress, Qt::Key_Less,
+                     Qt::AltModifier | Qt::ControlModifier | Qt::MetaModifier | Qt::ShiftModifier,
+                     QStringLiteral("<"));
+        const QString out = InputHandler::keyToNvim(&ev);
+        QCOMPARE(out, QStringLiteral("<C-M-D-lt>"));
+        const QString err = validateBrackets(out);
+        QVERIFY2(err.isEmpty(), qPrintable(err));
     }
 
     void fuzz() {

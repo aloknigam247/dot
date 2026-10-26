@@ -75,10 +75,10 @@ void GridItem::setConnector(NvimConnector *c) {
         connect(m_conn, &NvimConnector::guifontChanged, this, &GridItem::onGuifontChanged);
         connect(m_conn, &NvimConnector::linespaceChanged, this, &GridItem::onLinespaceChanged);
         connect(m_conn, &NvimConnector::flush, this, &GridItem::onFlush);
-        if(auto *g = grid()) {
+        if(const auto *g = grid()) {
             connect(g, &GridModel::sizeChanged, this, [this] { update(); });
         }
-        if(auto *h = hl()) {
+        if(const auto *h = hl()) {
             connect(h, &HighlightTable::changed, this, [this] { update(); });
         }
     }

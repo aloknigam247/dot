@@ -155,7 +155,7 @@ int main(int argc, char *argv[]) {
 #endif
     }
     if(cli.stdinAsBuffer && stdinIsRedirected) {
-        stdinFuture = std::async(std::launch::async, []() {
+        stdinFuture = std::async(std::launch::async, [] {
             QByteArray buf;
             std::array<char, 4096> chunk{};
             while(std::size_t n = std::fread(chunk.data(), 1, chunk.size(), stdin)) {
@@ -225,7 +225,7 @@ int main(int argc, char *argv[]) {
     // attachComplete handler runs ConfigGGlobalReader::read, because that
     // will fire Config::changed once the user's g:dot_rounded_highlights
     // resolves.
-    auto applyRounded = [&]() {
+    const auto applyRounded = [&] {
         if(auto *h = connector.highlights()) {
             h->setRoundedHighlights(cfg.value(QStringLiteral("rounded_highlights")).toStringList());
         }
@@ -237,11 +237,11 @@ int main(int argc, char *argv[]) {
 
     QObject::connect(&connector, &dot::NvimConnector::disconnected, &app, &QCoreApplication::quit);
     QObject::connect(&connector, &dot::NvimConnector::attachComplete, &cfg,
-                     [&connector, &cfg, &boot]() {
+                     [&connector, &cfg, &boot] {
         boot.mark("attachComplete signal");
         dot::ConfigGGlobalReader::read(connector, cfg);
     });
-    QObject::connect(&connector, &dot::NvimConnector::flush, &connector, [&boot]() {
+    QObject::connect(&connector, &dot::NvimConnector::flush, &connector, [&boot] {
         static bool firstFlushSeen = false;
         if(firstFlushSeen) return;
         firstFlushSeen = true;
@@ -249,9 +249,9 @@ int main(int argc, char *argv[]) {
     });
 
     if(cli.stdinAsBuffer && stdinIsRedirected) {
-        QObject::connect(&connector, &dot::NvimConnector::attachComplete, &connector,
-                         [&connector, fut = std::make_shared<std::future<QByteArray>>(
-                                          std::move(stdinFuture))]() {
+        QObject::connect(
+            &connector, &dot::NvimConnector::attachComplete, &connector,
+            [&connector, fut = std::make_shared<std::future<QByteArray>>(std::move(stdinFuture))] {
             connector.loadStdinIntoBuffer(fut->get());
         });
     }
@@ -274,7 +274,7 @@ int main(int argc, char *argv[]) {
             // resize, by which point the launching shell has returned and
             // another window may hold the foreground.
             windowChrome.activateOnShow(w);
-            QObject::connect(w, &QQuickWindow::frameSwapped, &app, [&boot]() {
+            QObject::connect(w, &QQuickWindow::frameSwapped, &app, [&boot] {
                 static bool firstFrameSeen = false;
                 if(firstFrameSeen) return;
                 firstFrameSeen = true;
@@ -284,7 +284,7 @@ int main(int argc, char *argv[]) {
             // arrives at the post-attach resized geometry — that's the moment
             // the user actually sees the editor. Track it as a distinct boot
             // phase so we can tell time-to-first-frame from time-to-visible.
-            QObject::connect(w, &QQuickWindow::visibleChanged, &app, [w, &boot, &connector]() {
+            QObject::connect(w, &QQuickWindow::visibleChanged, &app, [w, &boot, &connector] {
                 static bool firstShowSeen = false;
                 if(firstShowSeen) return;
                 if(!w->isVisible()) return;
@@ -292,7 +292,7 @@ int main(int argc, char *argv[]) {
                 boot.mark("window shown at real size");
                 // Persist the final grid dimensions so the next launch can
                 // skip the placeholder→resize round-trip.
-                if(auto *g = connector.grid()) {
+                if(const auto *g = connector.grid()) {
                     dot::SessionCache cache;
                     cache.guifont = connector.guifont();
                     cache.cols = g->gridCols(1);

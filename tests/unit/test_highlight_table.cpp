@@ -120,6 +120,53 @@ private slots:
         h.setRoundedHighlights({ QStringLiteral("Search") });
         QVERIFY(h.isRounded(4));
     }
+
+    void negativeColorsPreserveDefaults() {
+        HighlightTable table;
+        const auto attrs =
+            packAttrMap({ { "background", -1 }, { "foreground", -1 }, { "special", -1 } }, {});
+        table.setDefaultColors(0x123456, 0x654321, 0xabcdef);
+        table.setDefaultColors(-1, -1, -1);
+        table.defineAttr(1, attrs.get());
+
+        const HlAttr attr = table.attr(1);
+        QVERIFY(!attr.fg.isValid());
+        QVERIFY(!attr.bg.isValid());
+        QVERIFY(!attr.sp.isValid());
+
+        const HlAttr resolved = table.resolved(1);
+        QCOMPARE(resolved.fg, QColor(0x12, 0x34, 0x56));
+        QCOMPARE(resolved.bg, QColor(0x65, 0x43, 0x21));
+        QCOMPARE(resolved.sp, QColor(0xab, 0xcd, 0xef));
+    }
+
+    void packedRgbColors() {
+        QFETCH(int, rgb);
+        QFETCH(QColor, expected);
+
+        HighlightTable table;
+        const auto attrs =
+            packAttrMap({ { "background", rgb }, { "foreground", rgb }, { "special", rgb } }, {});
+        table.setDefaultColors(rgb, rgb, rgb);
+        table.defineAttr(1, attrs.get());
+
+        const HlAttr attr = table.attr(1);
+        QCOMPARE(table.defaultFg(), expected);
+        QCOMPARE(table.defaultBg(), expected);
+        QCOMPARE(table.defaultSp(), expected);
+        QCOMPARE(attr.fg, expected);
+        QCOMPARE(attr.bg, expected);
+        QCOMPARE(attr.sp, expected);
+    }
+
+    void packedRgbColors_data() {
+        QTest::addColumn<int>("rgb");
+        QTest::addColumn<QColor>("expected");
+        QTest::newRow("black") << 0x000000 << QColor(0, 0, 0);
+        QTest::newRow("mixed") << 0x123456 << QColor(0x12, 0x34, 0x56);
+        QTest::newRow("upper-byte-ignored") << 0x7f123456 << QColor(0x12, 0x34, 0x56);
+        QTest::newRow("white") << 0xffffff << QColor(0xff, 0xff, 0xff);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestHighlightTable)

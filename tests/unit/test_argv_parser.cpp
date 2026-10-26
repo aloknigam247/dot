@@ -1,6 +1,7 @@
 #include <QStringList>
 #include <QtTest>
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -209,6 +210,13 @@ private slots:
                                     QStringLiteral("foo.txt") };
         QCOMPARE(forwarded, expected);
         QCOMPARE(cfg.value(QStringLiteral("padding")).toInt(), 0);
+    }
+
+    void acceptsConstArguments() {
+        const std::array args{ "dot", "--help", "file.txt" };
+        const auto result = parseArgv(static_cast<int>(args.size()), args.data());
+        QVERIFY(result.helpRequested);
+        QCOMPARE(result.editorArgs, QStringList{ QStringLiteral("file.txt") });
     }
 };
 
