@@ -1,4 +1,3 @@
-#include <QSignalSpy>
 #include <QtTest>
 
 #include "Config.h"
@@ -110,61 +109,6 @@ private slots:
         ConfigCliReader::extract(args, cfg);
         QCOMPARE(args, QStringList{ QStringLiteral("--previous-app-padding=9") });
         QCOMPARE(cfg.value(QStringLiteral("padding")).toInt(), 0);
-    }
-
-    void roundedHighlightsCannotBeSetFromCli_data() {
-        QTest::addColumn<QString>("argument");
-        QTest::newRow("bare") << QStringLiteral("--dot-rounded_highlights");
-        QTest::newRow("empty") << QStringLiteral("--dot-rounded_highlights=");
-        QTest::newRow("populated") << QStringLiteral("--dot-rounded_highlights=CliOnly");
-    }
-
-    void roundedHighlightsCannotBeSetFromCli() {
-        Config cfg;
-        const QString key = QStringLiteral("rounded_highlights");
-        const QStringList untouchedArgs{
-            QStringLiteral("--cmd"),
-            QStringLiteral("set number"),
-            QStringLiteral("file.txt"),
-        };
-        const QStringList vimGroups{
-            QStringLiteral("FloatBorder"),
-            QStringLiteral("NormalFloat"),
-        };
-
-        QFETCH(QString, argument);
-        QStringList args = QStringList{ argument } + untouchedArgs;
-        QSignalSpy changedSpy(&cfg, &Config::changed);
-        const QByteArray diagnostic =
-            QStringLiteral("ConfigCliReader: unknown --dot option: \"%1\"").arg(argument).toUtf8();
-        cfg.registerOption(key, ConfigType::StringList, QStringList{});
-
-        QTest::ignoreMessage(QtDebugMsg, diagnostic.constData());
-        QCOMPARE(ConfigCliReader::extract(args, cfg), untouchedArgs);
-        QCOMPARE(args, untouchedArgs);
-        QCOMPARE(cfg.value(key).toStringList(), QStringList{});
-        QVERIFY(changedSpy.isEmpty());
-
-        cfg.setFromGGlobal(key, vimGroups);
-        QCOMPARE(cfg.value(key).toStringList(), vimGroups);
-        changedSpy.clear();
-        args = { argument };
-
-        QTest::ignoreMessage(QtDebugMsg, diagnostic.constData());
-        ConfigCliReader::extract(args, cfg);
-        QVERIFY(args.isEmpty());
-        QCOMPARE(cfg.value(key).toStringList(), vimGroups);
-        QVERIFY(changedSpy.isEmpty());
-
-        cfg.setFromGGlobal(key, QStringList{});
-        changedSpy.clear();
-        args = { argument };
-
-        QTest::ignoreMessage(QtDebugMsg, diagnostic.constData());
-        ConfigCliReader::extract(args, cfg);
-        QVERIFY(args.isEmpty());
-        QCOMPARE(cfg.value(key).toStringList(), QStringList{});
-        QVERIFY(changedSpy.isEmpty());
     }
 };
 

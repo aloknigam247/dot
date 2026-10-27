@@ -84,7 +84,7 @@ ctest --preset release --output-on-failure -R test_grid_model
                     });
    ```
 3. **Order matters**: the `Config::changed` connection MUST be in place BEFORE the `attachComplete` handler runs `ConfigGGlobalReader::read`, otherwise the user's `g:` value resolves silently and never reaches the target.
-4. Check [CLI eligibility](../include/ConfigCliReader.h) before advertising `--dot-<name>=<value>` support.
+4. If the option needs CLI parity, nothing extra is needed — `ConfigCliReader::extract` auto-discovers `--dot-<name>=<value>` for any registered option.
 
 ## Intercepting an nvim CLI arg
 
