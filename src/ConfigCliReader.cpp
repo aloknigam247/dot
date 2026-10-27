@@ -69,7 +69,7 @@ QStringList ConfigCliReader::extract(QStringList &args, Config &cfg) {
             name = body.left(eq);
             rawValue = body.mid(eq + 1);
         }
-        if(!cfg.has(name)) {
+        if(name == QLatin1StringView("rounded_highlights") || !cfg.has(name)) {
             qDebug() << "ConfigCliReader: unknown --dot option:" << arg;
             continue;
         }

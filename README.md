@@ -46,20 +46,16 @@ credentials; a missing or invalid release token fails the workflow. Do not delet
 
 ## Configuration
 
-Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` to select rounded highlight groups:
+Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` in `init.lua` to select
+rounded highlight groups:
 
 ```lua
 vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
 ```
 
-The CLI setting takes precedence:
+The list defaults to empty and is read once when Neovim attaches.
 
-```ps1
-dot.exe --dot-rounded_highlights=FloatBorder,NormalFloat
-```
-
-Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
-location; caches from other application identities are not imported.
+The session cache uses dot's Qt application-data location; caches from other application identities are not imported.
 
 ## Architecture
 

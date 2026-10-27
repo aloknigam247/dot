@@ -181,21 +181,19 @@ private slots:
 
     void configOptionsReachRegistryBeforeForwarding() {
         Config cfg;
-        cfg.registerOption(QStringLiteral("rounded_highlights"), ConfigType::StringList,
-                           QStringList{});
-        FakeArgv av{ { QStringLiteral("dot"),
-                       QStringLiteral("--dot-rounded_highlights=NormalFloat,FloatBorder"),
+        cfg.registerOption(QStringLiteral("fallback"), ConfigType::StringList, QStringList{});
+        FakeArgv av{ { QStringLiteral("dot"), QStringLiteral("--dot-fallback=FirstFont,SecondFont"),
                        QStringLiteral("--dot-unknown=value"), QStringLiteral("foo.txt") } };
         const auto parsed = parseArgv(av.argc(), av.argv());
         QStringList forwarded = parsed.editorArgs;
         ConfigCliReader::extract(forwarded, cfg);
-        const QStringList expected{ QStringLiteral("NormalFloat"), QStringLiteral("FloatBorder") };
-        QCOMPARE(cfg.value(QStringLiteral("rounded_highlights")).toStringList(), expected);
+        const QStringList expected{ QStringLiteral("FirstFont"), QStringLiteral("SecondFont") };
+        QCOMPARE(cfg.value(QStringLiteral("fallback")).toStringList(), expected);
         QCOMPARE(forwarded, QStringList{ QStringLiteral("foo.txt") });
 
-        cfg.setFromGGlobal(QStringLiteral("rounded_highlights"),
-                           QStringList{ QStringLiteral("DifferentGroup") });
-        QCOMPARE(cfg.value(QStringLiteral("rounded_highlights")).toStringList(), expected);
+        cfg.setFromGGlobal(QStringLiteral("fallback"),
+                           QStringList{ QStringLiteral("DifferentFont") });
+        QCOMPARE(cfg.value(QStringLiteral("fallback")).toStringList(), expected);
     }
 
     void unrelatedPrefixIsNotConsumedOrApplied() {

@@ -10,8 +10,8 @@ class Config;
 // Extracts `--dot-<name>[=<value>]` arguments from `args`.
 //
 // Side effects:
-//   * For every recognised option (registered in `cfg` with a matching type),
-//     the value is parsed and applied via Config::setFromCli.
+//   * For every CLI-eligible registered option, the value is parsed and
+//     applied via Config::setFromCli.
 //   * The corresponding entry is removed from `args` so the remainder can be
 //     forwarded to nvim verbatim.
 //
@@ -23,6 +23,7 @@ class Config;
 // StringList values are comma-separated.
 //
 // Unknown dot options are logged via qDebug and removed from args.
+// `rounded_highlights` is Vim-only and follows this unknown-option path.
 class ConfigCliReader {
 public:
     static QStringList extract(QStringList &args, Config &cfg);

@@ -101,6 +101,7 @@ try {
     [IO.File]::WriteAllText($initPath, @"
 vim.opt.swapfile = false
 vim.opt.guifont = "Consolas:h12"
+vim.g.dot_rounded_highlights = { "ErrorMsg" }
 local previous
 local timer = vim.uv.new_timer()
 timer:start(50, 50, vim.schedule_wrap(function()
@@ -120,11 +121,11 @@ end))
 "@.Replace("`r`n", "`n"))
 
     $help = Invoke-Entrypoint -Path $ExePath -Arguments @("--help")
-    if ($help.Stdout -notmatch "^Usage: dot " -or $help.Stdout -notmatch "--dot-rounded_highlights") {
+    if ($help.Stdout -notmatch "^Usage: dot " -or $help.Stdout -match "--dot-rounded_highlights") {
         throw "The executable did not print the expected dot help: $($help.Stdout)"
     }
     $run = Invoke-Entrypoint -Path $DriverPath `
-        -Arguments @("--clean", "-u", $initPath, "--dot-rounded_highlights=ErrorMsg", "-") -InputText $inputText
+        -Arguments @("--clean", "-u", $initPath, "-") -InputText $inputText
     if ($run.Stdout -notmatch "(?m)^application=dot\r?$" -or
         $run.Stdout -notmatch "(?m)^organization=dot\r?$") {
         throw "Unexpected application identity: $($run.Stdout)"

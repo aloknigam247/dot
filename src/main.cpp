@@ -105,8 +105,6 @@ int main(int argc, char **argv) {
                    "dot options:\n"
                    "  -h, --help       Show this help and exit.\n"
                    "  -v, --version    Show dot version and exit.\n"
-                   "  --dot-rounded_highlights=<groups>\n"
-                   "                   Comma-separated rounded highlight groups.\n"
                    "\n"
                    "Everything else (e.g. `foo.txt`, `-O a.txt b.txt`, `+10 foo.txt`,\n"
                    "`-c \"set number\" foo.txt`) is forwarded to nvim.\n"
