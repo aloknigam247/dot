@@ -52,12 +52,6 @@ Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` 
 vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
 ```
 
-The CLI setting takes precedence:
-
-```ps1
-dot.exe --dot-rounded_highlights=FloatBorder,NormalFloat
-```
-
 Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
 location; caches from other application identities are not imported.
 
