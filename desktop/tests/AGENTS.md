@@ -23,6 +23,8 @@ The expected set is derived from the binaries + qml source, so the test needs no
 
 ## Build/test cheatsheet
 
+Run these commands from the checkout's `desktop\` directory.
+
 ```ps1
 ctest --preset release --output-on-failure                              # all
 ctest --preset release --output-on-failure -R '^test_grid_model$'       # single

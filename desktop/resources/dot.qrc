@@ -1,6 +1,6 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
     <qresource prefix="/">
-        <file alias="dot.ico">../design/icons/dot.ico</file>
+        <file alias="dot.ico">../../common/icons/dot.ico</file>
     </qresource>
 </RCC>

@@ -15,7 +15,7 @@ compile_commands.json
 *.lib
 *.dll
 *.exe
-qml/.qmlls.ini
+.qmlls.ini
 qtquickcontrols2.conf
 tmp/
 .worktree/
@@ -29,4 +29,4 @@ android/app/build/
 *.aab
 *.keystore
 __pycache__/
-.github/release/node_modules/
+node_modules/

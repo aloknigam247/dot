@@ -19,11 +19,11 @@ ctest verifies code correctness. This skill verifies feature correctness — wha
 
 ## When to run
 
-- After editing `src/GridItem.cpp` or `src/CursorItem.cpp` (paint path).
-- After editing `include/CursorItem.h` (animation timing, blink params).
-- After changing `src/CellMetrics.cpp` or font / linespace handling.
-- After changing colour resolution in `src/HighlightTable.cpp`.
-- After changing `qml/Shell.qml` z-order or item composition.
+- After editing `desktop/src/GridItem.cpp` or `desktop/src/CursorItem.cpp` (paint path).
+- After editing `desktop/include/CursorItem.h` (animation timing, blink params).
+- After changing `desktop/src/CellMetrics.cpp` or font / linespace handling.
+- After changing colour resolution in `desktop/src/HighlightTable.cpp`.
+- After changing `desktop/qml/Shell.qml` z-order or item composition.
 - After any change where you'd be tempted to write "should render correctly" — don't write it, run this instead.
 
 ## Steps
@@ -33,10 +33,11 @@ ctest verifies code correctness. This skill verifies feature correctness — wha
 The incremental linker skips relinking `dot.exe` when only the .lib changed (see project `AGENTS.md` gotcha). A stale exe means you're validating a previous version. Always run:
 
 ```ps1
+Set-Location (Join-Path (git rev-parse --show-toplevel) "desktop")
 cmake --build --preset release --target dot
 ```
 
-If you're validating an agent's worktree branch, build inside the worktree, not the main checkout, and confirm with `Get-Item <worktree>/build/release/RelWithDebInfo/dot.exe` that the mtime is post-commit.
+If you're validating an agent's worktree branch, build inside its `desktop\` directory, not the main checkout, and confirm with `Get-Item <worktree>\desktop\build\release\RelWithDebInfo\dot.exe` that the mtime is post-commit.
 
 ### 2. Generate fixture files with LF endings
 
@@ -63,14 +64,16 @@ If the feature under test requires insert mode, append `autocmd VimEnter * start
 
 ### 3. Take the screenshot
 
-`scripts/screenshot_dot.ps1` handles the SetForegroundWindow + `PrintWindow PW_RENDERFULLCONTENT` dance needed to capture Qt Quick's DirectComposition surface. Default settle is 5 seconds, which is enough for the attach + first paint.
+`desktop/scripts/screenshot_dot.ps1` handles the SetForegroundWindow + `PrintWindow PW_RENDERFULLCONTENT` dance needed to capture Qt Quick's DirectComposition surface. Default settle is 5 seconds, which is enough for the attach + first paint.
 
 ```ps1
+$capture = Join-Path (git rev-parse --show-toplevel) "desktop\scripts\screenshot_dot.ps1"
 $out = "$tmp\shot.png"
-pwsh .\scripts\screenshot_dot.ps1 -File "$tmp\sample.txt" -InitFile "$tmp\init.vim" -OutPath $out
+pwsh $capture -File "$tmp\sample.txt" -InitFile "$tmp\init.vim" -OutPath $out
 ```
 
-Use `-Exe ".\build\dev\Debug\dot.exe"` if you want the Debug build's render (slower animation, assert-heavy). Default targets `build\release\RelWithDebInfo\dot.exe`.
+Use an absolute `-Exe "<checkout>\desktop\build\dev\Debug\dot.exe"` path for the Debug build's render.
+The default targets the script's checkout at `desktop\build\release\RelWithDebInfo\dot.exe`.
 
 If the script reports "dot has no main window after Nms", bump `-SettleMs 8000`. If the captured image shows another window's content, the dot window wasn't actually foregrounded — same fix, or close any blocking modal first.
 

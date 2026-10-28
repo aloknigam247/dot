@@ -12,11 +12,21 @@ The editor and its AI harness share the dot name.
 
 For building and running, see [`SETUP.md`](SETUP.md). For contributor conventions, the correctness
 and performance invariants, and the test tiers, see [`AGENTS.md`](AGENTS.md).
-Application artwork and export instructions live in [`design/icons`](design/icons/README.md).
+Application artwork and export instructions live in [`common\icons`](common/icons/README.md).
 
 The approved UI target is defined in [`docs/design/DESIGN.md`](docs/design/DESIGN.md), with dot composition,
 implementation mappings, and reference screenshots in [`docs/design/implementation.md`](docs/design/implementation.md).
 The design is not a claim of native implementation parity.
+
+## Repository layout
+
+| Directory | Contents |
+| --- | --- |
+| `.github\` | GitHub workflows and agent integrations |
+| `android\` | Android application and Gradle build |
+| `common\` | Shared artwork, release tooling, and patch-coverage checker |
+| `desktop\` | C++/QML client, build configuration, tests, and desktop tooling |
+| `docs\` | Repository-wide design and protocol documentation |
 
 ## Versioning
 
@@ -26,9 +36,9 @@ The [version workflow](.github/workflows/semantic-release.yml) runs on its confi
 | Component | Tag | Version files | Changelog |
 | --- | --- | --- | --- |
 | Android | `android-vX.Y.Z` | `android/app/build.gradle.kts` | `android/CHANGELOG.md` |
-| Desktop dot | `dot-vX.Y.Z` | `CMakeLists.txt`, `vcpkg.json` | `CHANGELOG.md` |
+| Desktop dot | `dot-vX.Y.Z` | `desktop/CMakeLists.txt`, `desktop/vcpkg.json` | `desktop/CHANGELOG.md` |
 
-[Component ownership and shared inputs](.github/release/release.config.cjs) determine which commits enter each component's
+[Component ownership and shared inputs](common/release/release.config.cjs) determine which commits enter each component's
 version calculation and changelog. Only commits changing that component's files count; qualifying mixed or shared-input
 changes can release both. Commit scopes do not select the component.
 
@@ -63,6 +73,8 @@ The chat input and chat toggle follow the editor's `guifont` and `linespace` met
 dot is a thin, reactive layer over Neovim: Neovim owns all editing state and emits a redraw event
 stream, and dot's job is to turn that stream into pixels and to turn user input back into nvim
 keycodes.
+
+The component paths below are relative to `desktop\`.
 
 ### Redraw pipeline (nvim → screen)
 
@@ -131,12 +143,12 @@ Two things keep cold start down:
 - **A Defender exclusion for the build tree collapses the cold launch outright** (post-build first
   launch ~10-13s → ~2s in measurement). Run this once, from an **elevated** PowerShell:
 
-  ```pwsh
-  pwsh -NoProfile -File scripts\add_defender_exclusion.ps1
+  ```ps1
+  pwsh -NoProfile -File desktop\scripts\add_defender_exclusion.ps1
   ```
 
-  By default it excludes the whole `build\` tree — deliberately, because the dominant cost is
+  By default it excludes the whole `desktop\build\` tree — deliberately, because the dominant cost is
   scanning the compile intermediates, not just the deployed `dot.exe`. Pass `-Path <dir>` for a
-  custom location (e.g. a worktree's own `build\` dir), or `-Remove` to undo. An excluded directory
+  custom location (e.g. a worktree's own `desktop\build\` dir), or `-Remove` to undo. An excluded directory
   is no longer scanned by real-time protection, so only exclude build output you produce and trust —
   never a broad location like your whole user profile or a downloads folder.

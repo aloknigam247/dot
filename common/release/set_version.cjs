@@ -55,9 +55,11 @@ function setAndroidVersion() {
 function setDotVersion() {
   const cmakePattern = /^(project\(dot[ \t]+LANGUAGES[ \t]+CXX[ \t]+VERSION[ \t]+)([^ \t\r\n)]+)(\))/gm;
   const manifestPattern = /^([ \t]*"version"[ \t]*:[ \t]*")([^"\r\n]+)(")/gm;
-  const cmakeContent = readFileSync("CMakeLists.txt", "utf8");
+  const cmakeFile = path.join("desktop", "CMakeLists.txt");
+  const cmakeContent = readFileSync(cmakeFile, "utf8");
   const cmakeMatches = [...cmakeContent.matchAll(cmakePattern)];
-  const manifestContent = readFileSync("vcpkg.json", "utf8");
+  const manifestFile = path.join("desktop", "vcpkg.json");
+  const manifestContent = readFileSync(manifestFile, "utf8");
   const manifest = JSON.parse(manifestContent);
   const manifestMatches = [...manifestContent.matchAll(manifestPattern)];
 
@@ -76,8 +78,8 @@ function setDotVersion() {
     manifestPattern, (_, prefix, current, suffix) => `${prefix}${version}${suffix}`,
   );
 
-  writeFileSync("CMakeLists.txt", updatedCmake, "utf8");
-  writeFileSync("vcpkg.json", updatedManifest, "utf8");
+  writeFileSync(cmakeFile, updatedCmake, "utf8");
+  writeFileSync(manifestFile, updatedManifest, "utf8");
   console.log(`Set CMake and vcpkg versions to ${version}`);
 }
 

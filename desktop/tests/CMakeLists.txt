@@ -29,7 +29,7 @@ set(DOT_TEST_LABEL unit)
 dot_add_test(test_app_icon            unit/test_app_icon.cpp)
 target_compile_definitions(test_app_icon PRIVATE
     DOT_APP_EXE_PATH="$<TARGET_FILE:dot>"
-    DOT_ICON_PATH="${CMAKE_SOURCE_DIR}/design/icons/dot.ico"
+    DOT_ICON_PATH="${CMAKE_SOURCE_DIR}/../common/icons/dot.ico"
 )
 add_dependencies(test_app_icon dot)
 dot_add_test(test_argv_parser         unit/test_argv_parser.cpp)

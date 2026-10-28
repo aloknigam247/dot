@@ -51,6 +51,7 @@ runs:
 
     - name: Configure
       shell: pwsh
+      working-directory: desktop
       # Keep vcpkg's heavy buildtrees / packages / downloads off the small C:
       # drive, and delete each port's intermediates right after it builds so the
       # peak footprint is one port, not the whole Qt tree. On a warm NuGet cache

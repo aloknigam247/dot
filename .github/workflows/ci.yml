@@ -1,21 +1,27 @@
 name: CI
 
 on:
-  # paths-ignore skips a run only when every changed file matches, so a mixed PR
-  # still runs this pipeline. android/ has no C++/Qt/QML surface and builds separately.
   pull_request:
-    paths-ignore:
-      - "android/**"
+    paths:
+      - ".github/workflows/ci.yml"
+      - "common/**"
+      - "desktop/**"
   push:
     branches: [main]
-    paths-ignore:
-      - "android/**"
+    paths:
+      - ".github/workflows/ci.yml"
+      - "common/**"
+      - "desktop/**"
 
 # A newer push to the same ref cancels the in-flight run - no point burning a
 # ~hours-long cold Qt build on a commit that has already been superseded.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: desktop
 
 permissions:
   contents: read
@@ -65,7 +71,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-dot
+      - uses: ./desktop/actions/setup-dot
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
@@ -85,7 +91,7 @@ jobs:
         run: |
           cmake --preset tidy `
             -DVCPKG_MANIFEST_INSTALL=OFF `
-            "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/dev/vcpkg_installed"
+            "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}/desktop/build/dev/vcpkg_installed"
           if ($LASTEXITCODE -ne 0) { throw "tidy preset configure failed with exit code $LASTEXITCODE." }
           if (-not (Test-Path build/tidy/compile_commands.json)) {
             throw "build/tidy/compile_commands.json was not generated."
@@ -119,7 +125,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-dot
+      - uses: ./desktop/actions/setup-dot
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -132,14 +138,14 @@ jobs:
       # Share the compiled tree (test exes + dot.exe deploy + PDBs for native
       # coverage). Downstream jobs still run setup-dot to restore Qt onto PATH
       # and regenerate the ctest config, then drop these exes back into
-      # build/dev/Debug and run ctest without recompiling. The GitHub-hosted
+      # desktop/build/dev/Debug and run ctest without recompiling. The GitHub-hosted
       # checkout path is identical across jobs, so the absolute
       # paths baked into CTestTestfile.cmake resolve.
       - name: Upload compiled test tree
         uses: actions/upload-artifact@v7
         with:
           name: build-dev-debug
-          path: build/dev/Debug
+          path: desktop/build/dev/Debug
           retention-days: 1
           if-no-files-found: error
 
@@ -153,7 +159,7 @@ jobs:
         tier: [unit, integration, qml]
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-dot
+      - uses: ./desktop/actions/setup-dot
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -161,7 +167,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-dev-debug
-          path: build/dev/Debug
+          path: desktop/build/dev/Debug
 
       - name: Collect coverage (${{ matrix.tier }})
         shell: pwsh
@@ -192,7 +198,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cov-${{ matrix.tier }}
-          path: _cov/${{ matrix.tier }}.cobertura
+          path: desktop/_cov/${{ matrix.tier }}.cobertura
           retention-days: 1
           if-no-files-found: error
 
@@ -216,6 +222,9 @@ jobs:
           }
 
   coverage-gate:
+    defaults:
+      run:
+        working-directory: .
     name: coverage-gate
     needs: test
     runs-on: windows-latest
@@ -240,7 +249,7 @@ jobs:
           $reports = (Get-ChildItem _cov\*.cobertura).FullName
           if (-not $reports) { throw "no per-tier cobertura reports found under _cov/." }
           Write-Host "unioning $($reports.Count) tier report(s):`n$($reports -join "`n")"
-          & scripts\coverage_union.ps1 -CoberturaPath $reports
+          & desktop\scripts\coverage_union.ps1 -CoberturaPath $reports
 
       # Require 100% coverage of the lines this change touches (patch coverage).
       # Only runs on pull requests, where a base ref exists to diff against.
@@ -252,4 +261,4 @@ jobs:
           if (-not $reports) { throw "no per-tier cobertura reports found under _cov/." }
           $base = "${{ github.event.pull_request.base.sha }}"
           if (-not $base) { $base = "origin/main" }
-          & scripts\coverage_patch.ps1 -ReportPath $reports -BaseRef $base
+          & common\scripts\coverage_patch.ps1 -ReportPath $reports -BaseRef $base

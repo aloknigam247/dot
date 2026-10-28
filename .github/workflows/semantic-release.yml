@@ -42,18 +42,18 @@ jobs:
           node-version: "24.15.0"
 
       - name: Install locked versioning tools
-        run: npm --prefix .github/release ci --ignore-scripts --no-audit --no-fund
+        run: npm --prefix common/release ci --ignore-scripts --no-audit --no-fund
 
       - name: Version Android
         env:
           RELEASE_COMPONENT: android
         run: |
-          node .github/release/node_modules/semantic-release/bin/semantic-release.js `
-            --extends ./.github/release/release.config.cjs
+          node common/release/node_modules/semantic-release/bin/semantic-release.js `
+            --extends ./common/release/release.config.cjs
 
       - name: Version dot
         env:
           RELEASE_COMPONENT: dot
         run: |
-          node .github/release/node_modules/semantic-release/bin/semantic-release.js `
-            --extends ./.github/release/release.config.cjs
+          node common/release/node_modules/semantic-release/bin/semantic-release.js `
+            --extends ./common/release/release.config.cjs
