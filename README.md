@@ -65,9 +65,6 @@ vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
 Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
 location; caches from other application identities are not imported.
 
-The chat input and chat toggle follow the editor's `guifont` and `linespace` metrics. Padding and corners use
-[logical-pixel geometry](docs/design/DESIGN.md#4-metrics), independent of font size.
-
 ## Architecture
 
 dot is a thin, reactive layer over Neovim: Neovim owns all editing state and emits a redraw event
