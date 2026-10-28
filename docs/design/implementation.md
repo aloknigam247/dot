@@ -205,9 +205,9 @@ Connect these component families to the existing native integration surfaces:
 | Native integration surface | Reference responsibility |
 |----------------------------|--------------------------|
 | [Android UI](../../android/app/src/main/java/com/dot/companion/ui/ChatScreen.kt) | Touch-screen composition and conversation presentation |
-| [ChatPanel.qml](../../qml/ChatPanel.qml) | Desktop chat pane, transcript, and composer |
-| [Main.qml](../../qml/Main.qml), [WindowChrome.h](../../include/WindowChrome.h) | Window frame, caption integration, and editor/chat composition |
-| [Shell.qml](../../qml/Shell.qml) | Grid host, cursor overlay, and focus ownership |
+| [ChatPanel.qml](../../desktop/qml/ChatPanel.qml) | Desktop chat pane, transcript, and composer |
+| [Main.qml](../../desktop/qml/Main.qml), [WindowChrome.h](../../desktop/include/WindowChrome.h) | Window frame, caption integration, and editor/chat composition |
+| [Shell.qml](../../desktop/qml/Shell.qml) | Grid host, cursor overlay, and focus ownership |
 
 The native data flow and engineering invariants remain in [README.md](../../README.md#architecture) and
 [AGENTS.md](../../AGENTS.md). Verify native behavior and both themes against the applicable rules before

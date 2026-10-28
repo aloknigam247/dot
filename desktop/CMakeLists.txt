@@ -129,7 +129,7 @@ qt_add_qml_module(dot_lib
 
 if(WIN32)
     set_property(SOURCE resources/dot.rc APPEND PROPERTY
-        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/design/icons/dot.ico")
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../common/icons/dot.ico")
     qt_add_executable(dot src/main.cpp resources/dot.rc "${CMAKE_BINARY_DIR}/generated/dot_version.rc")
 else()
     qt_add_executable(dot src/main.cpp)

@@ -5,7 +5,7 @@ A minimal Android client that connects to Microsoft [Agent Host Protocol](https:
 chat on each host, renders the transcript, and streams assistant replies live as they arrive.
 
 The application ID is `com.dot.companion`. Preferences from other application IDs are not imported.
-Its launcher uses the [at-rest owl](../design/icons/owl_idle.svg).
+Its launcher uses the [at-rest owl](../common/icons/owl_idle.svg).
 
 It points at a **cptower** multiplexer rather than a single AHP host: cptower
 discovers every live Copilot AHP host on a machine and exposes them behind one port, and the app

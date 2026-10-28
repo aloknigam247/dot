@@ -3,6 +3,9 @@ const path = require("node:path");
 const androidPaths = [
   ".github/workflows/android-ci.yml",
   "android",
+  "common/icons/android",
+  "common/icons/owl*",
+  "common/icons/png/owl*",
   "design/icons/android",
   "design/icons/owl*",
   "design/icons/png/owl*",
@@ -14,6 +17,12 @@ const sharedPaths = [
   "AGENTS.md",
   "LICENSE",
   "README.md",
+  "common/icons/.gitattributes",
+  "common/icons/README.md",
+  "common/icons/export_icons.py",
+  "common/icons/requirements.txt",
+  "common/release",
+  "common/scripts/coverage_patch.ps1",
   "design/icons/.gitattributes",
   "design/icons/README.md",
   "design/icons/export_icons.py",
@@ -31,8 +40,8 @@ const components = {
     paths: [...androidPaths, ...sharedPaths],
   },
   dot: {
-    assets: ["CHANGELOG.md", "CMakeLists.txt", "vcpkg.json"],
-    changelog: "CHANGELOG.md",
+    assets: ["desktop/CHANGELOG.md", "desktop/CMakeLists.txt", "desktop/vcpkg.json"],
+    changelog: "desktop/CHANGELOG.md",
     paths: [".", ...androidPaths.map((entry) => `:(exclude)${entry}`)],
   },
 };
@@ -62,7 +71,7 @@ module.exports = {
       changelogFile: component.changelog,
     }],
     [require.resolve("@semantic-release/exec"), {
-      prepareCmd: `node "${path.join("scripts", "set_version.cjs")}" ${componentName} \${nextRelease.version}`,
+      prepareCmd: `node "${path.join("common", "release", "set_version.cjs")}" ${componentName} \${nextRelease.version}`,
     }],
     [require.resolve("@semantic-release/git"), {
       assets: component.assets,

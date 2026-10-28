@@ -1,4 +1,4 @@
-# scripts/screenshot_dot.ps1
+# desktop/scripts/screenshot_dot.ps1
 #
 # Launches dot.exe with a file (and optional init.vim) and saves a PNG of the
 # rendered window. Use for visual validation of paint-path changes — ligatures,
@@ -10,7 +10,7 @@
 # PW_RENDERFULLCONTENT (0x2, captures DirectComposition/hardware surfaces).
 #
 # Example:
-#   pwsh scripts/screenshot_dot.ps1 -File D:\some.txt -InitFile D:\some.vim
+#   pwsh desktop/scripts/screenshot_dot.ps1 -File D:\some.txt -InitFile D:\some.vim
 #
 # Returns the PNG path on stdout on success.
 
