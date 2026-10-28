@@ -7,6 +7,7 @@ Item {
 
     property alias cellWidth:  baseGrid.cellWidth
     property alias cellHeight: baseGrid.cellHeight
+    property alias metrics: desktopMetrics
 
     // Global grid (id=1) backs the whole shell.
     GridItem {
@@ -15,6 +16,11 @@ Item {
         connector: $connector
         gridId: 1
         focus: true
+    }
+
+    DesktopMetrics {
+        id: desktopMetrics
+        grid: baseGrid
     }
 
     // Cursor overlay. Sibling of baseGrid so its texture composites on top of

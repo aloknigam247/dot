@@ -200,6 +200,23 @@ set_tests_properties(test_qml PROPERTIES
     TIMEOUT 30
 )
 
+get_test_property(test_qml ENVIRONMENT qml_test_environment)
+get_test_property(test_qml ENVIRONMENT_MODIFICATION qml_test_path)
+list(APPEND qml_test_environment "DOT_SESSION_MIRROR_ADDRESS=127.0.0.1")
+set_tests_properties(test_qml PROPERTIES ENVIRONMENT "${qml_test_environment};QT_SCALE_FACTOR=1")
+foreach(scale IN ITEMS 1.5 2)
+    string(REPLACE "." "_" scale_suffix "${scale}")
+    add_test(NAME test_qml_scale_${scale_suffix}
+        COMMAND test_qml -input ${CMAKE_CURRENT_SOURCE_DIR}/qml
+    )
+    set_tests_properties(test_qml_scale_${scale_suffix} PROPERTIES
+        ENVIRONMENT "${qml_test_environment};QT_SCALE_FACTOR=${scale}"
+        ENVIRONMENT_MODIFICATION "${qml_test_path}"
+        LABELS "qml"
+        TIMEOUT 30
+    )
+endforeach()
+
 # Pixel-probe tests address the rendered image in logical coordinates and, for
 # test_pixel_snapshot, compare it against a golden stored at 1:1. Disable Qt's
 # high-DPI scaling so one logical pixel is one device pixel regardless of the

@@ -34,6 +34,7 @@ class GridItem : public QQuickItem {
     // CursorItem.cellBaseline binding).
     Q_PROPERTY(qreal cellBaseline READ baseline NOTIFY fontChanged)
     Q_PROPERTY(bool debugOverlay READ debugOverlay WRITE setDebugOverlay NOTIFY debugOverlayChanged)
+    Q_PROPERTY(QFont textFont READ textFont NOTIFY fontChanged)
 
 public:
     explicit GridItem(QQuickItem *parent = nullptr);
@@ -58,6 +59,8 @@ public:
     bool debugOverlay() const { return m_debugOverlay; }
     void setDebugOverlay(bool v);
 
+    const QFont &textFont() const { return m_font; }
+
     Q_INVOKABLE int colAt(qreal x) const;
     Q_INVOKABLE int rowAt(qreal y) const;
 
@@ -80,6 +83,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *ev) override;
     void wheelEvent(QWheelEvent *ev) override;
     void geometryChange(const QRectF &newGeom, const QRectF &oldGeom) override;
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
 
 private:
     Q_SLOT void onGuifontChanged();

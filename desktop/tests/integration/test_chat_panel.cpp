@@ -35,6 +35,7 @@
 
 #include "ChatModel.h"
 #include "CopilotBridgeClient.h"
+#include "GridItem.h"
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 
@@ -139,7 +140,16 @@ private slots:
         qRegisterMetaType<dot::ObjectHandlePtr>("dot::ObjectHandlePtr");
     }
 
+    void chatPanelEndToEnd_data() {
+        QTest::addColumn<bool>("restart");
+        QTest::newRow("default") << false;
+        QTest::newRow("restart") << true;
+    }
+
     void chatPanelEndToEnd() {
+        const QString smallFontCommand =
+            QStringLiteral("set guifont=Cascadia\\ Code:h12 linespace=0");
+        QFETCH(bool, restart);
         NvimConnector conn;
         QVERIFY(startTestNvim(conn));
 
@@ -165,6 +175,23 @@ private slots:
         QVERIFY2(panel, "chatPanel not found in scene");
         QVERIFY2(model, "ChatModel not found in scene");
         QVERIFY2(bridge, "CopilotBridgeClient not found in scene");
+
+        auto *grid = window->findChild<GridItem *>();
+        auto *input = window->findChild<QQuickItem *>(QStringLiteral("chatInput"));
+        auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
+        QVERIFY(grid && input && shell);
+        auto *metrics = shell->property("metrics").value<QObject *>();
+        QVERIFY(metrics);
+        if(restart) {
+            const auto apiLevel = evalSync(conn, QStringLiteral("api_info().version.api_level"));
+            QVERIFY(apiLevel);
+            if(apiLevel->toInt() < 14) QSKIP("nvim API level < 14: :restart UI event unavailable");
+        }
+        conn.command(smallFontCommand);
+        QVERIFY(waitUntil([&] {
+            return grid->fontSize() == 12.0 && conn.linespace() == 0 &&
+                   conn.grid()->gridCols(1) == static_cast<int>(shell->width() / grid->cellWidth());
+        }, 5000));
 
         // Focus starts on the grid; record it so we can prove it is restored.
         QQuickItem *gridFocus = window->activeFocusItem();
@@ -199,7 +226,47 @@ private slots:
         // Type into the chat input via the focus chain -> injected to the bridge.
         QTest::keyClick(window, Qt::Key_H);
         QTest::keyClick(window, Qt::Key_I);
+        QCOMPARE(input->property("text").toString(), QStringLiteral("hi"));
+
+        conn.command(QStringLiteral("set guifont=Cascadia\\ Code:h24 linespace=6"));
+        QVERIFY(waitUntil([&] { return grid->fontSize() == 24.0 && conn.linespace() == 6; }, 5000));
+        QCOMPARE(window->activeFocusItem(), input);
+        QCOMPARE(input->property("text").toString(), QStringLiteral("hi"));
+        QCOMPARE(input->property("font").value<QFont>(), grid->textFont());
+        QCOMPARE(input->height() - 2 * input->property("padding").toReal(), grid->cellHeight());
+
+        if(restart) {
+            int newPid = 0;
+            const auto oldPid = evalSync(conn, QStringLiteral("getpid()"));
+            QVERIFY(oldPid && oldPid->toInt() > 0);
+            QSignalSpy disconnectedSpy(&conn, &NvimConnector::disconnected);
+            conn.command(QStringLiteral("restart!"));
+            QVERIFY2(waitUntil(
+                         [&] {
+                const auto pid = evalSync(conn, QStringLiteral("getpid()"), 1000);
+                if(pid && pid->toInt() > 0 && pid->toInt() != oldPid->toInt())
+                    newPid = pid->toInt();
+                return newPid != 0 && conn.attached();
+            }, 20000),
+                     "Chat-open restart did not reconnect to a new Neovim process");
+            QCOMPARE(disconnectedSpy.count(), 0);
+            QCOMPARE(window->findChild<QQuickItem *>(QStringLiteral("chatInput")), input);
+            QCOMPARE(window->findChild<QQuickItem *>(QStringLiteral("chatToggle")), toggle);
+            QCOMPARE(shell->property("metrics").value<QObject *>(), metrics);
+            QCOMPARE(metrics->property("grid").value<QObject *>(), grid);
+            QCOMPARE(window->activeFocusItem(), input);
+            QCOMPARE(input->property("text").toString(), QStringLiteral("hi"));
+            QCOMPARE(input->property("font").value<QFont>(), grid->textFont());
+            QVERIFY(panel->isVisible());
+            QVERIFY(bridge->isConnected());
+        }
+
+        conn.command(smallFontCommand);
+        QVERIFY(waitUntil([&] { return grid->fontSize() == 12.0 && conn.linespace() == 0; }, 5000));
+        QCOMPARE(window->activeFocusItem(), input);
+        QCOMPARE(input->property("text").toString(), QStringLiteral("hi"));
         QTest::keyClick(window, Qt::Key_Return);
+        QVERIFY(input->property("text").toString().isEmpty());
 
         // The typed line is injected into the copilot bridge as a prompt. This is
         // the positive proof that input routes to the bridge (not merely that no
