@@ -46,8 +46,8 @@
     Report format: "cobertura" (default, C++) or "jacoco" (Android).
 
 .PARAMETER DiffPath
-    Pathspecs restricting the diff to production sources. Defaults to the C++
-    "src"/"include"; pass "android/app/src/main" for the Android module.
+    Repository-relative production pathspecs. Include both endpoints of source
+    directory renames. Pass "android/app/src/main" for the Android module.
 
 .PARAMETER SourceRoot
     JaCoCo only: repo-relative source root prepended to "<package>/<sourcefile>"
@@ -61,7 +61,7 @@ param(
     [Parameter(Mandatory)][Alias("CoberturaPath")][string[]]$ReportPath,
     [Parameter(Mandatory)][string]$BaseRef,
     [ValidateSet("cobertura", "jacoco")][string]$Format = "cobertura",
-    [string[]]$DiffPath = @("src", "include"),
+    [string[]]$DiffPath = @("desktop/include", "desktop/src", "include", "src"),
     [string]$SourceRoot = "android/app/src/main/java",
     [double]$MinPatchRatio = 1.0
 )
@@ -72,15 +72,22 @@ $ErrorActionPreference = "Stop"
 # and each report's reconstructed paths are reduced to this so they collide.
 function Get-MatchKey([string]$path) { return $path.Replace("\", "/").ToLowerInvariant() }
 
-# A cobertura class filename is an absolute build path; reduce it to its
-# repo-relative src/... or include/... tail so it matches git's paths.
+# Resolve report filenames against the checkout, excluding similarly named
+# sources from other build trees.
 function Get-CoberturaKey([string]$path) {
-    $p = $path.Replace("\", "/").ToLowerInvariant()
-    if ($p -match "(^|/)((src|include)/.+)$") { return $Matches[2] }
+    $absolute = [IO.Path]::GetFullPath($path, $repoRoot)
+    $relative = [IO.Path]::GetRelativePath($repoRoot, $absolute)
+    $key = Get-MatchKey $relative
+    if ($key -match "^desktop/(src|include)/.+$") { return $key }
     return $null
 }
 
-$mergeBase = (git merge-base $BaseRef HEAD).Trim()
+$repoRoot = git rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
+    throw "Could not resolve the repository root."
+}
+$repoRoot = [IO.Path]::GetFullPath($repoRoot.Trim())
+$mergeBase = (git -C $repoRoot merge-base $BaseRef HEAD).Trim()
 if (-not $mergeBase) { Write-Error "could not find merge-base of $BaseRef and HEAD."; exit 1 }
 Write-Host "patch coverage ($Format): diffing $mergeBase..HEAD over $($DiffPath -join ', ')"
 
@@ -88,7 +95,8 @@ Write-Host "patch coverage ($Format): diffing $mergeBase..HEAD over $($DiffPath 
 $changed = @{}
 $curKey = $null
 $newLine = 0
-$diff = git diff --unified=0 --diff-filter=AMR $mergeBase HEAD -- $DiffPath
+$diff = git -C $repoRoot diff --find-renames --unified=0 --diff-filter=AMR $mergeBase HEAD -- $DiffPath
+if ($LASTEXITCODE -ne 0) { throw "Could not read changed production lines." }
 foreach ($line in $diff) {
     if ($line.StartsWith("+++ ")) {
         $raw = $line.Substring(4).Trim()
@@ -157,8 +165,9 @@ foreach ($key in ($changed.Keys | Sort-Object)) {
     # Resolve exemption markers from the HEAD source (original-case path so it
     # reads correctly on case-sensitive filesystems).
     $exemptLines = [System.Collections.Generic.HashSet[int]]::new()
-    if (Test-Path -LiteralPath $entry.Path) {
-        $srcLines = Get-Content -LiteralPath $entry.Path
+    $sourcePath = Join-Path $repoRoot $entry.Path
+    if (Test-Path -LiteralPath $sourcePath) {
+        $srcLines = Get-Content -LiteralPath $sourcePath
         $inBlock = $false
         for ($i = 0; $i -lt $srcLines.Count; $i++) {
             $text = $srcLines[$i]
@@ -196,7 +205,7 @@ if ($ratio -lt $MinPatchRatio) {
     Write-Host ""
     Write-Host ("FAIL: {0} changed line(s) not covered by tests:" -f $uncovered.Count) -ForegroundColor Red
     foreach ($u in $uncovered) { Write-Host "  $u" -ForegroundColor Red }
-    Write-Host "Add tests for the lines above, or mark genuinely uncoverable lines with // no-cover (see scripts/coverage_patch.ps1)." -ForegroundColor Red
+    Write-Host "Add tests for these lines or mark genuinely uncoverable lines with // no-cover." -ForegroundColor Red
     exit 1
 }
 

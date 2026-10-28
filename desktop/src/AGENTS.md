@@ -42,10 +42,12 @@ Root rules in `AGENTS.md` still apply. This file adds C++-only specifics.
 
 ## Build/test cheatsheet
 
+Run CMake/CTest commands from the checkout's `desktop\` directory.
+
 Iterate on a single `.cpp` without re-running vcpkg-configure:
 ```ps1
-msbuild <WORKTREE>\build\release\dot_lib.vcxproj /p:Configuration=RelWithDebInfo /m
-msbuild <WORKTREE>\build\dev\dot_lib.vcxproj /p:Configuration=Debug /m       # Debug escape hatch
+msbuild <WORKTREE>\desktop\build\release\dot_lib.vcxproj /p:Configuration=RelWithDebInfo /m
+msbuild <WORKTREE>\desktop\build\dev\dot_lib.vcxproj /p:Configuration=Debug /m       # Debug escape hatch
 ```
 Full build + tests (worktree):
 ```ps1

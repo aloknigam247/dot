@@ -17,10 +17,10 @@
     SECURITY TRADEOFF: an excluded path is no longer scanned by Defender's real-time
     protection. Only exclude a directory whose contents you trust and control (your own
     build output). Do NOT exclude a broad location such as your whole user profile or a
-    downloads folder. This script defaults to the repo's build tree (build\).
+    downloads folder. This script defaults to the desktop build tree.
 
 .PARAMETER Path
-    Directory to exclude. Defaults to the repo's build\ tree (covers every preset's output
+    Directory to exclude. Defaults to desktop\build\ (covers every preset's output
     and its compile intermediates). Pass a worktree's build dir explicitly to cover it too.
 
 .PARAMETER Remove
@@ -28,15 +28,15 @@
 
 .EXAMPLE
     # Add an exclusion for the default build tree (run from an elevated shell):
-    pwsh -NoProfile -File scripts\add_defender_exclusion.ps1
+    pwsh -NoProfile -File desktop\scripts\add_defender_exclusion.ps1
 
 .EXAMPLE
     # Exclude a specific install directory:
-    pwsh -NoProfile -File scripts\add_defender_exclusion.ps1 -Path ".\build\release"
+    pwsh -NoProfile -File desktop\scripts\add_defender_exclusion.ps1 -Path ".\desktop\build\release"
 
 .EXAMPLE
     # Undo:
-    pwsh -NoProfile -File scripts\add_defender_exclusion.ps1 -Remove
+    pwsh -NoProfile -File desktop\scripts\add_defender_exclusion.ps1 -Remove
 #>
 [CmdletBinding()]
 param(
@@ -46,7 +46,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Resolve default path: the repo's build\ tree (parent of scripts\). Excluding the whole tree —
+# Resolve default path: the desktop build\ tree (parent of scripts\). Excluding the whole tree —
 # not just build\release\RelWithDebInfo — is deliberate: the post-build first-launch cost is Defender
 # scanning the several GB of compile intermediates (.obj/.pdb/.lib) in build\<preset>\, which the
 # narrower deploy-dir exclusion leaves scanned. It also covers every preset (dev/release/ci-*) at once.
@@ -103,4 +103,4 @@ Add-MpPreference -ExclusionPath $Path
 Write-Host "Added Defender exclusion: $Path" -ForegroundColor Green
 Write-Host ""
 Write-Host "Cold launches of dot from this directory will now skip Defender's real-time scan."
-Write-Host "To undo:  pwsh -NoProfile -File scripts\add_defender_exclusion.ps1 -Remove -Path '$Path'"
+Write-Host "To undo: pwsh -NoProfile -File `"$PSCommandPath`" -Remove -Path `"$Path`""

@@ -52,7 +52,7 @@ android {
     }
 
     sourceSets.named("main") {
-        res.srcDir(rootProject.file("../design/icons/android"))
+        res.srcDir(rootProject.file("../common/icons/android"))
     }
 }
 

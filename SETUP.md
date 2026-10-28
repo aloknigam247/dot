@@ -2,6 +2,9 @@
 
 > All steps run in **PowerShell 7 (`pwsh`)** on Windows. Versions below are the ones that actually built successfully (May 2026).
 
+Desktop build, test, and coverage commands run from the checkout's `desktop\` directory.
+For Android, see its [build instructions](android/README.md).
+
 ## 1. Install Visual Studio Build Tools 2026
 
 > ⚠️ Don't use `winget install Microsoft.VisualStudio.BuildTools --override "--quiet ..."` — winget reports success once the bootstrapper downloads, but the actual workload install silently fails to land. Use the direct bootstrapper instead.
@@ -55,6 +58,7 @@ git clone https://github.com/microsoft/vcpkg.git D:\vcpkg
 ## 4. Pin the vcpkg baseline
 
 ```ps1
+Set-Location (Join-Path (git rev-parse --show-toplevel) "desktop")
 $sha = git -C $env:VCPKG_ROOT rev-parse HEAD
 (Get-Content .\vcpkg-configuration.json -Raw) -replace 'REPLACE_WITH_CURRENT_BASELINE_COMMIT_SHA', $sha | Set-Content .\vcpkg-configuration.json -NoNewline
 ```
@@ -64,7 +68,7 @@ $sha = git -C $env:VCPKG_ROOT rev-parse HEAD
 ## 5. First configure — slow (Qt compile)
 
 ```ps1
-Set-Location (git rev-parse --show-toplevel)
+Set-Location (Join-Path (git rev-parse --show-toplevel) "desktop")
 cmake --preset release   # or: cmake --preset dev  (Debug escape hatch)
 ```
 
@@ -108,6 +112,18 @@ A window opens, attaches to nvim, and you'll see a `[No Name]` buffer with curso
 
 These are only needed to run the coverage gate locally or to understand what CI does — a plain
 build/test (steps 1–8) does not require them.
+
+### CI trigger boundaries
+
+[Desktop CI](.github/workflows/ci.yml) and [Android CI](.github/workflows/android-ci.yml) use native path filters following
+the [repository layout](README.md#repository-layout). Shared changes run both workflows; documentation inside an included
+component directory also runs its validation. Unrelated root documentation and design changes do not start validation.
+The workflow YAML files define the exact filters; an included change runs the complete existing workflow.
+
+Skipped workflows may leave required checks or coverage requirements unsatisfied. Check the effective
+[repository rules](https://github.com/aloknigam247/dot/rules) and GitHub's
+[native filter behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#using-filters-to-target-specific-paths-for-pull-request-or-push-events).
+Report a merge-policy conflict instead of bypassing or weakening the requirements.
 
 ### Neovim on PATH (integration tier)
 

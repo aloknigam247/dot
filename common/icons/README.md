@@ -6,9 +6,9 @@ Working is SVG-only; `owl_working.svg` contains Focused scan, paused for system 
 Export with Python, Microsoft Edge and the packages in `requirements.txt`:
 
 ```ps1
-python -m pip install -r design\icons\requirements.txt
-python design\icons\export_icons.py
-python design\icons\export_icons.py --check
+python -m pip install -r common\icons\requirements.txt
+python common\icons\export_icons.py
+python common\icons\export_icons.py --check
 ```
 
 The exporter generates `png\`, the Android drawable in `android\`, and the classic DIB `dot.ico`.

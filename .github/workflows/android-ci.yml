@@ -1,22 +1,17 @@
 name: Android CI
 
 on:
-  # Required-check caveat: path-filtered workflows do not run for every PR. If any job
-  # here or in ci.yml is marked *required* in branch protection, a filtered-out
-  # (never-triggered) job shows as "expected but never reported" and blocks merge
-  # forever. Keep both pipelines' jobs non-required, or gate on a merge-queue /
-  # aggregator job that both workflows can satisfy.
   pull_request:
     paths:
-      - "android/**"
       - ".github/workflows/android-ci.yml"
-      - "design/icons/**"
+      - "android/**"
+      - "common/**"
   push:
     branches: [main]
     paths:
-      - "android/**"
       - ".github/workflows/android-ci.yml"
-      - "design/icons/**"
+      - "android/**"
+      - "common/**"
 
 # A newer push to the same ref cancels the in-flight run.
 concurrency:
@@ -76,7 +71,8 @@ jobs:
           $base = "${{ github.event.pull_request.base.sha }}"
           if (-not $base) { $base = "origin/main" }
           $report = "android/app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"
-          & scripts/coverage_patch.ps1 -ReportPath $report -BaseRef $base -Format jacoco -DiffPath android/app/src/main
+          & common/scripts/coverage_patch.ps1 -ReportPath $report -BaseRef $base `
+            -Format jacoco -DiffPath android/app/src/main
 
       # assembleDebug is build verification: it catches manifest/resource/AAPT
       # packaging failures that the JVM unit tests can't. This step does not publish the APK.
