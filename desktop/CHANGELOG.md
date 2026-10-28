@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/aloknigam247/dot/compare/dot-v1.0.0...dot-v1.1.0) (2026-10-28)
+
+### Added
+
+* **ui:** share desktop geometry and text metrics ([34fd283](https://github.com/aloknigam247/dot/commit/34fd283dd1c7a52734ddfe5700c4b74416a497e8)), closes [#103](https://github.com/aloknigam247/dot/issues/103) [#101](https://github.com/aloknigam247/dot/issues/101)
+
 ## 1.0.0 (2026-10-26)
 
 ### Added
