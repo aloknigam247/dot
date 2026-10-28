@@ -17,6 +17,8 @@ Rectangle {
     property alias model: chatModel
     property alias inputField: input
 
+    required property DesktopMetrics metrics
+
     signal closed()
 
     function open() {
@@ -139,8 +141,10 @@ Rectangle {
 
         Rectangle {
             id: inputRow
+            objectName: "chatInputRow"
             width: parent.width
-            height: 32
+            height: panel.metrics.rowHeight + 2 * panel.metrics.padding
+            radius: panel.metrics.cornerRadius
             color: "#1e1e1e"
             border.color: "#3c3c3c"
             border.width: 1
@@ -149,13 +153,13 @@ Rectangle {
                 id: input
                 objectName: "chatInput"
                 anchors.fill: parent
-                anchors.margins: 6
+                padding: panel.metrics.padding
                 verticalAlignment: TextInput.AlignVCenter
                 color: "#e6e6e6"
                 clip: true
                 selectByMouse: true
-                font.family: $connector.guifontFamily
-                font.pointSize: $connector.guifontSize
+                font: panel.metrics.textFont
+                Accessible.name: qsTr("Chat input")
 
                 // Submit on Enter: the line is injected as a user prompt into
                 // the Copilot session(s) via the bridge — it returns through the

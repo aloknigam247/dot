@@ -216,6 +216,17 @@ void GridItem::geometryChange(const QRectF &newGeom, const QRectF &oldGeom) {
     maybeResizeUi();
 }
 
+void GridItem::itemChange(ItemChange change, const ItemChangeData &data) {
+    QQuickItem::itemChange(change, data);
+    if(change != ItemSceneChange && change != ItemDevicePixelRatioHasChanged) return;
+    if((change == ItemSceneChange && !data.window) || !window()) return;
+
+    recomputeMetrics();
+    emit fontChanged();
+    maybeResizeUi();
+    update();
+}
+
 void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h) {
     const QColor defaultBg = h->defaultBg();
     const QVector<PillSpan> &spans = runs.pills;

@@ -168,6 +168,7 @@ Window {
     // the grid to <=0 width (which would suppress the resize entirely).
     ChatPanel {
         id: chatPanel
+        metrics: shell.metrics
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.right: parent.right
@@ -183,35 +184,68 @@ Window {
     Item {
         id: chatToggle
         objectName: "chatToggle"
-        width: 24
-        height: 22
+        width: metrics.rowHeight + 2 * padding
+        height: width
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.rightMargin: 6
         anchors.topMargin: 3
         z: 150
 
+        readonly property real cornerRadius: metrics.cornerRadius
+        readonly property DesktopMetrics metrics: shell.metrics
+        readonly property real padding: metrics.padding
+
+        Accessible.name: chatPanel.visible ? qsTr("Close chat") : qsTr("Open chat")
+        Accessible.role: Accessible.Button
+        Accessible.onPressAction: toggle()
+
+        function toggle() {
+            if (chatPanel.visible) chatPanel.requestClose()
+            else chatPanel.open()
+        }
+
         Canvas {
             id: chatIcon
+            objectName: "chatIcon"
             anchors.fill: parent
             property color tint: chatPanel.visible ? "#5a9fd4"
                                : (toggleArea.containsMouse ? "#e0e0e0" : "#9d9d9d")
+            readonly property real cornerRadius: chatToggle.cornerRadius
+            readonly property real padding: chatToggle.padding
+            readonly property real strokeWidth: Math.min(1.5, symbolSize)
+            readonly property real symbolSize: Math.max(0, Math.min(width - 2 * padding, height - 2 * padding,
+                                                                   chatToggle.metrics.textFont.pixelSize * 6 / 7))
+
+            onHeightChanged: requestPaint()
+            onSymbolSizeChanged: requestPaint()
             onTintChanged: requestPaint()
+            onWidthChanged: requestPaint()
             onPaint: {
-                var ctx = getContext("2d")
+                const ctx = getContext("2d")
                 ctx.reset()
+                ctx.clearRect(0, 0, width, height)
                 ctx.strokeStyle = tint
-                ctx.lineWidth = 1.5
-                var bx = 3, by = 2, bw = width - 6, bh = height - 9, r = 3
+                ctx.lineJoin = "round"
+                ctx.lineWidth = strokeWidth
+                const inset = strokeWidth / 2
+                const bx = (width - symbolSize) / 2 + inset
+                const by = (height - symbolSize) / 2 + inset
+                const bw = Math.max(0, symbolSize - strokeWidth)
+                const tailHeight = Math.min(chatToggle.padding, bw / 3)
+                const bh = Math.max(0, bw - tailHeight)
+                const r = Math.min(cornerRadius, bw / 2, bh / 2)
+                const tailWidth = Math.min(chatToggle.padding, Math.max(0, bw - 2 * r))
+                const tailX = Math.min(bw - r - tailWidth, Math.max(r, bw / 3))
                 ctx.beginPath()
                 ctx.moveTo(bx + r, by)
                 ctx.lineTo(bx + bw - r, by)
                 ctx.arcTo(bx + bw, by, bx + bw, by + r, r)
                 ctx.lineTo(bx + bw, by + bh - r)
                 ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r)
-                ctx.lineTo(bx + 7, by + bh)
-                ctx.lineTo(bx + 4, by + bh + 4)  // tail
-                ctx.lineTo(bx + 4, by + bh)
+                ctx.lineTo(bx + tailX + tailWidth, by + bh)
+                ctx.lineTo(bx + tailX, by + bh + tailHeight)
+                ctx.lineTo(bx + tailX, by + bh)
                 ctx.lineTo(bx + r, by + bh)
                 ctx.arcTo(bx, by + bh, bx, by + bh - r, r)
                 ctx.lineTo(bx, by + r)
@@ -225,10 +259,7 @@ Window {
             id: toggleArea
             anchors.fill: parent
             hoverEnabled: true
-            onClicked: {
-                if (chatPanel.visible) chatPanel.requestClose()
-                else chatPanel.open()
-            }
+            onClicked: chatToggle.toggle()
         }
     }
 
