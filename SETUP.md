@@ -175,8 +175,7 @@ figure over `src/` + `include/` and fails if it regresses below the floor:
 pwsh -NoProfile -File scripts\coverage_union.ps1 -CoberturaPath _cov\full.cobertura
 ```
 
-Ratchet `-MinCovered` / `-MinRatio` upward as coverage improves (issue #33 tracks the gate, #40
-tracks raising coverage toward 100%).
+Use `-MinRatio` to set the required coverage ratio. Covered-line counts are informational, not a separate gate.
 
 ### CI vcpkg binary cache (one-time, maintainer)
 
