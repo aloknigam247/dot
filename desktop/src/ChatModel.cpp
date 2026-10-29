@@ -33,8 +33,6 @@ void ChatModel::appendBlock(const QString &author, const QString &text) {
     if(text.isEmpty()) return;
     const Author a = authorFromName(author);
     appendMessage(a, text);
-    const QString id = QStringLiteral("x") + QString::number(++m_block);
-    emit messageAdded(id, authorName(a), text);
 }
 
 QString ChatModel::textAt(int row) const {

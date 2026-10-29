@@ -34,7 +34,7 @@ option(DOT_ENABLE_ASAN "Build with MSVC AddressSanitizer" OFF)
 option(DOT_WERROR "Treat dot's own compiler warnings as errors (CI gate)" OFF)
 option(BUILD_TESTING "Build the test suites" ON)
 
-find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickTest Test WebSockets)
+find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickTest Test)
 find_package(msgpack-cxx CONFIG REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.10)
@@ -77,7 +77,6 @@ set(DOT_LIB_SOURCES
     src/Config.cpp              include/Config.h
     src/ConfigCliReader.cpp     include/ConfigCliReader.h
     src/ConfigGGlobalReader.cpp include/ConfigGGlobalReader.h
-    src/CopilotBridgeClient.cpp include/CopilotBridgeClient.h
     src/CursorBlinkState.cpp    include/CursorBlinkState.h
     src/CursorItem.cpp          include/CursorItem.h
     src/GridItem.cpp            include/GridItem.h
@@ -85,15 +84,12 @@ set(DOT_LIB_SOURCES
     src/GridRuns.cpp            include/GridRuns.h
     src/HighlightTable.cpp      include/HighlightTable.h
     src/InputHandler.cpp        include/InputHandler.h
-    src/MdnsAdvertiser.cpp      include/MdnsAdvertiser.h
     src/ModeInfo.cpp            include/ModeInfo.h
     src/MsgpackRpc.cpp          include/MsgpackRpc.h
     src/NvimConnector.cpp       include/NvimConnector.h
     src/RectNodePool.cpp        include/RectNodePool.h
     src/ResizeCoalescer.cpp     include/ResizeCoalescer.h
     src/SessionCache.cpp        include/SessionCache.h
-    src/SessionEventBuffer.cpp  include/SessionEventBuffer.h
-    src/SessionMirrorServer.cpp include/SessionMirrorServer.h
     src/TextNodePool.cpp        include/TextNodePool.h
     src/VersionString.cpp       include/VersionString.h
     src/WindowChrome.cpp        include/WindowChrome.h
@@ -110,11 +106,9 @@ target_link_libraries(dot_lib
         Qt6::Network
         Qt6::Qml
         Qt6::Quick
-        Qt6::WebSockets
         msgpack-cxx
 )
 target_link_libraries(dot_lib PRIVATE $<$<PLATFORM_ID:Windows>:dwmapi>)
-target_link_libraries(dot_lib PRIVATE $<$<PLATFORM_ID:Windows>:dnsapi>)
 target_link_libraries(dot_lib PRIVATE dot_warnings)
 set_target_properties(dot_lib PROPERTIES AUTOMOC ON)
 
@@ -184,7 +178,6 @@ Qml2Imports = .
         Qt6QmlModels
         Qt6QmlWorkerScript
         Qt6Quick
-        Qt6WebSockets
     )
     set(DOT_QT_DLL_PATHS "")
     foreach(_qtdll ${DOT_QT_RUNTIME_DLLS})

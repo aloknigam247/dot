@@ -29,7 +29,6 @@ function Invoke-Entrypoint {
     $startInfo.Environment["DOT_BOOT_PROFILE"] = "1"
     [void]$startInfo.Environment.Remove("DOT_BOOT_PROFILE_FILE")
     $startInfo.Environment["DOT_PROFILE_PAINT"] = "1"
-    $startInfo.Environment["DOT_SESSION_MIRROR_ADDRESS"] = "127.0.0.1"
     $startInfo.Environment["DOT_TEST_FRAME"] = $framePath
     $startInfo.Environment["DOT_TEST_OUTPUT"] = $outputPath
     $startInfo.Environment["QML_DISABLE_DISK_CACHE"] = "1"

@@ -38,7 +38,6 @@ dot_add_test(test_chat_model          unit/test_chat_model.cpp)
 dot_add_test(test_config_cli_reader   unit/test_config_cli_reader.cpp)
 dot_add_test(test_config_g_reader     unit/test_config_g_reader.cpp)
 dot_add_test(test_config_registry     unit/test_config_registry.cpp)
-dot_add_test(test_copilot_bridge      unit/test_copilot_bridge.cpp)
 add_test(NAME test_coverage_settings
     COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
         -File "${CMAKE_CURRENT_SOURCE_DIR}/check_coverage_settings.ps1"
@@ -52,7 +51,6 @@ dot_add_test(test_hidpi_rendering     unit/test_hidpi_rendering.cpp)
 dot_add_test(test_highlight_table     unit/test_highlight_table.cpp)
 dot_add_test(test_input_fuzz          unit/test_input_fuzz.cpp)
 dot_add_test(test_input_handler       unit/test_input_handler.cpp)
-dot_add_test(test_mdns_advertise      unit/test_mdns_advertise.cpp)
 dot_add_test(test_mode_info           unit/test_mode_info.cpp)
 dot_add_test(test_mouse_input         unit/test_mouse_input.cpp)
 dot_add_test(test_msgpack_rpc         unit/test_msgpack_rpc.cpp)
@@ -61,8 +59,6 @@ dot_add_test(test_resize_coalescer    unit/test_resize_coalescer.cpp)
 dot_add_test(test_rounded_highlight   unit/test_rounded_highlight.cpp)
 dot_add_test(test_scroll_perf_micro   unit/test_scroll_perf_micro.cpp)
 dot_add_test(test_session_cache       unit/test_session_cache.cpp)
-dot_add_test(test_session_event_buffer unit/test_session_event_buffer.cpp)
-dot_add_test(test_session_mirror_lifecycle unit/test_session_mirror_lifecycle.cpp)
 dot_add_test(test_text_node_pool      unit/test_text_node_pool.cpp)
 dot_add_test(test_version             unit/test_version.cpp)
 target_compile_definitions(test_version PRIVATE DOT_EXPECTED_VERSION=${PROJECT_VERSION})
@@ -121,7 +117,6 @@ dot_add_test(test_restart_resize_fit            integration/test_restart_resize_
 dot_add_test(test_runtime_set_options           integration/test_runtime_set_options.cpp)
 dot_add_test(test_scroll_perf                   integration/test_scroll_perf.cpp)
 target_link_libraries(test_scroll_perf PRIVATE dot_libplugin Qt6::Quick)
-dot_add_test(test_session_mirror                integration/test_session_mirror.cpp)
 dot_add_test(test_startup_activation            integration/test_startup_activation.cpp)
 target_link_libraries(test_startup_activation PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_title_updates                 integration/test_title_updates.cpp)
@@ -154,9 +149,9 @@ target_link_libraries(test_boot_perf           PRIVATE dot_libplugin Qt6::Quick)
 # Instantiates GridItem (a QQuickItem) to exercise GridItem::maybeResizeUi.
 target_link_libraries(test_restart_resize_fit  PRIVATE dot_libplugin Qt6::Quick)
 
-foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_session_mirror test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
+foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
     set_tests_properties(${t} PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0;DOT_SESSION_MIRROR_ADDRESS=127.0.0.1"
+        ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
     )
 endforeach()
@@ -202,7 +197,6 @@ set_tests_properties(test_qml PROPERTIES
 
 get_test_property(test_qml ENVIRONMENT qml_test_environment)
 get_test_property(test_qml ENVIRONMENT_MODIFICATION qml_test_path)
-list(APPEND qml_test_environment "DOT_SESSION_MIRROR_ADDRESS=127.0.0.1")
 set_tests_properties(test_qml PROPERTIES ENVIRONMENT "${qml_test_environment};QT_SCALE_FACTOR=1")
 foreach(scale IN ITEMS 1.5 2)
     string(REPLACE "." "_" scale_suffix "${scale}")

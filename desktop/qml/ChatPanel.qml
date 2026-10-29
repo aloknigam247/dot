@@ -33,50 +33,9 @@ Rectangle {
         closed()
     }
 
-    // Single entry point for outbound input regardless of source (local input
-    // field or a LAN subscriber via the mirror). Injected into the Copilot
-    // session via the bridge; the prompt returns through the mirror stream.
-    function sendInput(text) {
-        bridge.inject(text)
-    }
+    function sendInput(text) {}
 
     ChatModel { id: chatModel }
-
-    // The chat backend: streams the copilot-bridge hub's mirror traffic into the
-    // ChatModel. Only connects while the panel is open, so no outbound socket
-    // exists otherwise.
-    CopilotBridgeClient {
-        id: bridge
-        sink: chatModel
-        showTools: true
-        active: panel.visible
-    }
-
-    // Mirrors this panel's session to LAN subscribers over ws://, but only
-    // while the panel is open — `active` binds the server's listen lifecycle to
-    // visibility, so no port is held when chat isn't in use.
-    SessionMirrorServer {
-        id: mirror
-        source: chatModel
-        active: panel.visible
-    }
-
-    // Input from a LAN subscriber joins the active Copilot session through the
-    // same dispatch as local input.
-    Connections {
-        target: mirror
-        function onInputReceived(text) {
-            panel.sendInput(text)
-        }
-    }
-
-    // Advertises the mirror endpoint over mDNS/DNS-SD so the companion app finds
-    // it without a hard-coded host:port. Bound to the actually-listening port and
-    // gated on the same visibility, so the announcement tracks the listen socket.
-    MdnsAdvertiser {
-        port: mirror.boundPort
-        active: panel.visible && mirror.boundPort !== 0
-    }
 
     // Left divider between the grid and the panel.
     Rectangle {
@@ -161,9 +120,6 @@ Rectangle {
                 font: panel.metrics.textFont
                 Accessible.name: qsTr("Chat input")
 
-                // Submit on Enter: the line is injected as a user prompt into
-                // the Copilot session(s) via the bridge — it returns through the
-                // mirror stream, so it is not echoed locally.
                 onAccepted: {
                     panel.sendInput(text)
                     clear()

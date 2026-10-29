@@ -42,7 +42,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string[]]$CoberturaPath,
-    [int]$MinCovered = 2400,
+    [int]$MinCovered = 2120,
     [double]$MinRatio = 0.90
 )
 
