@@ -8,31 +8,30 @@ using namespace dot;
 class TestChatModel : public QObject {
     Q_OBJECT
 private slots:
-    void appendBlockEmitsMessageAddedWithRoleAndText() {
-        ChatModel m;
-        QSignalSpy added(&m, &ChatModel::messageAdded);
-        m.appendBlock(QStringLiteral("user"), QStringLiteral("hi"));
-        QCOMPARE(m.count(), 1);
-        QCOMPARE(m.authorAt(0), QStringLiteral("user"));
-        QCOMPARE(m.textAt(0), QStringLiteral("hi"));
-        QCOMPARE(added.count(), 1);
-        const QList<QVariant> args = added.takeFirst();
-        QVERIFY(!args.at(0).toString().isEmpty()); // stable per-block id
-        QCOMPARE(args.at(1).toString(), QStringLiteral("user"));
-        QCOMPARE(args.at(2).toString(), QStringLiteral("hi"));
+    void appendBlockInsertsRowWithAuthorAndText_data() {
+        QTest::addColumn<QString>("author");
+        QTest::newRow("assistant") << QStringLiteral("assistant");
+        QTest::newRow("system") << QStringLiteral("system");
+        QTest::newRow("user") << QStringLiteral("user");
     }
 
-    void appendBlockAssignsDistinctIdsPerBlock() {
+    void appendBlockInsertsRowWithAuthorAndText() {
+        QFETCH(QString, author);
         ChatModel m;
-        QSignalSpy added(&m, &ChatModel::messageAdded);
-        m.appendBlock(QStringLiteral("user"), QStringLiteral("a"));
-        m.appendBlock(QStringLiteral("assistant"), QStringLiteral("b"));
-        QCOMPARE(added.count(), 2);
-        const QString id0 = added.at(0).at(0).toString();
-        const QString id1 = added.at(1).at(0).toString();
-        QVERIFY(!id0.isEmpty());
-        QVERIFY(id0 != id1);
-        QCOMPARE(added.at(1).at(1).toString(), QStringLiteral("assistant"));
+        QSignalSpy countChanged(&m, &ChatModel::countChanged);
+        QSignalSpy inserted(&m, &QAbstractItemModel::rowsInserted);
+        m.appendBlock(author, QStringLiteral("hi"));
+        QCOMPARE(m.count(), 1);
+        QCOMPARE(m.rowCount(), 1);
+        QCOMPARE(m.authorAt(0), author);
+        QCOMPARE(m.textAt(0), QStringLiteral("hi"));
+        QCOMPARE(m.data(m.index(0, 0), ChatModel::AuthorRole).toString(), author);
+        QCOMPARE(m.data(m.index(0, 0), ChatModel::TextRole).toString(), QStringLiteral("hi"));
+        QCOMPARE(countChanged.count(), 1);
+        QCOMPARE(inserted.count(), 1);
+        QCOMPARE(inserted.at(0).at(0).value<QModelIndex>(), QModelIndex());
+        QCOMPARE(inserted.at(0).at(1).toInt(), 0);
+        QCOMPARE(inserted.at(0).at(2).toInt(), 0);
     }
 
     void appendBlockSystemAuthor() {
@@ -50,8 +49,12 @@ private slots:
 
     void appendBlockEmptyTextIsIgnored() {
         ChatModel m;
+        QSignalSpy countChanged(&m, &ChatModel::countChanged);
+        QSignalSpy inserted(&m, &QAbstractItemModel::rowsInserted);
         m.appendBlock(QStringLiteral("user"), QString());
         QCOMPARE(m.count(), 0);
+        QCOMPARE(countChanged.count(), 0);
+        QCOMPARE(inserted.count(), 0);
     }
 
     void dataReturnsInvalidForUnknownRoleAndOutOfRange() {

@@ -26,7 +26,7 @@ The design is not a claim of native implementation parity.
 | `android\` | Android application and Gradle build |
 | `common\` | Shared artwork, release tooling, and patch-coverage checker |
 | `desktop\` | C++/QML client, build configuration, tests, and desktop tooling |
-| `docs\` | Repository-wide design and protocol documentation |
+| `docs\` | Repository-wide design documentation |
 
 ## Versioning
 
