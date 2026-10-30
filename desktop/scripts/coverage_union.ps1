@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Compute UNION line coverage over dot's own src/ + include/ from a cobertura
-    report and enforce a floor. Fails (exit 1) if coverage regresses below it.
+    report and enforce a ratio floor. Fails (exit 1) if coverage regresses below it.
 
 .DESCRIPTION
     Every dot test executable statically links dot_lib, so a cobertura report
@@ -16,14 +16,8 @@
     restricts Sources, but we re-filter defensively so a stray path can't skew
     the number).
 
-    The floor is a fixed policy minimum: overall union coverage must stay at or
-    above 90% (MinRatio). The absolute covered-line count (MinCovered) is a low
-    catastrophic-drop backstop that never binds in normal operation — the ratio
-    is the rule. Coverage measured 2608 / 2877 = 90.65% in CI when the 90% floor
-    was adopted. The coverage-gate CI job prints the live covered/total/ratio
-    each run. Per-change (patch) coverage is enforced separately by
-    coverage_patch.ps1, which requires 100% coverage of changed src/ + include/
-    lines.
+    The floor applies only to the union ratio (MinRatio); covered-line counts
+    are informational. Per-change coverage is enforced separately by coverage_patch.ps1.
 
 .PARAMETER CoberturaPath
     One or more paths to cobertura XML emitted by the coverage collector. When
@@ -32,18 +26,13 @@
     carries exactly one tier label, the union of the tiers equals a single
     whole-suite run, so the floor is identical either way.
 
-.PARAMETER MinCovered
-    Minimum number of distinct covered source lines required — a low
-    catastrophic-drop backstop, not the policy floor.
-
 .PARAMETER MinRatio
     Minimum covered/total ratio required (the policy floor), 0..1.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string[]]$CoberturaPath,
-    [int]$MinCovered = 2120,
-    [double]$MinRatio = 0.90
+    [double]$MinRatio = 0.94
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,20 +71,11 @@ Write-Host ("  covered lines : {0}" -f $coveredCnt)
 Write-Host ("  total lines   : {0}" -f $total)
 Write-Host ("  ratio         : {0}% ({1})" -f $ratioPct, ([math]::Round($ratio, 5)))
 Write-Host ""
-Write-Host ("Floor: covered >= {0} AND ratio >= {1} ({2}%)" -f $MinCovered, $MinRatio, [math]::Round($MinRatio * 100, 3))
+Write-Host ("Floor: ratio >= {0} ({1}%)" -f $MinRatio, [math]::Round($MinRatio * 100, 3))
 
-$fail = $false
-if ($coveredCnt -lt $MinCovered) {
-    Write-Host ("FAIL: covered lines {0} < floor {1}." -f $coveredCnt, $MinCovered) -ForegroundColor Red
-    $fail = $true
-}
 if ($ratio -lt $MinRatio) {
     Write-Host ("FAIL: ratio {0} < floor {1}." -f ([math]::Round($ratio, 5)), $MinRatio) -ForegroundColor Red
-    $fail = $true
-}
-
-if ($fail) {
-    Write-Error "Coverage regressed below the floor. Raise coverage (see issue #40) or, if this is an intentional ratchet, update -MinCovered / -MinRatio."
+    Write-Error "Coverage regressed below the required ratio."
     exit 1
 }
 
