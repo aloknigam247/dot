@@ -4,9 +4,8 @@
 #include "HighlightTable.h"
 #include "NvimConnector.h"
 
-#include <cstdlib>
+#include <cmath>
 
-#include <QEasingCurve>
 #include <QFontDatabase>
 #include <QGlyphRun>
 #include <QList>
@@ -14,7 +13,6 @@
 #include <QPointF>
 #include <QQuickWindow>
 #include <QRawFont>
-#include <QVariant>
 
 namespace dot {
 
@@ -38,17 +36,6 @@ CursorItem::CursorItem(QQuickItem *parent) : QQuickItem(parent) {
 
     m_blinkTimer.setSingleShot(true);
     connect(&m_blinkTimer, &QTimer::timeout, this, &CursorItem::onBlinkTimeout);
-
-    // Move animation: 80ms ease-out, position-only. valueChanged drives
-    // m_animatedPos and unions the swept rect into the next update() so
-    // both the old and new cells (and everything between, on a single tick)
-    // are redrawn. Stops on its own when the curve reaches t=1.
-    m_moveAnim.setDuration(80);
-    m_moveAnim.setEasingCurve(QEasingCurve::OutExpo);
-    connect(&m_moveAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
-        m_animatedPos = v.toPointF();
-        scheduleRepaint();
-    });
 }
 
 CursorItem::~CursorItem() = default;
@@ -141,26 +128,6 @@ QRectF CursorItem::cursorRectAtPixel(QPointF cellTopLeft, qreal cellWidth, qreal
     return rect;
 }
 
-std::pair<bool, QPointF> CursorItem::targetCellTopLeft() const {
-    const GridModel *g = grid();
-    if(!g) return { false, {} };
-    const int active = g->activeGrid();
-    const int localRow = g->cursorRowOf(active);
-    const int localCol = g->cursorColOf(active);
-    if(localRow < 0 || localRow >= g->gridRows(active) || localCol < 0 ||
-       localCol >= g->gridCols(active)) {
-        return { false, {} };
-    }
-    return { true, QPointF(localCol * m_cellWidth, localRow * m_cellHeight) };
-}
-
-QRectF CursorItem::currentCursorRect() const {
-    if(!m_hasAnimatedPos) return {};
-    const CursorShape shape =
-        mode() ? static_cast<CursorShape>(mode()->cursorShapeInt()) : CursorShape::Block;
-    return cursorRectAtPixel(m_animatedPos, m_cellWidth, m_cellHeight, shape);
-}
-
 void CursorItem::scheduleRepaint() {
     // QQuickItem has no partial-invalidation entry point, and it does not need
     // one: the item's whole output is a couple of quads plus one glyph, so a
@@ -172,64 +139,6 @@ void CursorItem::scheduleRepaint() {
 void CursorItem::onCursorActivity() {
     m_blink.notifyActivity(m_clock.elapsed());
     rescheduleBlink();
-
-    const auto [ok, target] = targetCellTopLeft();
-    if(!ok) {
-        m_moveAnim.stop();
-        m_hasAnimatedPos = false;
-        m_prevRow = -1;
-        m_prevCol = -1;
-        scheduleRepaint();
-        return;
-    }
-
-    // Compute target row/col (same math targetCellTopLeft() uses, re-derived
-    // here so we can compare against m_prevRow/m_prevCol). Safe:
-    // targetCellTopLeft() already verified grid bounds.
-    const GridModel *g = grid();
-    const int active = g->activeGrid();
-    const int newRow = g->cursorRowOf(active);
-    const int newCol = g->cursorColOf(active);
-
-    // Snap (no animation) when this is the first cursor we've seen OR when
-    // the underlying cells changed in the same batch — scroll / paste /
-    // anything where text moved alongside the cursor. Eased motion relative
-    // to scrolling text looks like the cursor is fighting the page.
-    const bool gridDirty = g && g->isDirty(g->activeGrid());
-    const bool firstSeen = !m_hasAnimatedPos || m_prevRow < 0 || m_prevCol < 0;
-
-    // Distance gate: only ease for 1-cell adjacent moves. Longer jumps (gg,
-    // G, /search, %, H/M/L, ctrl-d/u, click-far) snap so we never see the
-    // cursor slide across many lines/columns at once.
-    bool farJump = false;
-    if(!firstSeen) {
-        const int dRow = std::abs(newRow - m_prevRow);
-        const int dCol = std::abs(newCol - m_prevCol);
-        farJump = (dRow > 1) || (dCol > 1);
-    }
-
-    const bool snap = firstSeen || gridDirty || farJump;
-
-    if(snap) {
-        m_moveAnim.stop();
-        m_animatedPos = target;
-        m_hasAnimatedPos = true;
-    } else if(target != m_animatedPos) {
-        // Same-content move (j/k/h/l with no scroll, w/b/e, click) — ease in.
-        // Restart from the CURRENT animated position so a fast j-then-j chain
-        // doesn't ping-pong: each new keystroke continues from where the
-        // last animation got to, not from the previous target.
-        m_moveAnim.stop();
-        m_moveAnim.setStartValue(m_animatedPos);
-        m_moveAnim.setEndValue(target);
-        m_moveAnim.start();
-    }
-    // else: target == current animated position; nothing to animate, paint
-    // will redraw at the same spot (covers blink-reset and same-cell mode
-    // transitions).
-
-    m_prevRow = newRow;
-    m_prevCol = newCol;
     scheduleRepaint();
 }
 
@@ -308,10 +217,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
 
     const GridModel *g = grid();
     const HighlightTable *h = hl();
-    if(!g || !h) {
-        m_lastRect = {};
-        return commit();
-    }
+    if(!g || !h) return commit();
     const ModeInfo *m = mode();
 
     const int active = g->activeGrid();
@@ -319,16 +225,12 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     const int localCol = g->cursorColOf(active);
     if(localRow < 0 || localRow >= g->gridRows(active) || localCol < 0 ||
        localCol >= g->gridCols(active)) {
-        m_lastRect = {};
         return commit();
     }
 
     const bool cursorOn = m_blink.isOn(m_clock.elapsed());
     const bool drawCursor = cursorOn || !m || !m->cursorStyleEnabled();
-    if(!drawCursor) {
-        m_lastRect = {};
-        return commit();
-    }
+    if(!drawCursor) return commit();
 
     const HlAttr a = h->resolved(m ? m->attrId() : 0);
     QColor curColor = a.bg.isValid() ? a.bg : h->defaultFg();
@@ -337,29 +239,16 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     const CursorShape shape =
         m ? static_cast<CursorShape>(m->cursorShapeInt()) : CursorShape::Block;
 
-    // Visible pixel position. Once an animation has been seeded (i.e. we've
-    // seen at least one cursorChanged on this CursorItem), m_animatedPos
-    // sweeps between cells. Before then — typically the very first frame
-    // after attach, because nvim's initial grid_cursor_goto fires before
-    // CursorItem is constructed — fall back to the target cell so the
-    // cursor is visible on launch.
-    QPointF drawPos;
-    if(m_hasAnimatedPos) {
-        drawPos = m_animatedPos;
-    } else {
-        drawPos = QPointF(localCol * m_cellWidth, localRow * m_cellHeight);
-    }
+    const QPointF drawPos(localCol * m_cellWidth, localRow * m_cellHeight);
     const QRectF rect = cursorRectAtPixel(drawPos, m_cellWidth, m_cellHeight, shape);
 
     m_blockPool.add(rect, curColor);
 
     if(shape == CursorShape::Block && cursorOn) {
-        // Glyph is the TARGET cell's text — the cursor "carries" its
-        // destination glyph as it slides into place. Matches Goneovim.
         const Cell &cell = g->cell(active, localRow, localCol);
         if(!cell.text.isEmpty()) {
             // Preserve the target cell's font style (italic/bold/strikethrough)
-            // so the carry glyph matches how it renders in the grid below.
+            // so the cursor glyph matches how it renders in the grid below.
             // Without this, an italic word would lose its slant under the
             // block cursor.
             const HlAttr cellAttr = h->resolved(cell.hlId);
@@ -386,7 +275,6 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
         }
     }
 
-    m_lastRect = rect;
     return commit();
 }
 

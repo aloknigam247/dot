@@ -49,10 +49,6 @@ private slots:
         QCOMPARE(horiz.height(), 1.0);
     }
 
-    // Pixel-space variant for use during cursor-move animation, when
-    // m_animatedPos is between cells. Same shape math as the (row, col)
-    // overload, just takes the cell top-left directly. This is what
-    // CursorItem::paint() calls each frame.
     void rectAtPixelMatchesCellMath() {
         const QRectF cellBased = CursorItem::cursorRectFor(3, 5, 8.0, 16.0, CursorShape::Block);
         const QRectF pixelBased = CursorItem::cursorRectAtPixel(QPointF(5 * 8.0, 3 * 16.0), 8.0,
@@ -60,8 +56,7 @@ private slots:
         QCOMPARE(cellBased, pixelBased);
     }
 
-    // Mid-cell position — the case that only happens during animation. The
-    // cursor rect should sit at the interpolated top-left, same shape.
+    // Fractional cell metrics can place the cursor between whole pixels.
     void rectAtPixelHandlesFractionalPosition() {
         const QRectF r =
             CursorItem::cursorRectAtPixel(QPointF(42.5, 19.3), 8.0, 16.0, CursorShape::Block);
@@ -71,10 +66,6 @@ private slots:
         QCOMPARE(r.height(), 16.0);
     }
 
-    // Rects from consecutive cursor positions must be unioned for the dirty
-    // region passed to update(QRect), so the old cursor cell gets cleared and
-    // the new one drawn in a single repaint. Direct math check on Qt's
-    // QRectF::united — this is the operation CursorItem::scheduleRepaint uses.
     void unionedRectCoversBothCells() {
         const QRectF oldRect = CursorItem::cursorRectFor(3, 5, 8.0, 16.0, CursorShape::Block);
         const QRectF newRect = CursorItem::cursorRectFor(3, 6, 8.0, 16.0, CursorShape::Block);
