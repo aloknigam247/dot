@@ -24,6 +24,8 @@ struct ModeDescriptor {
     int blinkOn = 0;
     int blinkOff = 0;
     int attrId = 0;
+
+    bool operator==(const ModeDescriptor &) const = default;
 };
 
 class ModeInfo : public QObject {
@@ -58,9 +60,13 @@ signals:
     void currentChanged();
 
 private:
+    ModeDescriptor currentDescriptor() const;
+
     QVector<ModeDescriptor> m_modes;
     ModeDescriptor m_current;
     bool m_cursorStyleEnabled = false;
+    int m_currentIndex = -1;
+    QString m_currentName;
 };
 
 } // namespace dot

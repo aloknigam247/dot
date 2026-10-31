@@ -21,6 +21,7 @@
 
 namespace dot {
 
+class CursorBackgroundNode;
 class GridModel;
 class HighlightTable;
 
@@ -44,6 +45,8 @@ class CursorItem : public QQuickItem {
     Q_PROPERTY(qreal cellBaseline READ baseline WRITE setBaseline NOTIFY metricsChanged)
     Q_PROPERTY(QString fontName READ fontName WRITE setFontName NOTIFY fontChanged)
     Q_PROPERTY(qreal fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
+    Q_PROPERTY(
+        qreal cornerRadius READ cornerRadius WRITE setCornerRadius NOTIFY cornerRadiusChanged)
 
 public:
     explicit CursorItem(QQuickItem *parent = nullptr);
@@ -64,16 +67,21 @@ public:
     void setFontName(const QString &v);
     void setFontSize(qreal v);
 
+    qreal cornerRadius() const { return m_cornerRadius; }
+    void setCornerRadius(qreal radius);
+
+    static qreal cornerRadiusFor(const QRectF &rect, qreal radius);
+
     // Pure rect math, static so unit tests can exercise it without
     // instantiating a QQuickItem (which needs a QGuiApplication).
     // row/col are cell coordinates within the item's own coordinate space.
     static QRectF cursorRectFor(int row, int col, qreal cellWidth, qreal cellHeight,
-                                CursorShape shape);
-    // Pixel-space variant used by paint() during cursor-move animation when
+                                CursorShape shape, int cellPercentage);
+    // Pixel-space variant used during cursor-move animation when
     // the cursor's visible position is between cells. cellTopLeft is the
     // top-left corner in the same coord space as cursorRectFor's output.
     static QRectF cursorRectAtPixel(QPointF cellTopLeft, qreal cellWidth, qreal cellHeight,
-                                    CursorShape shape);
+                                    CursorShape shape, int cellPercentage);
 
 protected:
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
@@ -82,6 +90,7 @@ signals:
     void connectorChanged();
     void metricsChanged();
     void fontChanged();
+    void cornerRadiusChanged();
 
 private:
     Q_SLOT void onCursorActivity();   // GridModel::cursorChanged — restart blink + dirty old+new
@@ -106,6 +115,7 @@ private:
     void scheduleRepaint(); // update(QRect) over m_lastRect.united(currentRect)
     void rescheduleBlink();
     void rebuildFont();
+    void invalidateCursorPosition();
 
     QPointer<NvimConnector> m_conn;
     qreal m_cellWidth = 8.0;
@@ -155,6 +165,8 @@ private:
     RectNodePool m_blockPool;
     RectNodePool m_linePool;
     TextNodePool m_textPool;
+    qreal m_cornerRadius = 0;
+    CursorBackgroundNode *m_roundedBackground = nullptr;
 };
 
 } // namespace dot

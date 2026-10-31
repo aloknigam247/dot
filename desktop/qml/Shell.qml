@@ -44,6 +44,7 @@ Item {
         cellBaseline: baseGrid.cellBaseline
         fontName:     baseGrid.fontName
         fontSize:     baseGrid.fontSize
+        cornerRadius: desktopMetrics.cursorCornerRadius
     }
 
     MouseArea {

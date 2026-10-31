@@ -11,6 +11,8 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 
+#include <optional>
+
 namespace dot {
 
 class QuickRasterizer {
@@ -19,12 +21,16 @@ public:
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     }
 
-    QImage render(QQuickItem *item) {
+    QImage render(QQuickItem *item, std::optional<qreal> targetDpr = {}) {
         const int w = static_cast<int>(item->width());
         const int h = static_cast<int>(item->height());
         item->setParentItem(m_window.contentItem());
         m_window.resize(w, h);
-        const qreal dpr = m_window.devicePixelRatio();
+        const qreal dpr = targetDpr.value_or(m_window.devicePixelRatio());
+        if(!qIsFinite(dpr) || dpr <= 0) {
+            qWarning() << "Invalid scene graph capture DPR" << dpr;
+            return {};
+        }
         const QSize size(qRound(w * dpr), qRound(h * dpr));
         if(m_image.isNull() || m_image.size() != size ||
            !qFuzzyCompare(m_image.devicePixelRatio(), dpr)) {

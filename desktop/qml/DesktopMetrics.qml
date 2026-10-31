@@ -7,6 +7,7 @@ QtObject {
     readonly property real cellBaseline: grid.cellBaseline
     readonly property real cellWidth: grid.cellWidth
     readonly property real cornerRadius: 4
+    readonly property real cursorCornerRadius: 2
     readonly property real padding: 4
     readonly property real rowHeight: grid.cellHeight
     readonly property font textFont: grid.textFont

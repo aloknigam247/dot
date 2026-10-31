@@ -96,6 +96,9 @@ dot_add_test(test_boot_perf                     integration/test_boot_perf.cpp)
 dot_add_test(test_chat_panel                    integration/test_chat_panel.cpp)
 dot_add_test(test_config_g_globals              integration/test_config_g_globals.cpp)
 dot_add_test(test_ctrl_shift_mapping            integration/test_ctrl_shift_mapping.cpp)
+dot_add_test(test_cursor_shape                  integration/test_cursor_shape.cpp
+    TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_cursor_shape.txt,txt")
+target_link_libraries(test_cursor_shape PRIVATE dot_libplugin Qt6::Quick)
 qt_add_executable(test_entrypoint_driver
     support/entrypoint_driver.cpp
     "${CMAKE_SOURCE_DIR}/src/main.cpp"
@@ -156,7 +159,7 @@ target_link_libraries(test_boot_perf           PRIVATE dot_libplugin Qt6::Quick)
 # Instantiates GridItem (a QQuickItem) to exercise GridItem::maybeResizeUi.
 target_link_libraries(test_restart_resize_fit  PRIVATE dot_libplugin Qt6::Quick)
 
-foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
+foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_cursor_shape test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
     set_tests_properties(${t} PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"

@@ -4,19 +4,107 @@
 #include "HighlightTable.h"
 #include "NvimConnector.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <limits>
 
 #include <QEasingCurve>
 #include <QFontDatabase>
 #include <QGlyphRun>
+#include <QImage>
 #include <QList>
 #include <QPainter>
 #include <QPointF>
 #include <QQuickWindow>
 #include <QRawFont>
+#include <QSGSimpleTextureNode>
 #include <QVariant>
 
 namespace dot {
+
+class CursorBackgroundNode final : public QSGNode {
+public:
+    CursorBackgroundNode() = default;
+    ~CursorBackgroundNode() override = default;
+    DOT_DISABLE_COPY_MOVE(CursorBackgroundNode)
+
+    void hide() {
+        if(m_textureNode) m_textureNode->setRect({});
+    }
+
+    bool update(const QRectF &rect, const QColor &color, qreal radius, QQuickWindow &window) {
+        const Key key{ color, window.effectiveDevicePixelRatio(), radius, rect.size() };
+        if(key != m_key) {
+            m_key = key;
+            m_valid = false;
+            const qreal pixelHeight = std::ceil(key.size.height() * key.dpr);
+            const qreal pixelWidth = std::ceil(key.size.width() * key.dpr);
+            if(!std::isfinite(pixelHeight) || !std::isfinite(pixelWidth) || pixelHeight <= 0 ||
+               pixelWidth <= 0 || pixelHeight > std::numeric_limits<int>::max() ||
+               pixelWidth > std::numeric_limits<int>::max()) {
+                qWarning("Cursor texture dimensions exceed image limits");
+                return false;
+            }
+            QImage image(QSize(static_cast<int>(pixelWidth), static_cast<int>(pixelHeight)),
+                         QImage::Format_ARGB32_Premultiplied);
+            if(image.isNull()) {
+                qWarning("Could not allocate the rounded cursor image");
+                return false;
+            }
+            image.setDevicePixelRatio(key.dpr);
+            image.fill(Qt::transparent);
+            {
+                QPainter painter(&image);
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setBrush(color);
+                painter.setPen(Qt::NoPen);
+                painter.drawRoundedRect(QRectF(QPointF(), key.size), radius, radius);
+            }
+            auto *texture =
+                window.createTextureFromImage(image, QQuickWindow::TextureHasAlphaChannel);
+            if(!texture) {
+                qWarning("Could not create the rounded cursor texture");
+                return false;
+            }
+            const bool isNew = m_textureNode == nullptr;
+            if(isNew) {
+                m_textureNode = new QSGSimpleTextureNode;
+                m_textureNode->setOwnsTexture(true);
+                m_textureNode->setFiltering(QSGTexture::Linear);
+            }
+            m_textureNode->setTexture(texture);
+            m_textureNode->setSourceRect(0, 0, key.size.width() * key.dpr,
+                                         key.size.height() * key.dpr);
+            m_textureNode->setRect(rect);
+            if(isNew) {
+                appendChildNode(m_textureNode);
+                if(qEnvironmentVariableIntValue("DOT_PROFILE_PAINT") != 0) {
+                    qDebug("dot cursor cache: owner=%zu node=%zu key=%zu image=%lld bytes",
+                           sizeof(CursorBackgroundNode), sizeof(QSGSimpleTextureNode), sizeof(Key),
+                           static_cast<qint64>(image.sizeInBytes()));
+                }
+            }
+            m_valid = true;
+        }
+        if(m_valid) m_textureNode->setRect(rect);
+        return m_valid;
+    }
+
+private:
+    struct Key {
+        QColor color;
+        qreal dpr = 0;
+        qreal radius = 0;
+        QSizeF size;
+
+        bool operator==(const Key &) const = default;
+    };
+
+    Key m_key;
+    QSGSimpleTextureNode *m_textureNode = nullptr;
+    bool m_valid = false;
+};
 
 CursorItem::CursorItem(QQuickItem *parent) : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
@@ -77,6 +165,7 @@ void CursorItem::setConnector(NvimConnector *c) {
 void CursorItem::setCellWidth(qreal v) {
     if(qFuzzyCompare(v, m_cellWidth)) return;
     m_cellWidth = v;
+    invalidateCursorPosition();
     emit metricsChanged();
     update();
 }
@@ -84,6 +173,7 @@ void CursorItem::setCellWidth(qreal v) {
 void CursorItem::setCellHeight(qreal v) {
     if(qFuzzyCompare(v, m_cellHeight)) return;
     m_cellHeight = v;
+    invalidateCursorPosition();
     emit metricsChanged();
     update();
 }
@@ -111,6 +201,24 @@ void CursorItem::setFontSize(qreal v) {
     update();
 }
 
+void CursorItem::setCornerRadius(qreal radius) {
+    if(!std::isfinite(radius) || radius < 0) {
+        qWarning("Cursor corner radius must be finite and non-negative");
+        return;
+    }
+    if(m_cornerRadius == radius) return;
+    m_cornerRadius = radius;
+    emit cornerRadiusChanged();
+    update();
+}
+
+void CursorItem::invalidateCursorPosition() {
+    m_moveAnim.stop();
+    m_hasAnimatedPos = false;
+    m_prevRow = -1;
+    m_prevCol = -1;
+}
+
 void CursorItem::rebuildFont() {
     m_font.setFamily(m_fontName);
     m_font.setPointSizeF(m_fontSize);
@@ -121,24 +229,37 @@ HighlightTable *CursorItem::hl() const { return m_conn ? m_conn->highlights() : 
 ModeInfo *CursorItem::mode() const { return m_conn ? m_conn->modeInfo() : nullptr; }
 
 QRectF CursorItem::cursorRectFor(int row, int col, qreal cellWidth, qreal cellHeight,
-                                 CursorShape shape) {
+                                 CursorShape shape, int cellPercentage) {
     return cursorRectAtPixel(QPointF(col * cellWidth, row * cellHeight), cellWidth, cellHeight,
-                             shape);
+                             shape, cellPercentage);
 }
 
 QRectF CursorItem::cursorRectAtPixel(QPointF cellTopLeft, qreal cellWidth, qreal cellHeight,
-                                     CursorShape shape) {
-    QRectF rect(cellTopLeft.x(), cellTopLeft.y(), cellWidth, cellHeight);
-    // Preserve the existing 15% hardcode from src/GridItem.cpp. Mode info's
-    // cellPercentage is intentionally ignored for parity — wiring it through
-    // is a separate change that affects visual behaviour.
+                                     CursorShape shape, int cellPercentage) {
+    if(!std::isfinite(cellTopLeft.x()) || !std::isfinite(cellTopLeft.y()) ||
+       !std::isfinite(cellWidth) || !std::isfinite(cellHeight) || cellWidth <= 0 ||
+       cellHeight <= 0 || !std::isfinite(cellTopLeft.x() + cellWidth) ||
+       !std::isfinite(cellTopLeft.y() + cellHeight)) {
+        return {};
+    }
+    const qreal fraction = std::clamp(cellPercentage, 1, 100) / 100.0;
+    QRectF rect(cellTopLeft, QSizeF(cellWidth, cellHeight));
     if(shape == CursorShape::Vertical) {
-        rect.setWidth(std::max(1.0, cellWidth * 0.15));
+        rect.setWidth(std::min(cellWidth, std::max(1.0, cellWidth * fraction)));
     } else if(shape == CursorShape::Horizontal) {
-        rect.setY(rect.bottom() - std::max(1.0, cellHeight * 0.15));
-        rect.setHeight(std::max(1.0, cellHeight * 0.15));
+        const qreal height = std::min(cellHeight, std::max(1.0, cellHeight * fraction));
+        rect.setTop(rect.bottom() - height);
+        rect.setHeight(height);
     }
     return rect;
+}
+
+qreal CursorItem::cornerRadiusFor(const QRectF &rect, qreal radius) {
+    if(rect.isEmpty() || !std::isfinite(rect.width()) || !std::isfinite(rect.height()) ||
+       !std::isfinite(radius) || radius <= 0) {
+        return 0;
+    }
+    return std::min({ radius, rect.width() / 2.0, rect.height() / 2.0 });
 }
 
 std::pair<bool, QPointF> CursorItem::targetCellTopLeft() const {
@@ -156,9 +277,12 @@ std::pair<bool, QPointF> CursorItem::targetCellTopLeft() const {
 
 QRectF CursorItem::currentCursorRect() const {
     if(!m_hasAnimatedPos) return {};
-    const CursorShape shape =
-        mode() ? static_cast<CursorShape>(mode()->cursorShapeInt()) : CursorShape::Block;
-    return cursorRectAtPixel(m_animatedPos, m_cellWidth, m_cellHeight, shape);
+    const ModeInfo *m = mode();
+    const CursorShape shape = m && m->cursorStyleEnabled()
+                                  ? static_cast<CursorShape>(m->cursorShapeInt())
+                                  : CursorShape::Block;
+    return cursorRectAtPixel(m_animatedPos, m_cellWidth, m_cellHeight, shape,
+                             m ? m->cellPercentage() : 100);
 }
 
 void CursorItem::scheduleRepaint() {
@@ -175,10 +299,7 @@ void CursorItem::onCursorActivity() {
 
     const auto [ok, target] = targetCellTopLeft();
     if(!ok) {
-        m_moveAnim.stop();
-        m_hasAnimatedPos = false;
-        m_prevRow = -1;
-        m_prevCol = -1;
+        invalidateCursorPosition();
         scheduleRepaint();
         return;
     }
@@ -269,6 +390,7 @@ void CursorItem::rescheduleBlink() {
 }
 
 QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*data*/) {
+    bool roundedVisible = false;
     // A null oldNode means the scene graph destroyed the previous tree, so the
     // cached slot pointers are dangling. Drop them without deleting.
     if(!oldNode) {
@@ -276,6 +398,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
         m_blockPool.forget();
         m_linePool.forget();
         m_textPool.forget();
+        m_roundedBackground = nullptr;
     }
 
     QSGNode *root = oldNode;
@@ -300,6 +423,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     // Every early return still has to commit an empty frame, otherwise the
     // previous frame's cursor stays on screen.
     const auto commit = [&] {
+        if(m_roundedBackground && !roundedVisible) m_roundedBackground->hide();
         m_blockPool.endFrame();
         m_linePool.endFrame();
         m_textPool.endFrame();
@@ -308,7 +432,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
 
     const GridModel *g = grid();
     const HighlightTable *h = hl();
-    if(!g || !h) {
+    if(!g || !h || !window()) {
         m_lastRect = {};
         return commit();
     }
@@ -334,8 +458,9 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     QColor curColor = a.bg.isValid() ? a.bg : h->defaultFg();
     if(curColor == h->defaultBg()) curColor = h->defaultFg();
 
-    const CursorShape shape =
-        m ? static_cast<CursorShape>(m->cursorShapeInt()) : CursorShape::Block;
+    const CursorShape shape = m && m->cursorStyleEnabled()
+                                  ? static_cast<CursorShape>(m->cursorShapeInt())
+                                  : CursorShape::Block;
 
     // Visible pixel position. Once an animation has been seeded (i.e. we've
     // seen at least one cursorChanged on this CursorItem), m_animatedPos
@@ -349,11 +474,30 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     } else {
         drawPos = QPointF(localCol * m_cellWidth, localRow * m_cellHeight);
     }
-    const QRectF rect = cursorRectAtPixel(drawPos, m_cellWidth, m_cellHeight, shape);
+    const QRectF rect =
+        cursorRectAtPixel(drawPos, m_cellWidth, m_cellHeight, shape, m ? m->cellPercentage() : 100);
+    if(rect.isEmpty()) {
+        m_lastRect = {};
+        return commit();
+    }
+    const qreal radius = cornerRadiusFor(rect, m_cornerRadius);
+    if(radius > 0) {
+        if(!m_roundedBackground) {
+            m_roundedBackground = new CursorBackgroundNode;
+            m_blockRoot->appendChildNode(m_roundedBackground);
+        }
+        roundedVisible = m_roundedBackground->update(rect, curColor, radius, *window());
+        if(!roundedVisible) m_blockPool.add(rect, curColor);
+    } else {
+        if(m_roundedBackground) {
+            m_blockRoot->removeChildNode(m_roundedBackground);
+            delete m_roundedBackground;
+            m_roundedBackground = nullptr;
+        }
+        m_blockPool.add(rect, curColor);
+    }
 
-    m_blockPool.add(rect, curColor);
-
-    if(shape == CursorShape::Block && cursorOn) {
+    if(shape == CursorShape::Block) {
         // Glyph is the TARGET cell's text — the cursor "carries" its
         // destination glyph as it slides into place. Matches Goneovim.
         const Cell &cell = g->cell(active, localRow, localCol);
