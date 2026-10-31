@@ -5,10 +5,17 @@
 #include "MsgpackRpc.h"
 
 #include <QDebug>
+#include <QFile>
 #include <QFontDatabase>
+#include <QUuid>
 #include <QVariant>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <utility>
+
+extern int qInitResources_dot();
 
 namespace dot {
 
@@ -44,15 +51,113 @@ static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, i
     pk.pack(true);
 }
 
+static std::expected<qint64, QString> imageInteger(const msgpack::object &value, qint64 minimum,
+                                                   qint64 maximum, const QString &name) {
+    qint64 result = 0;
+    const auto invalid = [&] {
+        return std::unexpected(QStringLiteral("%1 must be an integer between %2 and %3")
+                                   .arg(name)
+                                   .arg(minimum)
+                                   .arg(maximum));
+    };
+    if(value.type == msgpack::type::POSITIVE_INTEGER) {
+        if(std::cmp_greater(value.via.u64, maximum)) return invalid();
+        result = static_cast<qint64>(value.via.u64);
+    } else if(value.type == msgpack::type::NEGATIVE_INTEGER) {
+        result = value.via.i64;
+    } else if(value.type == msgpack::type::FLOAT32 || value.type == msgpack::type::FLOAT64) {
+        const double number = value.via.f64;
+        if(!std::isfinite(number) || std::trunc(number) != number ||
+           number < static_cast<double>(minimum) || number > static_cast<double>(maximum)) {
+            return invalid();
+        }
+        result = static_cast<qint64>(number);
+    } else {
+        return invalid();
+    }
+    if(result < minimum || result > maximum) return invalid();
+    return result;
+}
+
+static std::expected<ImageOptions, QString> imageOptions(const msgpack::object &value) {
+    ImageOptions options;
+    if(value.type == msgpack::type::ARRAY && value.via.array.size == 0) return options;
+    if(value.type != msgpack::type::MAP) {
+        return std::unexpected(QStringLiteral("Image options must be a table with named fields"));
+    }
+    if(value.via.map.size > 5) {
+        return std::unexpected(QStringLiteral("Image options contain unsupported fields"));
+    }
+    for(uint32_t i = 0; i < value.via.map.size; ++i) {
+        std::optional<qint32> *target = nullptr;
+        const auto &entry = value.via.map.ptr[i];
+        if(entry.key.type != msgpack::type::STR) {
+            return std::unexpected(QStringLiteral("Image option names must be strings"));
+        }
+        const QString name = QString::fromUtf8(entry.key.via.str.ptr, entry.key.via.str.size);
+        if(name == QStringLiteral("col")) target = &options.col;
+        else if(name == QStringLiteral("height")) target = &options.height;
+        else if(name == QStringLiteral("row")) target = &options.row;
+        else if(name == QStringLiteral("width")) target = &options.width;
+        else if(name == QStringLiteral("zindex")) target = &options.zIndex;
+        else return std::unexpected(QStringLiteral("Unknown image option: %1").arg(name));
+        if(target->has_value()) {
+            return std::unexpected(QStringLiteral("Duplicate image option: %1").arg(name));
+        }
+        const qint64 minimum =
+            name == QStringLiteral("zindex") ? std::numeric_limits<qint32>::min() : 1;
+        const auto integer =
+            imageInteger(entry.val, minimum, std::numeric_limits<qint32>::max(), name);
+        if(!integer) return std::unexpected(integer.error());
+        *target = static_cast<qint32>(*integer);
+    }
+    return options;
+}
+
+static void packImageOptions(msgpack::packer<msgpack::sbuffer> &pk, const ImageOptions &options) {
+    const auto count = static_cast<uint32_t>(options.col.has_value() + options.height.has_value() +
+                                             options.row.has_value() + options.width.has_value() +
+                                             options.zIndex.has_value());
+    pk.pack_map(count);
+    if(options.col) {
+        pk.pack("col");
+        pk.pack(*options.col);
+    }
+    if(options.height) {
+        pk.pack("height");
+        pk.pack(*options.height);
+    }
+    if(options.row) {
+        pk.pack("row");
+        pk.pack(*options.row);
+    }
+    if(options.width) {
+        pk.pack("width");
+        pk.pack(*options.width);
+    }
+    if(options.zIndex) {
+        pk.pack("zindex");
+        pk.pack(*options.zIndex);
+    }
+}
+
 NvimConnector::NvimConnector(QObject *parent) :
     QObject(parent), m_rpc(new MsgpackRpc(this)), m_grid(new GridModel(this)),
     m_hl(new HighlightTable(this)), m_mode(new ModeInfo(this)),
-    m_resizeCoalescer(new ResizeCoalescer(this)), m_restartTimer(new QTimer(this)) {
+    m_resizeCoalescer(new ResizeCoalescer(this)), m_restartTimer(new QTimer(this)),
+    m_backendClientId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+    m_images(new ImageModel(this)) {
     m_restartTimer->setSingleShot(true);
     connect(m_rpc, &MsgpackRpc::notification, this, &NvimConnector::onNotification);
     connect(m_rpc, &MsgpackRpc::transportClosed, this, &NvimConnector::onRpcDisconnected);
     connect(m_rpc, &MsgpackRpc::connected, this, &NvimConnector::onRestartConnected);
     connect(m_rpc, &MsgpackRpc::transportError, this, &NvimConnector::onRestartFailed);
+    connect(m_rpc, &MsgpackRpc::error, this, [](const QString &message) {
+        // Reporting through the failing RPC channel can recursively fail again.
+        qWarning().noquote() << "RPC:" << message;
+    });
+    connect(m_rpc, &MsgpackRpc::requestReceived, this, &NvimConnector::onRequest);
+    connect(m_images, &ImageModel::error, this, &NvimConnector::showImageError);
     connect(m_restartTimer, &QTimer::timeout, this, &NvimConnector::onRestartFailed);
     connect(m_resizeCoalescer, &ResizeCoalescer::resizeRequested, this, &NvimConnector::tryResize);
 }
@@ -60,7 +165,191 @@ NvimConnector::NvimConnector(QObject *parent) :
 NvimConnector::~NvimConnector() = default;
 
 bool NvimConnector::start(const QString &nvimExe, const QStringList &nvimForwardArgs) {
-    return m_rpc->startEmbeddedNvim(nvimExe, nvimForwardArgs);
+    if(!m_rpc->startEmbeddedNvim(nvimExe, nvimForwardArgs)) return false;
+    installDotBackend();
+    return true;
+}
+
+void NvimConnector::setImagesAvailable(bool available) {
+    if(m_imagesAvailable == available) return;
+    m_imagesAvailable = available;
+    emit imagesAvailableChanged();
+}
+
+void NvimConnector::showImageError(const QString &message) {
+    qWarning().noquote() << "dot:" << message;
+    m_rpc->notify(QStringLiteral("nvim_echo"), [&message](msgpack::packer<msgpack::sbuffer> &pk) {
+        pk.pack_array(3);
+        pk.pack_array(1);
+        pk.pack_array(2);
+        pk.pack(message.toStdString());
+        pk.pack("ErrorMsg");
+        pk.pack(true);
+        pk.pack_map(1);
+        pk.pack("err");
+        pk.pack(true);
+    });
+}
+
+void NvimConnector::installDotBackend() {
+    qInitResources_dot();
+    setImagesAvailable(false);
+    QFile script(QStringLiteral(":/dot_backend.lua"));
+    if(!script.open(QIODevice::ReadOnly)) {
+        // no-cover:start - The resource is compiled into this executable.
+        showImageError(
+            QStringLiteral("Could not load the dot backend: %1").arg(script.errorString()));
+        return;
+        // no-cover:end
+    }
+    const QByteArray code = script.readAll();
+    if(code.isEmpty()) {
+        // no-cover:start
+        showImageError(QStringLiteral("The embedded dot backend is empty"));
+        return;
+        // no-cover:end
+    }
+
+    m_rpc->notify(QStringLiteral("nvim_set_client_info"),
+                  [this](msgpack::packer<msgpack::sbuffer> &pk) {
+        pk.pack_array(5);
+        pk.pack("dot");
+        pk.pack_map(0);
+        pk.pack("msgpack-rpc");
+        pk.pack_map(0);
+        pk.pack_map(1);
+        pk.pack("dot_backend");
+        pk.pack(m_backendClientId.toStdString());
+    });
+    m_rpc->request(QStringLiteral("nvim_exec_lua"),
+                   [this, &code](msgpack::packer<msgpack::sbuffer> &pk) {
+        pk.pack_array(2);
+        pk.pack_str(static_cast<uint32_t>(code.size()));
+        pk.pack_str_body(code.constData(), static_cast<uint32_t>(code.size()));
+        pk.pack_array(2);
+        pk.pack(m_backendClientId.toStdString());
+        pk.pack(static_cast<int64_t>(ImageModel::kMaxEncodedBytes));
+    }, [this](RpcResult result) {
+        if(!m_rpc->isRunning()) return;
+        if(!result) {
+            showImageError(QStringLiteral("Could not initialize the dot backend: %1")
+                               .arg(result.error().message));
+            return;
+        }
+        const auto &root = result.value()->get();
+        if(root.type != msgpack::type::ARRAY || root.via.array.size != 4 ||
+           root.via.array.ptr[3].type != msgpack::type::BOOLEAN) {
+            showImageError(
+                QStringLiteral("The dot backend returned an invalid image capability response"));
+            return;
+        }
+        setImagesAvailable(root.via.array.ptr[3].via.boolean);
+        if(!m_imagesAvailable) {
+            showImageError(QStringLiteral("Neovim image API is unavailable; images are disabled."));
+        }
+    });
+}
+
+void NvimConnector::onRequest(const dot::RpcRequest &request) {
+    const QPointer<NvimConnector> guard(this);
+    const auto fail = [&](const QString &message) {
+        m_rpc->replyError(request.token, RpcError{ 0, message });
+    };
+    if(request.method != QStringLiteral("dot_image")) {
+        fail(QStringLiteral("Unsupported RPC method: %1").arg(request.method));
+        return;
+    }
+    if(!m_imagesAvailable) {
+        fail(QStringLiteral("The native image API is unavailable"));
+        return;
+    }
+    const msgpack::object &params = request.params();
+    if(params.type != msgpack::type::ARRAY || params.via.array.size == 0 ||
+       params.via.array.ptr[0].type != msgpack::type::STR) {
+        fail(QStringLiteral("Invalid image RPC arguments"));
+        return;
+    }
+    const auto &args = params.via.array;
+    const QString action = QString::fromUtf8(args.ptr[0].via.str.ptr, args.ptr[0].via.str.size);
+    if(action == QStringLiteral("delete_all")) {
+        if(args.size != 1) {
+            fail(QStringLiteral("delete_all takes no image arguments"));
+            return;
+        }
+        const bool removed = m_images->removeAll();
+        if(guard) m_rpc->reply(request.token, [removed](auto &pk) { pk.pack(removed); });
+        return;
+    }
+    if(action == QStringLiteral("set")) {
+        if(args.size != 3) {
+            fail(QStringLiteral("set requires image data or ID and an options table"));
+            return;
+        }
+        const auto options = imageOptions(args.ptr[2]);
+        if(!options) {
+            fail(options.error());
+            return;
+        }
+        const msgpack::object &value = args.ptr[1];
+        if(value.type == msgpack::type::STR || value.type == msgpack::type::BIN) {
+            const char *data =
+                value.type == msgpack::type::STR ? value.via.str.ptr : value.via.bin.ptr;
+            const uint32_t size =
+                value.type == msgpack::type::STR ? value.via.str.size : value.via.bin.size;
+            if(size > ImageModel::kMaxEncodedBytes) {
+                fail(QStringLiteral("PNG exceeds the encoded image limit (%1 bytes)")
+                         .arg(ImageModel::kMaxEncodedBytes));
+                return;
+            }
+            const RpcReplyToken token = request.token;
+            m_images->create(QByteArray(data, size), *options, [guard, token](auto result) {
+                if(!guard) return;
+                if(result) {
+                    guard->m_rpc->reply(token, [id = *result](auto &pk) { pk.pack(id); });
+                } else {
+                    guard->m_rpc->replyError(token, RpcError{ 0, result.error() });
+                }
+            });
+            return;
+        }
+        const auto id =
+            imageInteger(value, 1, std::numeric_limits<quint32>::max(), QStringLiteral("Image ID"));
+        if(!id) {
+            fail(id.error());
+            return;
+        }
+        const auto updated = m_images->update(static_cast<quint32>(*id), *options);
+        if(!guard) return;
+        if(!updated) fail(updated.error());
+        else m_rpc->reply(request.token, [id = *updated](auto &pk) { pk.pack(id); });
+        return;
+    }
+    if(action == QStringLiteral("get") || action == QStringLiteral("delete")) {
+        if(args.size != 2) {
+            fail(QStringLiteral("%1 requires exactly one image ID").arg(action));
+            return;
+        }
+        const auto id = imageInteger(args.ptr[1], 1, std::numeric_limits<quint32>::max(),
+                                     QStringLiteral("Image ID"));
+        if(!id) {
+            fail(id.error());
+            return;
+        }
+        if(action == QStringLiteral("get")) {
+            const auto options = m_images->get(static_cast<quint32>(*id));
+            if(options) {
+                m_rpc->reply(request.token,
+                             [value = *options](auto &pk) { packImageOptions(pk, value); });
+            } else {
+                m_rpc->reply(request.token);
+            }
+        } else {
+            const bool removed = m_images->remove(static_cast<quint32>(*id));
+            if(guard) m_rpc->reply(request.token, [removed](auto &pk) { pk.pack(removed); });
+        }
+        return;
+    }
+    fail(QStringLiteral("Unknown image action: %1").arg(action));
 }
 
 // Same parsing the GridItem uses for its own font selection. Centralised here
@@ -108,6 +397,8 @@ qreal NvimConnector::guifontSize() const {
 }
 
 bool NvimConnector::attachUi(int cols, int rows) {
+    if(m_attachPending) return true;
+    m_attachPending = true;
     m_currentCols = cols;
     m_currentRows = rows;
     m_sentUiSizes.emplace_back(cols, rows);
@@ -116,6 +407,7 @@ bool NvimConnector::attachUi(int cols, int rows) {
                    [cols, rows](msgpack::packer<msgpack::sbuffer> &pk) {
         packAttachOptions(pk, cols, rows);
     }, [this](RpcResult res) {
+        m_attachPending = false;
         if(res) {
             m_attached = true;
             emit attachedChanged();
@@ -407,6 +699,9 @@ void NvimConnector::onNotification(const dot::Notification &note) {
 }
 
 void NvimConnector::onRpcDisconnected() {
+    m_attachPending = false;
+    m_images->cancelPending();
+    setImagesAvailable(false);
     // The active transport closed. A pending :restart means nvim spawned a new
     // server on m_restartListenAddr and quit the old one — reconnect instead of
     // quitting. Keep the old frame on screen; UI state is reset only once the new
@@ -435,6 +730,7 @@ void NvimConnector::onRestartConnected() {
     // stale grid/highlight/mode/overlay state survives, then re-attach at the live
     // grid size with the same UI options as the initial attach.
     resetUiState();
+    installDotBackend();
     attachUi(m_currentCols, m_currentRows);
 }
 
@@ -451,6 +747,7 @@ void NvimConnector::onRestartFailed() {
 
 void NvimConnector::resetUiState() {
     m_grid->reset();
+    m_images->reset();
     m_hl->clear();
     m_mode->reset();
     m_sentUiSizes.clear();
@@ -484,6 +781,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             const int h = static_cast<int>(asInt(a.ptr[2]));
             m_grid->resize(g, w, h);
             if(g == 1) {
+                m_images->queueResize(QSize(w, h));
                 // grid 1 is the global grid (ext_multigrid off). Look for this
                 // size in the FIFO of sizes WE requested; nvim acks in order, so
                 // erase the match and everything older. A size we never sent is
@@ -528,6 +826,14 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             m_grid->scroll(static_cast<int>(asInt(a.ptr[0])), static_cast<int>(asInt(a.ptr[1])),
                            static_cast<int>(asInt(a.ptr[2])), static_cast<int>(asInt(a.ptr[3])),
                            static_cast<int>(asInt(a.ptr[4])), static_cast<int>(asInt(a.ptr[5])));
+            if(asInt(a.ptr[0]) == 1) {
+                const int top = static_cast<int>(asInt(a.ptr[1]));
+                const int bottom = static_cast<int>(asInt(a.ptr[2]));
+                const int left = static_cast<int>(asInt(a.ptr[3]));
+                const int right = static_cast<int>(asInt(a.ptr[4]));
+                m_images->queueScroll(QRectF(left, top, right - left, bottom - top),
+                                      static_cast<int>(asInt(a.ptr[5])));
+            }
         }
         return;
     }
@@ -594,6 +900,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         return;
     }
     if(name == "flush") {
+        m_images->flush();
         emit flush();
         return;
     }

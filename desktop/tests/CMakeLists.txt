@@ -6,11 +6,12 @@ cmake_path(NATIVE_PATH DOT_TEST_QPA_PLUGIN_DIR  DOT_TEST_QPA_PLUGIN_DIR_NATIVE)
 cmake_path(NATIVE_PATH DOT_TEST_QML_IMPORT_DIR  DOT_TEST_QML_IMPORT_DIR_NATIVE)
 
 function(dot_add_test name)
-    qt_add_executable(${name} ${ARGN})
+    cmake_parse_arguments(PARSE_ARGV 1 test "" "" "TEST_ARGUMENTS")
+    qt_add_executable(${name} ${test_UNPARSED_ARGUMENTS})
     target_link_libraries(${name} PRIVATE dot_lib Qt6::Test Qt6::Quick)
     # tests/support/QuickRasterizer.h is included as "support/QuickRasterizer.h".
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_test(NAME ${name} COMMAND ${name})
+    add_test(NAME ${name} COMMAND ${name} ${test_TEST_ARGUMENTS})
     set_tests_properties(${name} PROPERTIES
         TIMEOUT 60
         LABELS "${DOT_TEST_LABEL}"
@@ -49,6 +50,9 @@ dot_add_test(test_grid_model          unit/test_grid_model.cpp)
 dot_add_test(test_grid_runs           unit/test_grid_runs.cpp)
 dot_add_test(test_hidpi_rendering     unit/test_hidpi_rendering.cpp)
 dot_add_test(test_highlight_table     unit/test_highlight_table.cpp)
+dot_add_test(test_image_model         unit/test_image_model.cpp)
+dot_add_test(test_image_render        unit/test_image_render.cpp
+    TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_image_render.txt,txt")
 dot_add_test(test_input_fuzz          unit/test_input_fuzz.cpp)
 dot_add_test(test_input_handler       unit/test_input_handler.cpp)
 dot_add_test(test_mode_info           unit/test_mode_info.cpp)
@@ -107,6 +111,9 @@ add_test(NAME test_entrypoint_smoke
 )
 set_tests_properties(test_entrypoint_smoke PROPERTIES LABELS "integration" TIMEOUT 90)
 set_tests_properties(test_entrypoint_smoke test_session_cache PROPERTIES RESOURCE_LOCK "session_cache")
+dot_add_test(test_image_api                     integration/test_image_api.cpp)
+target_link_libraries(test_image_api PRIVATE dot_libplugin Qt6::Quick)
+set_tests_properties(test_image_api PROPERTIES TIMEOUT 120)
 dot_add_test(test_insert_and_quit               integration/test_insert_and_quit.cpp)
 dot_add_test(test_open_file_arg                 integration/test_open_file_arg.cpp)
 dot_add_test(test_pixel_snapshot                integration/test_pixel_snapshot.cpp)
@@ -149,7 +156,7 @@ target_link_libraries(test_boot_perf           PRIVATE dot_libplugin Qt6::Quick)
 # Instantiates GridItem (a QQuickItem) to exercise GridItem::maybeResizeUi.
 target_link_libraries(test_restart_resize_fit  PRIVATE dot_libplugin Qt6::Quick)
 
-foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
+foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
     set_tests_properties(${t} PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
@@ -223,6 +230,23 @@ set_tests_properties(
     test_text_node_pool
     PROPERTIES ENVIRONMENT "QT_ENABLE_HIGHDPI_SCALING=0;QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
 )
+
+set_tests_properties(test_image_render PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_ENABLE_HIGHDPI_SCALING=0;QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
+)
+foreach(scale IN ITEMS 1.5 2)
+    string(REPLACE "." "_" scale_suffix "${scale}")
+    add_test(NAME test_image_render_scale_${scale_suffix}
+        COMMAND test_image_render -o
+            "${CMAKE_CURRENT_BINARY_DIR}/test_image_render_scale_${scale_suffix}.txt,txt"
+    )
+    set_tests_properties(test_image_render_scale_${scale_suffix} PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_ENABLE_HIGHDPI_SCALING=0;QT_SCALE_FACTOR=${scale};QT_AUTO_SCREEN_SCALE_FACTOR=0"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
+        LABELS "unit"
+        TIMEOUT 60
+    )
+endforeach()
 
 # Deploy-integrity check — deterministic (no launch). Guards the EXPLICIT, hand-picked Qt
 # deploy list in the top-level CMakeLists.txt against two independent, derived expectations:

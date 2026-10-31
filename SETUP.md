@@ -110,8 +110,7 @@ A window opens, attaches to nvim, and you'll see a `[No Name]` buffer with curso
 
 ## 9. Coverage & CI toolchain (contributors)
 
-These are only needed to run the coverage gate locally or to understand what CI does — a plain
-build/test (steps 1–8) does not require them.
+The following sections cover the Neovim runtime and contributor-only CI/coverage tooling.
 
 ### CI trigger boundaries
 
@@ -125,14 +124,15 @@ Skipped workflows may leave required checks or coverage requirements unsatisfied
 [native filter behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#using-filters-to-target-specific-paths-for-pull-request-or-push-events).
 Report a merge-policy conflict instead of bypassing or weakening the requirements.
 
-### Neovim on PATH (integration tier)
+### Neovim nightly on PATH
 
-The Tier-2 integration tests spawn a real `nvim --embed` and locate it with
-`QStandardPaths::findExecutable("nvim")`, so `nvim` must be on `PATH`:
+dot targets Neovim nightly, not stable releases. Install the Windows build from the
+[nightly release](https://github.com/neovim/neovim/releases/tag/nightly) and add its `bin` directory to `PATH`.
+The application and integration tests locate `nvim` with `QStandardPaths::findExecutable("nvim")`.
+Verify the executable resolves:
 
 ```ps1
-winget install --id Neovim.Neovim --accept-package-agreements --accept-source-agreements
-nvim --version   # confirm it resolves on PATH (open a new shell if winget just added it)
+nvim --version
 ```
 
 ### clang-tidy static analysis

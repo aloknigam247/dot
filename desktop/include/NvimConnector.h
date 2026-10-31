@@ -17,6 +17,7 @@
 
 #include "GridModel.h"
 #include "HighlightTable.h"
+#include "ImageModel.h"
 #include "ModeInfo.h"
 #include "MsgpackRpc.h"
 #include "ResizeCoalescer.h"
@@ -55,6 +56,8 @@ class NvimConnector : public QObject {
     Q_PROPERTY(int pumblend READ pumblend NOTIFY pumblendChanged)
     Q_PROPERTY(int showtabline READ showtabline NOTIFY showtablineChanged)
     Q_PROPERTY(bool termguicolors READ termguicolors NOTIFY termguicolorsChanged)
+    Q_PROPERTY(dot::ImageModel *images READ images CONSTANT)
+    Q_PROPERTY(bool imagesAvailable READ imagesAvailable NOTIFY imagesAvailableChanged)
 
 public:
     explicit NvimConnector(QObject *parent = nullptr);
@@ -91,6 +94,8 @@ public:
     int pumblend() const { return m_pumblend; }
     int showtabline() const { return m_showtabline; }
     bool termguicolors() const { return m_termguicolors; }
+    ImageModel *images() const { return m_images; }
+    bool imagesAvailable() const { return m_imagesAvailable; }
 
     Q_INVOKABLE void input(const QString &keys);
     Q_INVOKABLE void inputMouse(const QString &button, const QString &action,
@@ -137,13 +142,20 @@ signals:
     void pumblendChanged();
     void showtablineChanged();
     void termguicolorsChanged();
+    void imagesAvailableChanged();
 
 private:
+    friend class TestImageApi;
+
     Q_SLOT void onNotification(const dot::Notification &note);
     Q_SLOT void onRpcDisconnected();
     Q_SLOT void onRestartConnected();
     Q_SLOT void onRestartFailed();
+    Q_SLOT void onRequest(const dot::RpcRequest &request);
 
+    void installDotBackend();
+    void setImagesAvailable(bool available);
+    void showImageError(const QString &message);
     void handleRedraw(const msgpack::object &events);
     void dispatchEvent(const std::string &name, const msgpack::object &evt);
     // Drops all grid/highlight/mode/overlay state back to a fresh-attach baseline.
@@ -193,6 +205,11 @@ private:
     int m_pumblend = 0;
     int m_showtabline = 1;
     bool m_termguicolors = false;
+
+    bool m_attachPending = false;
+    QString m_backendClientId;
+    ImageModel *m_images = nullptr;
+    bool m_imagesAvailable = false;
 };
 
 } // namespace dot

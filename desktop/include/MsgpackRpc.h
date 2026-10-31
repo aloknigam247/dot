@@ -13,6 +13,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTcpSocket>
+#include <QVarLengthArray>
 
 #include <msgpack.hpp>
 
@@ -53,6 +54,28 @@ struct Notification {
     }
 };
 
+struct RpcReplyToken {
+    quint64 generation = 0;
+    quint32 id = 0;
+    quint64 serial = 0;
+
+    bool operator==(const RpcReplyToken &) const = default;
+};
+
+struct RpcRequest {
+    ObjectHandlePtr handle;
+    QString method;
+    RpcReplyToken token;
+
+    const msgpack::object &params() const noexcept {
+        static const msgpack::object kNil{};
+        if(!handle) return kNil;
+        const msgpack::object &root = handle->get();
+        if(root.type != msgpack::type::ARRAY || root.via.array.size != 4) return kNil;
+        return root.via.array.ptr[3];
+    }
+};
+
 class MsgpackRpc : public QObject {
     Q_OBJECT
 public:
@@ -70,6 +93,8 @@ public:
 
     void request(const QString &method, const PackFn &packArgs, const RpcCallback &cb);
     void notify(const QString &method, const PackFn &packArgs);
+    bool reply(const RpcReplyToken &token, const PackFn &packResult = {});
+    bool replyError(const RpcReplyToken &token, const RpcError &error);
 
     bool isRunning() const;
 
@@ -84,6 +109,7 @@ signals:
     void transportClosed(); // internal: active transport hit EOF / finished
     void transportError(const QString &message); // socket connect / runtime error
     void error(const QString &message);
+    void requestReceived(const dot::RpcRequest &request);
 
 private:
     Q_SLOT void onReadyReadProcess();
@@ -95,6 +121,12 @@ private:
     void feed(const QByteArray &data);
     void failAllPending(const QString &message);
     void retireCurrentTransport();
+    bool queueReply(const RpcReplyToken &token, const PackFn &packResult, const RpcError *error);
+
+    struct PendingReply {
+        QByteArray bytes;
+        RpcReplyToken token;
+    };
 
     std::unique_ptr<QProcess> m_process;
     std::unique_ptr<QLocalSocket> m_localSocket;
@@ -104,6 +136,9 @@ private:
     msgpack::unpacker m_unpacker;
     QHash<uint32_t, RpcCallback> m_pending;
     uint32_t m_nextMsgId = 1;
+
+    QVarLengthArray<PendingReply, 4> m_incoming;
+    quint64 m_nextReplySerial = 1;
 };
 
 inline std::string toStd(const QString &s) { return s.toStdString(); }
@@ -112,5 +147,7 @@ inline std::string toStd(const QString &s) { return s.toStdString(); }
 
 Q_DECLARE_METATYPE(dot::ObjectHandlePtr)
 Q_DECLARE_METATYPE(dot::Notification)
+Q_DECLARE_METATYPE(dot::RpcReplyToken)
+Q_DECLARE_METATYPE(dot::RpcRequest)
 
 #endif

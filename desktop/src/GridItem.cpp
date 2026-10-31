@@ -7,6 +7,7 @@
 #include "NvimConnector.h"
 
 #include <climits>
+#include <limits>
 #include <QElapsedTimer>
 #include <QFontDatabase>
 #include <QGlyphRun>
@@ -28,6 +29,24 @@
 
 namespace dot {
 
+class GridBackgroundItem : public QQuickItem {
+public:
+    GridBackgroundItem(GridItem *owner, GridItem::BackgroundLayer layer) :
+        QQuickItem(owner), m_layer(layer), m_owner(owner) {
+        setAcceptedMouseButtons(Qt::NoButton);
+        setFlag(ItemHasContents, true);
+    }
+
+protected:
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*data*/) override {
+        return m_owner->updateBackgroundNode(oldNode, m_layer);
+    }
+
+private:
+    GridItem::BackgroundLayer m_layer;
+    GridItem *m_owner;
+};
+
 static void parseGuifont(const QString &guifont, QString &family, qreal &size) {
     if(guifont.isEmpty()) return;
     const auto parts = guifont.split(QLatin1Char(':'));
@@ -46,7 +65,13 @@ static void parseGuifont(const QString &guifont, QString &family, qreal &size) {
 
 GridItem::~GridItem() = default;
 
-GridItem::GridItem(QQuickItem *parent) : QQuickItem(parent) {
+GridItem::GridItem(QQuickItem *parent) :
+    QQuickItem(parent), m_backgroundCells(new GridBackgroundItem(this, BackgroundLayer::Cells)),
+    m_backgroundDefault(new GridBackgroundItem(this, BackgroundLayer::Default)) {
+    m_backgroundDefault->setObjectName(QStringLiteral("grid_default_background"));
+    m_backgroundDefault->setZ(static_cast<qreal>(std::numeric_limits<qint32>::min()) - 1.0);
+    m_backgroundCells->setObjectName(QStringLiteral("grid_cell_background"));
+    m_backgroundCells->setZ((static_cast<qreal>(std::numeric_limits<qint32>::min()) / 2.0) - 0.5);
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton | Qt::MiddleButton);
     setAcceptHoverEvents(false);
     setFlag(ItemHasContents, true);
@@ -64,26 +89,30 @@ void GridItem::setGridId(int id) {
     if(m_gridId == id) return;
     m_gridId = id;
     emit gridIdChanged();
-    update();
+    invalidateRendering();
 }
 
 void GridItem::setConnector(NvimConnector *c) {
     if(m_conn == c) return;
-    if(m_conn) disconnect(m_conn, nullptr, this, nullptr);
+    if(m_conn) {
+        disconnect(m_conn, nullptr, this, nullptr);
+        disconnect(m_conn->grid(), nullptr, this, nullptr);
+        disconnect(m_conn->highlights(), nullptr, this, nullptr);
+    }
     m_conn = c;
     if(m_conn) {
         connect(m_conn, &NvimConnector::guifontChanged, this, &GridItem::onGuifontChanged);
         connect(m_conn, &NvimConnector::linespaceChanged, this, &GridItem::onLinespaceChanged);
         connect(m_conn, &NvimConnector::flush, this, &GridItem::onFlush);
         if(const auto *g = grid()) {
-            connect(g, &GridModel::sizeChanged, this, [this] { update(); });
+            connect(g, &GridModel::sizeChanged, this, &GridItem::invalidateRendering);
         }
         if(const auto *h = hl()) {
-            connect(h, &HighlightTable::changed, this, [this] { update(); });
+            connect(h, &HighlightTable::changed, this, &GridItem::invalidateRendering);
         }
     }
     emit connectorChanged();
-    update();
+    invalidateRendering();
 }
 
 void GridItem::setFontName(const QString &name) {
@@ -93,7 +122,7 @@ void GridItem::setFontName(const QString &name) {
     recomputeMetrics();
     emit fontChanged();
     maybeResizeUi();
-    update();
+    invalidateRendering();
 }
 
 void GridItem::setFontSize(qreal pt) {
@@ -103,14 +132,14 @@ void GridItem::setFontSize(qreal pt) {
     recomputeMetrics();
     emit fontChanged();
     maybeResizeUi();
-    update();
+    invalidateRendering();
 }
 
 void GridItem::setDebugOverlay(bool v) {
     if(v == m_debugOverlay) return;
     m_debugOverlay = v;
     emit debugOverlayChanged();
-    update();
+    invalidateRendering();
 }
 
 void GridItem::recomputeMetrics() {
@@ -150,7 +179,7 @@ void GridItem::onLinespaceChanged() {
     recomputeMetrics();
     emit fontChanged();
     maybeResizeUi();
-    update();
+    invalidateRendering();
 }
 
 QFont GridItem::buildRunFont(const HlAttr &a) const {
@@ -173,7 +202,7 @@ void GridItem::onGuifontChanged() {
     recomputeMetrics();
     emit fontChanged();
     maybeResizeUi();
-    update();
+    invalidateRendering();
 }
 
 void GridItem::onFlush() {
@@ -183,7 +212,7 @@ void GridItem::onFlush() {
     // The CursorItem overlay handles its own cursor-rect repaint per flush;
     // without this guard, every keystroke at 300x100 fullscreen re-ran the
     // full rows*cols paint loop on this item.
-    if(auto *g = grid(); g && g->takeDirty(m_gridId)) { update(); }
+    if(auto *g = grid(); g && g->takeDirty(m_gridId)) { invalidateRendering(); }
 }
 
 GridModel *GridItem::grid() const { return m_conn ? m_conn->grid() : nullptr; }
@@ -213,6 +242,11 @@ void GridItem::maybeResizeUi() {
 
 void GridItem::geometryChange(const QRectF &newGeom, const QRectF &oldGeom) {
     QQuickItem::geometryChange(newGeom, oldGeom);
+    if(newGeom.size() != oldGeom.size()) {
+        if(m_backgroundCells) m_backgroundCells->setSize(newGeom.size());
+        if(m_backgroundDefault) m_backgroundDefault->setSize(newGeom.size());
+        invalidateRendering();
+    }
     maybeResizeUi();
 }
 
@@ -224,10 +258,88 @@ void GridItem::itemChange(ItemChange change, const ItemChangeData &data) {
     recomputeMetrics();
     emit fontChanged();
     maybeResizeUi();
-    update();
+    invalidateRendering();
 }
 
-void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h) {
+void GridItem::invalidateRendering() {
+    ++m_renderRevision;
+    QQuickItem::update();
+    if(m_backgroundCells) m_backgroundCells->update();
+    if(m_backgroundDefault) m_backgroundDefault->update();
+}
+
+const GridRuns &GridItem::preparedRuns() {
+    if(m_preparedRevision != m_renderRevision) {
+        const GridModel *g = grid();
+        const HighlightTable *h = hl();
+        m_renderRuns = g && h ? buildGridRuns(*g, *h, m_gridId) : GridRuns{};
+        m_preparedRevision = m_renderRevision;
+    }
+    return m_renderRuns;
+}
+
+QSGNode *GridItem::updateBackgroundNode(QSGNode *oldNode, BackgroundLayer layer) {
+    QElapsedTimer timer;
+    static const bool profile = qEnvironmentVariableIntValue("DOT_PROFILE_PAINT") != 0;
+    if(profile) timer.start();
+    QSGNode *root = oldNode;
+    HighlightTable *h = hl();
+
+    if(layer == BackgroundLayer::Default) {
+        if(!root) {
+            m_defaultBgPool.forget();
+            root = new QSGNode;
+        }
+        m_defaultBgPool.beginFrame(root, window());
+        m_defaultBgPool.add(boundingRect(), h ? h->defaultBg() : QColor(Qt::black));
+        m_defaultBgPool.endFrame();
+    } else {
+        if(!root) {
+            m_bgPool.forget();
+            m_backgroundDecorationNode = nullptr;
+            root = new QSGNode;
+            m_bgRoot = new QSGNode;
+            m_backgroundDecorationRoot = new QSGNode;
+            root->appendChildNode(m_bgRoot);
+            root->appendChildNode(m_backgroundDecorationRoot);
+        }
+        m_bgPool.beginFrame(m_bgRoot, window());
+        if(grid() && h) {
+            const GridRuns &runs = preparedRuns();
+            const QColor defaultBg = h->defaultBg();
+            for(const PillSpan &span: runs.pills) {
+                if(!span.backBg.isValid() || span.backBg == defaultBg) continue;
+                const QColor pillBg = h->resolved(span.hlId).bg;
+                if(!pillBg.isValid() || pillBg == defaultBg) continue;
+                m_bgPool.add(QRectF(span.c0 * m_cellWidth, span.row * m_cellHeight,
+                                    (span.c1 - span.c0) * m_cellWidth, m_cellHeight),
+                             span.backBg);
+            }
+            for(const CellRun &run: runs.runs) {
+                if(run.fillBg) {
+                    m_bgPool.add(QRectF(run.c0 * m_cellWidth, run.row * m_cellHeight,
+                                        (run.c1 - run.c0) * m_cellWidth, m_cellHeight),
+                                 run.bg);
+                }
+            }
+            updateDecorations(runs, h, m_backgroundDecorationRoot, m_backgroundDecorationNode,
+                              true);
+        } else if(m_backgroundDecorationNode) {
+            m_backgroundDecorationRoot->removeChildNode(m_backgroundDecorationNode);
+            delete m_backgroundDecorationNode;
+            m_backgroundDecorationNode = nullptr;
+        }
+        m_bgPool.endFrame();
+    }
+    if(profile) {
+        qDebug("dot background paint: %lld us (%s)", timer.nsecsElapsed() / 1000,
+               layer == BackgroundLayer::Default ? "default" : "cells");
+    }
+    return root;
+}
+
+void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h, QSGNode *root,
+                                 QSGNode *&textureNode, bool backgrounds) {
     const QColor defaultBg = h->defaultBg();
     const QVector<PillSpan> &spans = runs.pills;
 
@@ -235,29 +347,32 @@ void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h) {
     // (pills need g:dot_rounded_highlights, undercurl needs diagnostics), so
     // the common frame finds nothing and skips the texture entirely.
     QRectF bbox;
-    for(const PillSpan &s: spans) {
-        const QColor pillBg = h->resolved(s.hlId).bg;
-        if(!pillBg.isValid() || pillBg == defaultBg) continue;
-        bbox = bbox.united(QRectF(s.c0 * m_cellWidth, s.row * m_cellHeight,
-                                  (s.c1 - s.c0) * m_cellWidth, m_cellHeight));
-    }
-    for(const CellRun &run: runs.runs) {
-        if(!run.undercurl) continue;
-        bbox =
-            bbox.united(QRectF(run.c0 * m_cellWidth, (run.row * m_cellHeight) + m_cellHeight - 4.0,
-                               (run.c1 - run.c0) * m_cellWidth, 4.0));
+    if(backgrounds) {
+        for(const PillSpan &s: spans) {
+            const QColor pillBg = h->resolved(s.hlId).bg;
+            if(!pillBg.isValid() || pillBg == defaultBg) continue;
+            bbox = bbox.united(QRectF(s.c0 * m_cellWidth, s.row * m_cellHeight,
+                                      (s.c1 - s.c0) * m_cellWidth, m_cellHeight));
+        }
+    } else {
+        for(const CellRun &run: runs.runs) {
+            if(!run.undercurl) continue;
+            bbox = bbox.united(QRectF(run.c0 * m_cellWidth,
+                                      (run.row * m_cellHeight) + m_cellHeight - 4.0,
+                                      (run.c1 - run.c0) * m_cellWidth, 4.0));
+        }
     }
 
+    bbox = bbox.intersected(boundingRect());
     if(bbox.isEmpty()) {
-        if(m_decoNode) {
-            m_decoRoot->removeChildNode(m_decoNode);
-            delete m_decoNode;
-            m_decoNode = nullptr;
+        if(textureNode) {
+            root->removeChildNode(textureNode);
+            delete textureNode;
+            textureNode = nullptr;
         }
         return;
     }
 
-    bbox = bbox.intersected(boundingRect());
     const qreal dpr = window() ? window()->effectiveDevicePixelRatio() : 1.0;
     QImage img(QSize(qCeil(bbox.width() * dpr), qCeil(bbox.height() * dpr)),
                QImage::Format_ARGB32_Premultiplied);
@@ -270,7 +385,7 @@ void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h) {
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setPen(Qt::NoPen);
 
-        if(!spans.empty()) {
+        if(backgrounds && !spans.empty()) {
             const qreal radius = 5.0;
 
             // Group spans into connected polygons. Two spans are in the same
@@ -350,47 +465,53 @@ void GridItem::updateDecorations(const GridRuns &runs, HighlightTable *h) {
             }
         }
 
-        for(const CellRun &run: runs.runs) {
-            if(!run.undercurl) continue;
-            const qreal left = run.c0 * m_cellWidth;
-            const qreal right = run.c1 * m_cellWidth;
-            const qreal yy = (run.row * m_cellHeight) + m_cellHeight - 1.5;
-            QPainterPath path;
-            path.moveTo(left, yy);
-            for(int i = 0;; ++i) {
-                const qreal x = left + (i * 4.0);
-                if(x >= right) break;
-                path.quadTo(x + 1.0, yy + 2.0, x + 2.0, yy);
-                path.quadTo(x + 3.0, yy - 2.0, x + 4.0, yy);
+        if(!backgrounds) {
+            for(const CellRun &run: runs.runs) {
+                if(!run.undercurl) continue;
+                const qreal left = run.c0 * m_cellWidth;
+                const qreal right = run.c1 * m_cellWidth;
+                const qreal yy = (run.row * m_cellHeight) + m_cellHeight - 1.5;
+                QPainterPath path;
+                path.moveTo(left, yy);
+                for(int i = 0;; ++i) {
+                    const qreal x = left + (i * 4.0);
+                    if(x >= right) break;
+                    path.quadTo(x + 1.0, yy + 2.0, x + 2.0, yy);
+                    path.quadTo(x + 3.0, yy - 2.0, x + 4.0, yy);
+                }
+                p.setPen(run.sp);
+                p.strokePath(path, QPen(run.sp));
             }
-            p.setPen(run.sp);
-            p.strokePath(path, QPen(run.sp));
         }
     }
 
     auto *tex = window()->createTextureFromImage(img, QQuickWindow::TextureHasAlphaChannel);
     // QSGNode is not polymorphic (it dispatches on type() rather than a vtable), so dynamic_cast
-    // is unavailable; m_decoNode is one we created as a QSGSimpleTextureNode.
+    // is unavailable; textureNode is one we created as a QSGSimpleTextureNode.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-    auto *node = static_cast<QSGSimpleTextureNode *>(m_decoNode);
+    auto *node = static_cast<QSGSimpleTextureNode *>(textureNode);
+    const bool isNew = node == nullptr;
     if(!node) {
         node = new QSGSimpleTextureNode;
         node->setOwnsTexture(true);
         node->setFiltering(QSGTexture::Nearest);
-        m_decoRoot->appendChildNode(node);
-        m_decoNode = node;
     }
     node->setTexture(tex);
     node->setRect(bbox);
+    // The software renderer inspects newly attached nodes synchronously.
+    if(isNew) {
+        root->appendChildNode(node);
+        textureNode = node;
+    }
     node->markDirty(QSGNode::DirtyMaterial);
 }
 
 QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*data*/) {
+    QElapsedTimer paintTimer;
     // A null oldNode means the scene graph threw the previous tree away, so the
     // cached slot pointers are dangling. Drop them without deleting.
     if(!oldNode) {
-        m_bgRoot = m_decoRoot = m_decoNode = m_textRoot = m_lineRoot = nullptr;
-        m_bgPool.forget();
+        m_decoRoot = m_decoNode = m_textRoot = m_lineRoot = nullptr;
         m_linePool.forget();
         m_textPool.forget();
     }
@@ -398,14 +519,10 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
     QSGNode *root = oldNode;
     if(!root) {
         root = new QSGNode;
-        // Four fixed slots, created once and never reordered, so z-ordering
-        // cannot drift as nodes come and go: backgrounds, vector decorations,
-        // text, then underlines on top.
-        m_bgRoot = new QSGNode;
+        // Fixed foreground slots preserve decoration/glyph/underline ordering.
         m_decoRoot = new QSGNode;
         m_textRoot = new QSGNode;
         m_lineRoot = new QSGNode;
-        root->appendChildNode(m_bgRoot);
         root->appendChildNode(m_decoRoot);
         root->appendChildNode(m_textRoot);
         root->appendChildNode(m_lineRoot);
@@ -414,13 +531,10 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
     const GridModel *g = grid();
     HighlightTable *h = hl();
 
-    m_bgPool.beginFrame(m_bgRoot, window());
     m_linePool.beginFrame(m_lineRoot, window());
     m_textPool.beginFrame(m_textRoot, window());
 
     if(!g || !h) {
-        m_bgPool.add(boundingRect(), Qt::black);
-        m_bgPool.endFrame();
         m_linePool.endFrame();
         m_textPool.endFrame();
         if(m_decoNode) {
@@ -433,37 +547,17 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
 
     // Optional micro-benchmark: enable with DOT_PROFILE_PAINT=1.
     static const bool kProfilePaint = qEnvironmentVariableIntValue("DOT_PROFILE_PAINT") != 0;
-    QElapsedTimer paintTimer;
     if(kProfilePaint) paintTimer.start();
 
     const int cols = g->gridCols(m_gridId);
     const int rows = g->gridRows(m_gridId);
-    const QColor defaultBg = h->defaultBg();
     // Hoist underline thickness: m_font is constant across the frame, so
     // constructing QFontMetricsF per underlined run would allocate per cell
     // in the hot path. Compute once and reuse.
     const qreal underlineThickness = std::max(1.0, std::round(QFontMetricsF(m_font).lineWidth()));
 
     // Single traversal of the grid, resolved into draw-ready runs.
-    const GridRuns runs = buildGridRuns(*g, *h, m_gridId);
-
-    m_bgPool.add(boundingRect(), defaultBg);
-
-    // Backing fill for rounded spans. The pill outline in the decoration layer
-    // deliberately cuts its convex corners so something other than the pill
-    // shows through, and the run loop skips per-cell background fills for
-    // rounded cells. Without these quads a pill sitting on a CursorLine would
-    // show default-coloured notches at every corner. They must live here, below
-    // the decoration texture, because that texture's corner pixels are
-    // transparent by design.
-    for(const PillSpan &s: runs.pills) {
-        if(!s.backBg.isValid() || s.backBg == defaultBg) continue;
-        const QColor pillBg = h->resolved(s.hlId).bg;
-        if(!pillBg.isValid() || pillBg == defaultBg) continue;
-        m_bgPool.add(QRectF(s.c0 * m_cellWidth, s.row * m_cellHeight, (s.c1 - s.c0) * m_cellWidth,
-                            m_cellHeight),
-                     s.backBg);
-    }
+    const GridRuns &runs = preparedRuns();
 
     // Lazy cache of per-hl_id QFont. Building a QFont and calling
     // setBold/setItalic/setStrikeOut on every run is expensive (QFontPrivate
@@ -476,8 +570,6 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
         const qreal y = run.row * m_cellHeight;
         const QRectF runRect(run.c0 * m_cellWidth, y, (run.c1 - run.c0) * m_cellWidth,
                              m_cellHeight);
-        if(run.fillBg) m_bgPool.add(runRect, run.bg);
-
         auto it = fontCache.find(run.hlId);
         if(it == fontCache.end())
             it = fontCache.insert(run.hlId, buildRunFont(h->resolved(run.hlId)));
@@ -525,10 +617,9 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
         }
     }
 
-    m_bgPool.endFrame();
     m_linePool.endFrame();
     m_textPool.endFrame();
-    updateDecorations(runs, h);
+    updateDecorations(runs, h, m_decoRoot, m_decoNode, false);
 
     if(kProfilePaint) {
         const qint64 ns = paintTimer.nsecsElapsed();

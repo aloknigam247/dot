@@ -23,6 +23,12 @@ Item {
         grid: baseGrid
     }
 
+    ImageItem {
+        grid: baseGrid
+        model: $connector.images
+        objectName: "imageLayer"
+    }
+
     // Cursor overlay. Sibling of baseGrid so its texture composites on top of
     // the grid. Cursor
     // blink and cursor moves invalidate only the previous + current cell on

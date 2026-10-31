@@ -29,6 +29,7 @@ runs:
       uses: rhysd/action-setup-vim@v1
       with:
         neovim: true
+        version: nightly
 
     - name: Export PATH + VCPKG_ROOT
       shell: pwsh
