@@ -10,8 +10,10 @@
 #include <limits>
 #include <memory>
 #include <QElapsedTimer>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QSignalSpy>
 #include <QtTest>
 #include <QVector>
@@ -145,6 +147,11 @@ private slots:
         QuickRasterizer::useSoftwareBackend();
         QVERIFY(QGuiApplication::primaryScreen() != nullptr);
         qDebug(
+            "image render environment: DPR=%g logicalDPI=%g CourierNew=%d",
+            QGuiApplication::primaryScreen()->devicePixelRatio(),
+            QGuiApplication::primaryScreen()->logicalDotsPerInch(),
+            QFontDatabase::families().contains(QStringLiteral("Courier New"), Qt::CaseInsensitive));
+        qDebug(
             "image object sizes (bytes): model=%zu options=%zu placement=%zu manager=%zu grid-runs=%zu cell-run=%zu",
             sizeof(ImageModel), sizeof(ImageOptions), sizeof(ImagePlacement), sizeof(ImageItem),
             sizeof(GridRuns), sizeof(CellRun));
@@ -161,7 +168,9 @@ private slots:
         const QImage image = f.paint();
         QVERIFY(!image.isNull());
         const qreal expectedDpr = qEnvironmentVariable("QT_SCALE_FACTOR", "1").toDouble();
-        QVERIFY(qFuzzyCompare(f.dpr(), expectedDpr));
+        QVERIFY2(
+            qFuzzyCompare(f.dpr(), expectedDpr),
+            qPrintable(QStringLiteral("Expected DPR %1, actual %2").arg(expectedDpr).arg(f.dpr())));
         QCOMPARE(image.width(), qRound(f.raster->window()->width() * f.dpr()));
         QCOMPARE(image.height(), qRound(f.raster->window()->height() * f.dpr()));
         QQuickItem *item = f.item(*id);

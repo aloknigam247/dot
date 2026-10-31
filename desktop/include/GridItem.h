@@ -78,7 +78,7 @@ signals:
 protected:
     enum class BackgroundLayer {
         Cells,
-        Default
+        Default,
     };
 
     virtual QSGNode *updateBackgroundNode(QSGNode *oldNode, BackgroundLayer layer);

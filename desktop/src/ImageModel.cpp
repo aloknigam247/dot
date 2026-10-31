@@ -138,7 +138,7 @@ void ImageModel::create(QByteArray png, const ImageOptions &options, CreateCallb
         auto result = decode(png);
         const qint64 elapsedNs = timer.nsecsElapsed();
         QMetaObject::invokeMethod(
-            this, [this, generation, id, result = std::move(result), elapsedNs]() mutable {
+            this, [this, generation, id, result = std::move(result), elapsedNs] mutable {
             finishDecode(generation, id, std::move(result), elapsedNs);
         }, Qt::QueuedConnection);
     });
@@ -152,7 +152,7 @@ void ImageModel::finishDecode(quint64 generation, quint32 id, std::expected<QIma
     const CreateCallback callback = std::move(m_pendingDecode->callback);
     m_pendingDecode.reset();
     m_reservedBytes = 0;
-    auto it = m_images.find(id);
+    const auto it = m_images.find(id);
     if(!result) {
         m_images.erase(it);
         callback(std::unexpected(result.error()));
@@ -182,7 +182,7 @@ std::optional<ImageOptions> ImageModel::get(quint32 id) const {
 
 std::expected<quint32, QString> ImageModel::update(quint32 id, const ImageOptions &options) {
     if(const auto valid = options.validate(); !valid) return std::unexpected(valid.error());
-    auto it = m_images.find(id);
+    const auto it = m_images.find(id);
     if(it == m_images.end() || it->pixels.isNull()) {
         return std::unexpected(QStringLiteral("Unknown image ID: %1").arg(id));
     }

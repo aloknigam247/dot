@@ -6,11 +6,12 @@ cmake_path(NATIVE_PATH DOT_TEST_QPA_PLUGIN_DIR  DOT_TEST_QPA_PLUGIN_DIR_NATIVE)
 cmake_path(NATIVE_PATH DOT_TEST_QML_IMPORT_DIR  DOT_TEST_QML_IMPORT_DIR_NATIVE)
 
 function(dot_add_test name)
-    qt_add_executable(${name} ${ARGN})
+    cmake_parse_arguments(PARSE_ARGV 1 test "" "" "TEST_ARGUMENTS")
+    qt_add_executable(${name} ${test_UNPARSED_ARGUMENTS})
     target_link_libraries(${name} PRIVATE dot_lib Qt6::Test Qt6::Quick)
     # tests/support/QuickRasterizer.h is included as "support/QuickRasterizer.h".
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_test(NAME ${name} COMMAND ${name})
+    add_test(NAME ${name} COMMAND ${name} ${test_TEST_ARGUMENTS})
     set_tests_properties(${name} PROPERTIES
         TIMEOUT 60
         LABELS "${DOT_TEST_LABEL}"
@@ -50,7 +51,8 @@ dot_add_test(test_grid_runs           unit/test_grid_runs.cpp)
 dot_add_test(test_hidpi_rendering     unit/test_hidpi_rendering.cpp)
 dot_add_test(test_highlight_table     unit/test_highlight_table.cpp)
 dot_add_test(test_image_model         unit/test_image_model.cpp)
-dot_add_test(test_image_render        unit/test_image_render.cpp)
+dot_add_test(test_image_render        unit/test_image_render.cpp
+    TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_image_render.txt,txt")
 dot_add_test(test_input_fuzz          unit/test_input_fuzz.cpp)
 dot_add_test(test_input_handler       unit/test_input_handler.cpp)
 dot_add_test(test_mode_info           unit/test_mode_info.cpp)
@@ -234,7 +236,10 @@ set_tests_properties(test_image_render PROPERTIES
 )
 foreach(scale IN ITEMS 1.5 2)
     string(REPLACE "." "_" scale_suffix "${scale}")
-    add_test(NAME test_image_render_scale_${scale_suffix} COMMAND test_image_render)
+    add_test(NAME test_image_render_scale_${scale_suffix}
+        COMMAND test_image_render -o
+            "${CMAKE_CURRENT_BINARY_DIR}/test_image_render_scale_${scale_suffix}.txt,txt"
+    )
     set_tests_properties(test_image_render_scale_${scale_suffix} PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_ENABLE_HIGHDPI_SCALING=0;QT_SCALE_FACTOR=${scale};QT_AUTO_SCREEN_SCALE_FACTOR=0"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"

@@ -303,11 +303,15 @@ void MsgpackRpc::dispatchUnpacked(ObjectHandlePtr handle) {
             emit error(QStringLiteral("malformed msgpack request"));
             return;
         }
-        const RpcReplyToken token{ m_generation, static_cast<quint32>(arr.ptr[1].via.u64),
-                                   m_nextReplySerial++ };
+        const RpcReplyToken token{
+            m_generation,
+            static_cast<quint32>(arr.ptr[1].via.u64),
+            m_nextReplySerial++,
+        };
         const RpcRequest request{
-            std::move(handle), QString::fromUtf8(arr.ptr[2].via.str.ptr, arr.ptr[2].via.str.size),
-            token
+            std::move(handle),
+            QString::fromUtf8(arr.ptr[2].via.str.ptr, arr.ptr[2].via.str.size),
+            token,
         };
         m_incoming.append(PendingReply{ {}, token });
         if(isSignalConnected(QMetaMethod::fromSignal(&MsgpackRpc::requestReceived))) {
