@@ -2,5 +2,6 @@
 <RCC version="1.0">
     <qresource prefix="/">
         <file alias="dot.ico">../../common/icons/dot.ico</file>
+        <file alias="image_backend.lua">../lua/image_backend.lua</file>
     </qresource>
 </RCC>

@@ -8,6 +8,7 @@
 #include <QQuickItem>
 #include <QSGNode>
 
+#include "GridRuns.h"
 #include "HighlightTable.h"
 #include "NvimConnector.h"
 #include "RectNodePool.h"
@@ -16,7 +17,6 @@
 namespace dot {
 
 class GridModel;
-struct GridRuns;
 
 class GridItem : public QQuickItem {
     Q_OBJECT
@@ -76,6 +76,12 @@ signals:
     void debugOverlayChanged();
 
 protected:
+    enum class BackgroundLayer {
+        Cells,
+        Default
+    };
+
+    virtual QSGNode *updateBackgroundNode(QSGNode *oldNode, BackgroundLayer layer);
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
     void keyPressEvent(QKeyEvent *ev) override;
     void mousePressEvent(QMouseEvent *ev) override;
@@ -86,22 +92,26 @@ protected:
     void itemChange(ItemChange change, const ItemChangeData &data) override;
 
 private:
+    friend class GridBackgroundItem;
+
     Q_SLOT void onGuifontChanged();
     Q_SLOT void onLinespaceChanged();
     Q_SLOT void onFlush();
 
     void recomputeMetrics();
     void maybeResizeUi();
+    void invalidateRendering();
+    const GridRuns &preparedRuns();
     GridModel *grid() const;
     HighlightTable *hl() const;
     void sendMouse(QMouseEvent *ev, QEvent::Type type);
 
-    // Renders the rounded pills and undercurls of the frame into a texture node
-    // under m_decoRoot, or tears the node down when the frame has neither.
+    // Renders background pills or foreground undercurls into a layer texture.
     // These are the only genuinely vector-shaped output; keeping them in
     // QPainter avoids reimplementing bezier tessellation, and both features are
     // rare enough that the common frame pays nothing.
-    void updateDecorations(const GridRuns &runs, HighlightTable *h);
+    void updateDecorations(const GridRuns &runs, HighlightTable *h, QSGNode *root,
+                           QSGNode *&textureNode, bool backgrounds);
 
     QPointer<NvimConnector> m_conn;
     int m_gridId = 1;
@@ -118,7 +128,7 @@ private:
     bool m_debugOverlay = false;
     int m_linespace = 0;
 
-    // Scene-graph state. Owned by the returned root node (which Qt destroys),
+    // Scene-graph state. Owned by the grid-layer roots (which Qt destroys),
     // so these are observing pointers only — they are dropped, never deleted,
     // when updatePaintNode is handed a null oldNode after a scene-graph
     // invalidation. All of it is touched exclusively on the render thread.
@@ -130,6 +140,15 @@ private:
     RectNodePool m_bgPool;
     RectNodePool m_linePool;
     TextNodePool m_textPool;
+
+    QQuickItem *m_backgroundCells = nullptr;
+    QSGNode *m_backgroundDecorationNode = nullptr;
+    QSGNode *m_backgroundDecorationRoot = nullptr;
+    QQuickItem *m_backgroundDefault = nullptr;
+    RectNodePool m_defaultBgPool;
+    quint64 m_preparedRevision = 0;
+    quint64 m_renderRevision = 1;
+    GridRuns m_renderRuns;
 };
 
 } // namespace dot

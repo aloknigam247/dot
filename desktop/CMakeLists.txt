@@ -83,6 +83,8 @@ set(DOT_LIB_SOURCES
     src/GridModel.cpp           include/GridModel.h
     src/GridRuns.cpp            include/GridRuns.h
     src/HighlightTable.cpp      include/HighlightTable.h
+    src/ImageItem.cpp           include/ImageItem.h
+    src/ImageModel.cpp          include/ImageModel.h
     src/InputHandler.cpp        include/InputHandler.h
     src/ModeInfo.cpp            include/ModeInfo.h
     src/MsgpackRpc.cpp          include/MsgpackRpc.h

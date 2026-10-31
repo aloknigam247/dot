@@ -6,7 +6,7 @@
 
 dot is a Neovim GUI client for Windows, written in C++23 / Qt 6.10 / QML. It drives an embedded
 `nvim --embed` process and talks to it over msgpack-rpc. The user-facing shell is QML, the text grid
-is rendered by a `QQuickPaintedItem`, and keyboard input is translated from Qt key events into nvim
+uses independent Qt Quick background/text scene-graph layers, and keyboard input is translated from Qt key events into nvim
 keycodes. It is currently Windows-only (built with the Visual Studio 2026 generator and MSVC).
 The editor and its AI harness share the dot name.
 
@@ -65,6 +65,11 @@ vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
 Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
 location; caches from other application identities are not imported.
 
+## Images
+
+For `vim.ui.img` support, requirements, placement/layering, limits, and Lua usage, see
+[image support](docs/design/image_support.md).
+
 ## Architecture
 
 dot is a thin, reactive layer over Neovim: Neovim owns all editing state and emits a redraw event
@@ -88,8 +93,8 @@ NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll
     └──────────────► ModeInfo         cursor shape / current mode index
                          │
                          ▼
-                     GridItem  (QQuickPaintedItem)   paints cell content
-                     CursorItem (QQuickPaintedItem)  paints the cursor overlay
+                     GridItem   (QQuickItem)   renders grid layers
+                     CursorItem (QQuickItem)   renders the cursor overlay
                          │
                          ▼
                      QML shell (qml/: Main, Shell, ChatPanel)
@@ -97,6 +102,10 @@ NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll
 
 `NvimConnector` exposes redraw notifications as `Q_SIGNAL`s that the QML shell connects to
 directly — there is no imperative pull from QML back into RPC state.
+
+`ImageModel` owns PNG resources and projected placements received through image RPC requests. `ImageItem` manages
+independent per-image texture items between the grid's background/text layers. Image-only changes do not repaint
+the text grid.
 
 ### Input path (keyboard → nvim)
 
@@ -117,9 +126,9 @@ directly.
 
 ### Load-bearing invariants
 
-- The redraw event stream from `nvim --embed` is the single source of truth for screen state.
-- `paint()` is a pure function of (`GridModel`, `HighlightTable`, `ModeInfo`, cursor state) and
-  never reaches back into RPC state from the paint path.
+- The redraw event stream from `nvim --embed` is the source of truth for the text grid and cursor; image operations
+  supply the separate image state.
+- Grid rendering reads only its models and presentation metrics, never RPC state or image resources.
 
 ## Launch performance (Windows cold start)
 

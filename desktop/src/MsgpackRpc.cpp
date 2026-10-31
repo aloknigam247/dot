@@ -1,7 +1,10 @@
 #include "MsgpackRpc.h"
 
+#include <algorithm>
 #include <cstring>
+#include <limits>
 #include <QDebug>
+#include <QMetaMethod>
 
 namespace dot {
 
@@ -34,7 +37,9 @@ QString canonicalizePipeAddress(const QString &addr) {
 }
 
 MsgpackRpc::MsgpackRpc(QObject *parent) :
-    QObject(parent), m_unpacker(nullptr, nullptr, kReadChunk) {}
+    QObject(parent), m_unpacker(nullptr, nullptr, kReadChunk) {
+    qRegisterMetaType<dot::RpcRequest>();
+}
 
 // NOLINTNEXTLINE(bugprone-exception-escape): Qt/msgpack teardown does not throw in practice.
 MsgpackRpc::~MsgpackRpc() {
@@ -132,6 +137,7 @@ void MsgpackRpc::retireCurrentTransport() {
     // device is dropped by the gen-guarded lambdas. Detach from `this`, then defer
     // deletion — we may be inside the outgoing device's own finished/EOF slot.
     ++m_generation;
+    m_incoming.clear();
     m_io = nullptr;
     if(m_process) {
         m_process->disconnect(this);
@@ -197,6 +203,55 @@ void MsgpackRpc::notify(const QString &method, const PackFn &packArgs) {
     writeMessage(buf);
 }
 
+bool MsgpackRpc::reply(const RpcReplyToken &token, const PackFn &packResult) {
+    return queueReply(token, packResult, nullptr);
+}
+
+bool MsgpackRpc::replyError(const RpcReplyToken &token, const RpcError &error) {
+    return queueReply(token, {}, &error);
+}
+
+bool MsgpackRpc::queueReply(const RpcReplyToken &token, const PackFn &packResult,
+                            const RpcError *error) {
+    if(token.generation != m_generation || !isRunning()) return false;
+
+    msgpack::sbuffer buffer;
+    msgpack::packer<msgpack::sbuffer> packer(&buffer);
+    packer.pack_array(4);
+    packer.pack(kMsgTypeResponse);
+    packer.pack(token.id);
+    if(error) {
+        packer.pack_array(2);
+        packer.pack(error->code);
+        packer.pack(error->message.toStdString());
+        packer.pack_nil();
+    } else {
+        packer.pack_nil();
+        if(packResult) packResult(packer);
+        else packer.pack_nil();
+    }
+
+    if(token.generation != m_generation || !isRunning()) return false;
+    auto *const pending = std::ranges::find(m_incoming, token, &PendingReply::token);
+    if(pending == m_incoming.end() || !pending->bytes.isEmpty()) {
+        emit this->error(QStringLiteral("Unknown or already-replied RPC request"));
+        return false;
+    }
+    pending->bytes = QByteArray(buffer.data(), static_cast<qsizetype>(buffer.size()));
+
+    // Complete nested calls before returning an already-finished parent.
+    while(!m_incoming.isEmpty() && !m_incoming.last().bytes.isEmpty()) {
+        if(token.generation != m_generation || !isRunning()) return false;
+        const QByteArray bytes = std::move(m_incoming.last().bytes);
+        m_incoming.removeLast();
+        if(!m_io || m_io->write(bytes) != bytes.size()) {
+            emit this->error(QStringLiteral("Could not write the RPC reply"));
+            return false;
+        }
+    }
+    return true;
+}
+
 void MsgpackRpc::writeMessage(const msgpack::sbuffer &buf) {
     if(m_io) m_io->write(buf.data(), static_cast<qint64>(buf.size()));
 }
@@ -234,7 +289,36 @@ void MsgpackRpc::dispatchUnpacked(ObjectHandlePtr handle) {
         return;
     }
     const auto &arr = root.via.array;
-    const int type = arr.ptr[0].as<int>();
+    if(arr.ptr[0].type != msgpack::type::POSITIVE_INTEGER ||
+       arr.ptr[0].via.u64 > kMsgTypeNotification) {
+        emit error(QStringLiteral("invalid msgpack message type"));
+        return;
+    }
+    const int type = static_cast<int>(arr.ptr[0].via.u64);
+
+    if(type == kMsgTypeRequest) {
+        if(arr.size != 4 || arr.ptr[1].type != msgpack::type::POSITIVE_INTEGER ||
+           arr.ptr[1].via.u64 > std::numeric_limits<quint32>::max() ||
+           arr.ptr[2].type != msgpack::type::STR || arr.ptr[3].type != msgpack::type::ARRAY) {
+            emit error(QStringLiteral("malformed msgpack request"));
+            return;
+        }
+        const RpcReplyToken token{ m_generation, static_cast<quint32>(arr.ptr[1].via.u64),
+                                   m_nextReplySerial++ };
+        const RpcRequest request{
+            std::move(handle), QString::fromUtf8(arr.ptr[2].via.str.ptr, arr.ptr[2].via.str.size),
+            token
+        };
+        m_incoming.append(PendingReply{ {}, token });
+        if(isSignalConnected(QMetaMethod::fromSignal(&MsgpackRpc::requestReceived))) {
+            emit requestReceived(request);
+        } else {
+            replyError(
+                token,
+                RpcError{ -1, QStringLiteral("Unsupported RPC method: %1").arg(request.method) });
+        }
+        return;
+    }
 
     if(type == kMsgTypeResponse && arr.size == 4) {
         const uint32_t msgid = arr.ptr[1].as<uint32_t>();
@@ -268,8 +352,6 @@ void MsgpackRpc::dispatchUnpacked(ObjectHandlePtr handle) {
         emit notification(Notification{ std::move(method), std::move(handle) });
         return;
     }
-
-    // Requests from server (clipboard provider, etc.) ignored in v0.
 }
 
 void MsgpackRpc::onProcessError(QProcess::ProcessError err) {
