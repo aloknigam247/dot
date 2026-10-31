@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/aloknigam247/dot/compare/dot-v1.1.0...dot-v1.2.0) (2026-10-31)
+
+### Added
+
+* **ui:** add native Neovim image support ([a8acd06](https://github.com/aloknigam247/dot/commit/a8acd063e7e5fdda873e441e7162e1ac3901f859)), closes [#2](https://github.com/aloknigam247/dot/issues/2)
+
 ## [1.1.0](https://github.com/aloknigam247/dot/compare/dot-v1.0.0...dot-v1.1.0) (2026-10-28)
 
 ### Added
