@@ -145,7 +145,7 @@ NvimConnector::NvimConnector(QObject *parent) :
     QObject(parent), m_rpc(new MsgpackRpc(this)), m_grid(new GridModel(this)),
     m_hl(new HighlightTable(this)), m_mode(new ModeInfo(this)),
     m_resizeCoalescer(new ResizeCoalescer(this)), m_restartTimer(new QTimer(this)),
-    m_imageClientId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+    m_backendClientId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
     m_images(new ImageModel(this)) {
     m_restartTimer->setSingleShot(true);
     connect(m_rpc, &MsgpackRpc::notification, this, &NvimConnector::onNotification);
@@ -166,7 +166,7 @@ NvimConnector::~NvimConnector() = default;
 
 bool NvimConnector::start(const QString &nvimExe, const QStringList &nvimForwardArgs) {
     if(!m_rpc->startEmbeddedNvim(nvimExe, nvimForwardArgs)) return false;
-    installImageBackend();
+    installDotBackend();
     return true;
 }
 
@@ -191,21 +191,21 @@ void NvimConnector::showImageError(const QString &message) {
     });
 }
 
-void NvimConnector::installImageBackend() {
+void NvimConnector::installDotBackend() {
     qInitResources_dot();
     setImagesAvailable(false);
-    QFile script(QStringLiteral(":/image_backend.lua"));
+    QFile script(QStringLiteral(":/dot_backend.lua"));
     if(!script.open(QIODevice::ReadOnly)) {
         // no-cover:start - The resource is compiled into this executable.
         showImageError(
-            QStringLiteral("Could not load the image backend: %1").arg(script.errorString()));
+            QStringLiteral("Could not load the dot backend: %1").arg(script.errorString()));
         return;
         // no-cover:end
     }
     const QByteArray code = script.readAll();
     if(code.isEmpty()) {
         // no-cover:start
-        showImageError(QStringLiteral("The embedded image backend is empty"));
+        showImageError(QStringLiteral("The embedded dot backend is empty"));
         return;
         // no-cover:end
     }
@@ -218,8 +218,8 @@ void NvimConnector::installImageBackend() {
         pk.pack("msgpack-rpc");
         pk.pack_map(0);
         pk.pack_map(1);
-        pk.pack("dot_image_backend");
-        pk.pack(m_imageClientId.toStdString());
+        pk.pack("dot_backend");
+        pk.pack(m_backendClientId.toStdString());
     });
     m_rpc->request(QStringLiteral("nvim_exec_lua"),
                    [this, &code](msgpack::packer<msgpack::sbuffer> &pk) {
@@ -227,12 +227,12 @@ void NvimConnector::installImageBackend() {
         pk.pack_str(static_cast<uint32_t>(code.size()));
         pk.pack_str_body(code.constData(), static_cast<uint32_t>(code.size()));
         pk.pack_array(2);
-        pk.pack(m_imageClientId.toStdString());
+        pk.pack(m_backendClientId.toStdString());
         pk.pack(static_cast<int64_t>(ImageModel::kMaxEncodedBytes));
     }, [this](RpcResult result) {
         if(!m_rpc->isRunning()) return;
         if(!result) {
-            showImageError(QStringLiteral("Could not initialize the image backend: %1")
+            showImageError(QStringLiteral("Could not initialize the dot backend: %1")
                                .arg(result.error().message));
             return;
         }
@@ -240,10 +240,13 @@ void NvimConnector::installImageBackend() {
         if(root.type != msgpack::type::ARRAY || root.via.array.size != 4 ||
            root.via.array.ptr[3].type != msgpack::type::BOOLEAN) {
             showImageError(
-                QStringLiteral("The image backend returned an invalid capability response"));
+                QStringLiteral("The dot backend returned an invalid image capability response"));
             return;
         }
         setImagesAvailable(root.via.array.ptr[3].via.boolean);
+        if(!m_imagesAvailable) {
+            showImageError(QStringLiteral("Neovim image API is unavailable; images are disabled."));
+        }
     });
 }
 
@@ -727,7 +730,7 @@ void NvimConnector::onRestartConnected() {
     // stale grid/highlight/mode/overlay state survives, then re-attach at the live
     // grid size with the same UI options as the initial attach.
     resetUiState();
-    installImageBackend();
+    installDotBackend();
     attachUi(m_currentCols, m_currentRows);
 }
 

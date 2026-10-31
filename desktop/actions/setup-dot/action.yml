@@ -12,10 +12,6 @@ inputs:
   github-token:
     description: Token with packages:write, used to read/write the vcpkg NuGet binary cache.
     required: true
-  neovim-version:
-    default: stable
-    description: Neovim release channel or version tag used by this job.
-    required: false
 
 runs:
   using: composite
@@ -33,7 +29,7 @@ runs:
       uses: rhysd/action-setup-vim@v1
       with:
         neovim: true
-        version: ${{ inputs.neovim-version }}
+        version: nightly
 
     - name: Export PATH + VCPKG_ROOT
       shell: pwsh

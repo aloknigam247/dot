@@ -153,7 +153,7 @@ private:
     Q_SLOT void onRestartFailed();
     Q_SLOT void onRequest(const dot::RpcRequest &request);
 
-    void installImageBackend();
+    void installDotBackend();
     void setImagesAvailable(bool available);
     void showImageError(const QString &message);
     void handleRedraw(const msgpack::object &events);
@@ -207,7 +207,7 @@ private:
     bool m_termguicolors = false;
 
     bool m_attachPending = false;
-    QString m_imageClientId;
+    QString m_backendClientId;
     ImageModel *m_images = nullptr;
     bool m_imagesAvailable = false;
 };

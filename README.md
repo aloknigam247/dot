@@ -67,8 +67,24 @@ location; caches from other application identities are not imported.
 
 ## Images
 
-For `vim.ui.img` support, requirements, placement/layering, limits, and Lua usage, see
-[image support](docs/design/image_support.md).
+Pass PNG bytes to [`vim.ui.img`](https://neovim.io/doc/user/lua.html#vim.ui.img):
+
+```lua
+local id = vim.ui.img.set(vim.fn.readblob([[C:\images\example.png]]), {
+  col = 5,
+  row = 5,
+  width = 16,
+})
+```
+
+`col` and `row` are one-based screen cells, not buffer positions. `width` and `height` are cell dimensions;
+the image preserves its aspect ratio. Omit both dimensions for natural size in logical pixels.
+Signed `zindex` controls layering; negative values place images below text, and the cursor stays above images.
+
+Use `set(id, opts)` to update a placement, `get(id)` to inspect its requested options, and `del(id)` to remove it.
+Images follow actual grid scrolling, not buffer/extmark positions. Plugins must re-place them after other viewport
+changes; a successful `set` restores scroll-clipped content. Invalid input and exhausted
+[resource limits](desktop/include/ImageModel.h) raise a Lua error without silently evicting existing images.
 
 ## Architecture
 
@@ -77,6 +93,8 @@ stream, and dot's job is to turn that stream into pixels and to turn user input 
 keycodes.
 
 The component paths below are relative to `desktop\`.
+
+The Neovim-side dot bootstrap lives in [`lua/dot_backend.lua`](desktop/lua/dot_backend.lua).
 
 ### Redraw pipeline (nvim → screen)
 

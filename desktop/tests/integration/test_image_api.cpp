@@ -73,7 +73,7 @@ local ok, err = xpcall(function()
 end, debug.traceback)
 local channel
 for _, info in ipairs(vim.api.nvim_list_chans()) do
-  if info.client and info.client.attributes and info.client.attributes.dot_image_backend then
+  if info.client and info.client.attributes and info.client.attributes.dot_backend then
     channel = info.id
     break
   end
@@ -129,7 +129,6 @@ private slots:
 local img = vim.ui.img
 assert(img == require("vim.ui.img"))
 assert(img._supported())
-assert(not img._supported({chan = 0}))
 local png = vim.base64.decode("%1")
 local id = img.set(png, {col = 3, height = 4, row = 2, width = 6, zindex = -2147483648})
 vim.g.image_test_id = id
@@ -247,7 +246,7 @@ vim.g.image_init_ok = true
         const auto result = runLua(conn, QStringLiteral(R"lua(
 local channel, client_type
 for _, info in ipairs(vim.api.nvim_list_chans()) do
-  if info.client and info.client.attributes and info.client.attributes.dot_image_backend then
+  if info.client and info.client.attributes and info.client.attributes.dot_backend then
     channel = info.id
     client_type = info.client.type
   end
@@ -359,6 +358,34 @@ vim.g.image_scroll_id=id
         QVERIFY2(changed.has_value(), qPrintable(changed ? QString{} : changed.error()));
         QVERIFY(waitUntil([&] {
             return grid.backgrounds.load() > backgrounds && grid.foregrounds.load() > foregrounds;
+        }));
+    }
+
+    void missingImageApiDisablesImagesWithVisibleError() {
+        NvimConnector conn;
+        QVERIFY(startImageNvim(conn));
+        const auto setup = runLua(conn, QStringLiteral(R"lua(
+local lookup = vim.api.nvim_get_runtime_file
+vim.api.nvim_get_runtime_file = function(pattern, all)
+  if pattern == "lua/vim/ui/img.lua" then return {} end
+  return lookup(pattern, all)
+end
+)lua"));
+        QVERIFY2(setup.has_value(), qPrintable(setup ? QString{} : setup.error()));
+        QTest::ignoreMessage(QtWarningMsg,
+                             "dot: Neovim image API is unavailable; images are disabled.");
+        conn.installDotBackend();
+        QVERIFY(waitUntil([&] {
+            const auto messages = evalSync(conn, QStringLiteral("execute('messages')"));
+            return messages && messages->toString().contains(QStringLiteral(
+                                   "Neovim image API is unavailable; images are disabled."));
+        }));
+        QVERIFY(!conn.imagesAvailable());
+        QVERIFY(conn.attached());
+        conn.input(QStringLiteral("iordinary editing<Esc>"));
+        QVERIFY(waitUntil([&] {
+            const auto line = evalSync(conn, QStringLiteral("getline(1)"));
+            return line && line->toString() == QStringLiteral("ordinary editing");
         }));
     }
 
@@ -663,6 +690,25 @@ vim.ui.img.set(vim.base64.decode("%1"), {row=4})
         QVERIFY2(result.has_value(), qPrintable(result ? QString{} : result.error()));
         QCOMPARE(conn.images()->count(), qsizetype(1));
         QCOMPARE(conn.images()->placements().cbegin()->pixels.pixelColor(0, 0), QColor(Qt::green));
+    }
+
+    void supportMatchesTheAttachedDotUi() {
+        std::optional<RpcResult> detached;
+        NvimConnector conn;
+        QVERIFY(startImageNvim(conn));
+        const auto attached = runLua(conn, QStringLiteral("assert(vim.ui.img._supported())"));
+        QVERIFY2(attached.has_value(), qPrintable(attached ? QString{} : attached.error()));
+        MsgpackRpc *rpc = conn.findChild<MsgpackRpc *>();
+        QVERIFY(rpc);
+        rpc->request(QStringLiteral("nvim_ui_detach"), {},
+                     [&](RpcResult result) { detached = std::move(result); });
+        QVERIFY(waitUntil([&] { return detached.has_value(); }));
+        QVERIFY(detached->has_value());
+        QVERIFY(rpc->isRunning());
+        const auto unsupported =
+            runLua(conn, QStringLiteral("assert(not vim.ui.img._supported())"));
+        QVERIFY2(unsupported.has_value(),
+                 qPrintable(unsupported ? QString{} : unsupported.error()));
     }
 
     void textEditingWorksWhetherOrNotTheImageApiExists() {
