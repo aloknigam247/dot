@@ -433,7 +433,13 @@ private slots:
             putCells(*f.conn.grid(), row, 0, QStringLiteral("M"), 0, 200);
         }
         f.conn.flush();
-        QVERIFY(!f.paint().isNull());
+        {
+            const QImage initial = f.paint();
+            QVERIFY(!initial.isNull());
+            QCOMPARE(initial.size(),
+                     QSize(qRound(f.grid.width() * f.dpr()), qRound(f.grid.height() * f.dpr())));
+            QVERIFY(!f.raster->window()->handle());
+        }
         const int backgrounds = f.grid.backgrounds.load();
         const int foregrounds = f.grid.foregrounds.load();
         const GridRuns snapshot = buildGridRuns(*f.conn.grid(), *f.conn.highlights(), 1);

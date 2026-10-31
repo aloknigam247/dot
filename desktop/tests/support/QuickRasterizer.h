@@ -1,26 +1,13 @@
 #pragma once
 
-// Offscreen rasteriser for a single QQuickItem, used by the pixel-probe tests.
-//
-// GridItem and CursorItem render through updatePaintNode, so there is no
-// QPainter entry point a test can call. Tests used to call paint() directly;
-// doing the equivalent now would mean writing a second, test-only renderer —
-// exactly the arrangement where the suite stays green while the shipping
-// renderer is broken.
-//
-// So this renders through the real scene graph and reads the pixels back. The
-// window uses the software adaptation, the only backend whose grabWindow() is
-// synchronous and needs no GPU context, and is positioned far off-screen so a
-// test run does not flash windows over the desktop.
-//
-// Call QuickRasterizer::useSoftwareBackend() from initTestCase(), before any
-// QQuickWindow exists — the backend is chosen once per process.
+// Render the real scene graph without a native window, so desktop size cannot
+// constrain pixel probes. Select the software backend before constructing one.
 
-#include <QCoreApplication>
-#include <QElapsedTimer>
-#include <QEventLoop>
+#include <QDebug>
 #include <QImage>
 #include <QQuickItem>
+#include <QQuickRenderControl>
+#include <QQuickRenderTarget>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 
@@ -32,20 +19,30 @@ public:
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     }
 
-    // Renders one frame and returns its pixels. Returns a null QImage if the
-    // scene graph produced nothing; callers must treat that as a hard failure,
-    // since a silent null would make every pixel assertion below it vacuous.
     QImage render(QQuickItem *item) {
         const int w = static_cast<int>(item->width());
         const int h = static_cast<int>(item->height());
         item->setParentItem(m_window.contentItem());
         m_window.resize(w, h);
-        // Deliberately never shown. With the software adaptation grabWindow()
-        // renders a hidden window synchronously into a QImage; showing one
-        // instead would flash windows across the desktop on every test run,
-        // and a window pushed off-screen to avoid that is never exposed by
-        // Windows, so the grab would come back empty.
-        return m_window.grabWindow();
+        const qreal dpr = m_window.devicePixelRatio();
+        const QSize size(qRound(w * dpr), qRound(h * dpr));
+        if(m_image.isNull() || m_image.size() != size ||
+           !qFuzzyCompare(m_image.devicePixelRatio(), dpr)) {
+            m_image = QImage(size, QImage::Format_ARGB32_Premultiplied);
+            if(m_image.isNull()) {
+                qWarning() << "Could not allocate the scene graph capture" << size;
+                return {};
+            }
+            m_image.setDevicePixelRatio(dpr);
+            m_image.fill(Qt::transparent);
+            QQuickRenderTarget target = QQuickRenderTarget::fromPaintDevice(&m_image);
+            target.setDevicePixelRatio(dpr);
+            m_window.setRenderTarget(target);
+        }
+        m_control.polishItems();
+        m_control.sync();
+        m_control.render();
+        return m_image;
     }
 
     // True when one rendered pixel equals one logical pixel. Pixel-probe tests
@@ -59,7 +56,10 @@ public:
     QQuickWindow *window() { return &m_window; }
 
 private:
-    QQuickWindow m_window;
+    // The paint device must outlive the scene graph.
+    QImage m_image;
+    QQuickRenderControl m_control;
+    QQuickWindow m_window{ &m_control };
 };
 
 } // namespace dot
