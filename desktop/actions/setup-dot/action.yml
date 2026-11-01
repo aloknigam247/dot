@@ -1,14 +1,11 @@
 name: Setup dot build
-description: >
-  Provision the toolchain (CMake >= 4.2, Neovim on PATH), wire the vcpkg NuGet
-  binary cache, then CONFIGURE the dev preset — which runs the vcpkg manifest
-  install, i.e. builds Qt on a cold cache or restores it otherwise. Compiling
-  dot itself is left to each job (they run cmake --build after this), so the
-  seed `build` job can stop here once Qt is cached. Shared by every CI job so
-  the toolchain + Qt ABI are identical across the build seed, test tiers, and
-  coverage.
+description: Configure dot with the shared toolchain and vcpkg binary cache.
 
 inputs:
+  configure-preset:
+    default: dev
+    description: Configure preset (dev or release).
+    required: false
   github-token:
     description: Token with packages:write, used to read/write the vcpkg NuGet binary cache.
     required: true
@@ -49,6 +46,9 @@ runs:
         & $nuget sources add -Source $src -Name github `
           -Username aloknigam247 -Password "${{ inputs.github-token }}" -StorePasswordInClearText
         & $nuget setapikey "${{ inputs.github-token }}" -Source $src
+        if ($LASTEXITCODE -ne 0) { throw "Configuring the NuGet cache credentials failed." }
+        "VCPKG_BINARY_SOURCES=clear;nuget,$src,readwrite" |
+          Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
     - name: Configure
       shell: pwsh
@@ -59,5 +59,11 @@ runs:
       # this restores Qt instead of building it.
       run: |
         $env:VCPKG_DOWNLOADS = "D:\vcpkg\downloads"
-        cmake --preset dev -DDOT_WERROR=ON `
+        if ($env:DOT_CONFIGURE_PRESET -notin @("dev", "release")) {
+          throw "Unsupported configure preset: $env:DOT_CONFIGURE_PRESET"
+        }
+        cmake --preset $env:DOT_CONFIGURE_PRESET -DDOT_WERROR=ON `
           "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=D:/vcpkg/bt;--x-packages-root=D:/vcpkg/pkg;--clean-buildtrees-after-build;--clean-packages-after-build"
+        if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE." }
+      env:
+        DOT_CONFIGURE_PRESET: ${{ inputs.configure-preset }}

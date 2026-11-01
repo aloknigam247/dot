@@ -47,12 +47,27 @@ semantic-release uses conventional commits: `feat:` bumps minor, `fix:` and `per
 Non-breaking documentation, chore, and refactor commits alone do not trigger a version.
 
 Android's `versionName` follows its semantic version; `versionCode` increases once per new Android version. Desktop
-versions stay synchronized, and C++/Windows executable metadata is generated from CMake's project version. The workflow
-pushes version commits and tags only: no release PRs, GitHub Releases, binaries, or registry packages.
+versions stay synchronized, and C++/Windows executable metadata is generated from CMake's project version.
+The version workflow pushes version commits and tags only; it does not publish binaries.
 
 Set the repository Actions secret `RELEASE_TOKEN` to a repository-scoped PAT with **Contents: read/write**. Its identity
 must be allowed to push directly to `main` and create tags. Checkout uses a read-only workflow token without persisting
 credentials; a missing or invalid release token fails the workflow. Do not delete or move version tags.
+
+## Desktop releases
+
+Install [Neovim nightly on PATH](SETUP.md#neovim-nightly-on-path), then download the Windows x64 ZIP from
+[GitHub Releases](https://github.com/aloknigam247/dot/releases). Extract the entire archive and run:
+
+```ps1
+.\bin\dot.exe
+```
+
+Keep the accompanying runtime directories and `third_party` notices with the executable.
+
+The [release workflow](.github/workflows/release.yml) publishes verified ZIPs when desktop release tags are pushed.
+For a failed publishing run, inspect the Release first. Remove an incomplete draft before retrying the publishing job;
+do not remove a published Release or its version tag.
 
 ## Configuration
 

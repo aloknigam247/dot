@@ -75,7 +75,8 @@ module.exports = {
     }],
     [require.resolve("@semantic-release/git"), {
       assets: component.assets,
-      message: `chore(release): ${componentName} \${nextRelease.version} [skip ci]`,
+      message: `chore(release): ${componentName} \${nextRelease.version}` +
+        (componentName === "dot" ? "" : " [skip ci]"),
     }],
   ],
   tagFormat: `${componentName}-v\${version}`,

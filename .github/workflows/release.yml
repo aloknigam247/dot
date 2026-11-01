@@ -1,0 +1,96 @@
+concurrency: release-${{ github.ref }}
+
+defaults:
+  run:
+    shell: pwsh
+    working-directory: desktop
+
+env:
+  RELEASE_TAG: ${{ github.ref_name }}
+
+jobs:
+  package:
+    outputs:
+      sha256: ${{ steps.archive.outputs.sha256 }}
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: version
+        name: Validate source version and desktop tag
+        run: |
+          $version = & .\scripts\package_release.ps1 -ValidateOnly -Tag $env:RELEASE_TAG
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - uses: ./desktop/actions/setup-dot
+        with:
+          configure-preset: release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Release executable
+        run: cmake --build --preset release --target dot --parallel
+
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        id: archive
+        name: Package and verify the portable ZIP
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "dot_release_$([guid]::NewGuid())"
+          $package = & .\scripts\package_release.ps1 -OutputDirectory $output -Tag $env:RELEASE_TAG
+          & .\scripts\verify_release.ps1 -ArchivePath $package.ArchivePath -ExpectedVersion $env:RELEASE_VERSION
+          "archive=$($package.ArchivePath)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$($package.Sha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload the verified workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: dot-${{ steps.version.outputs.version }}-win-x64
+          path: ${{ steps.archive.outputs.archive }}
+          retention-days: 1
+
+  publish:
+    defaults:
+      run:
+        working-directory: .
+    needs: package
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dot-${{ needs.package.outputs.version }}-win-x64
+          path: release
+
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA256: ${{ needs.package.outputs.sha256 }}
+          RELEASE_VERSION: ${{ needs.package.outputs.version }}
+        name: Create, upload, and publish the GitHub Release
+        run: |
+          $archive = Join-Path $PWD "release\dot-$env:RELEASE_VERSION-win-x64.zip"
+          $sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($sha256 -cne $env:RELEASE_SHA256) { throw "The downloaded release artifact has changed." }
+          $changelog = "https://github.com/$env:GITHUB_REPOSITORY/blob/$env:RELEASE_TAG/desktop/CHANGELOG.md"
+          $notes = "Portable Windows x64 build. Extract the ZIP and run bin\dot.exe with Neovim nightly on PATH.`n`n" +
+            "Changelog: $changelog`n`nSHA-256: $sha256"
+          gh release create $env:RELEASE_TAG $archive --repo $env:GITHUB_REPOSITORY --verify-tag --draft `
+            --title "dot $env:RELEASE_VERSION" --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw "Creating the draft or uploading the ZIP failed; inspect the draft." }
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the verified draft failed." }
+
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "dot-v*"
+
+permissions: {}
