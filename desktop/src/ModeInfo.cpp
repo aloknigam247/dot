@@ -1,5 +1,7 @@
 #include "ModeInfo.h"
 
+#include <QDebug>
+
 namespace dot {
 
 static QString mapKeyStr(const msgpack::object &mapObj, const char *key) {
@@ -40,34 +42,48 @@ static CursorShape parseShape(const QString &s) {
 ModeInfo::ModeInfo(QObject *parent) : QObject(parent) {}
 
 void ModeInfo::setModes(const msgpack::object &info, bool cursorStyleEnabled) {
+    const bool styleChanged = m_cursorStyleEnabled != cursorStyleEnabled;
     m_cursorStyleEnabled = cursorStyleEnabled;
     m_modes.clear();
-    if(info.type != msgpack::type::ARRAY) return;
-    const auto &arr = info.via.array;
-    m_modes.reserve(arr.size);
-    for(uint32_t i = 0; i < arr.size; ++i) {
-        const auto &e = arr.ptr[i];
-        ModeDescriptor d;
-        d.name = mapKeyStr(e, "name");
-        d.shortName = mapKeyStr(e, "short_name");
-        d.shape = parseShape(mapKeyStr(e, "cursor_shape"));
-        d.cellPercentage = mapKeyInt(e, "cell_percentage", 100);
-        d.blinkWait = mapKeyInt(e, "blinkwait", 0);
-        d.blinkOn = mapKeyInt(e, "blinkon", 0);
-        d.blinkOff = mapKeyInt(e, "blinkoff", 0);
-        d.attrId = mapKeyInt(e, "attr_id", 0);
-        m_modes.push_back(d);
+    if(info.type != msgpack::type::ARRAY) {
+        qWarning("Invalid mode_info_set: mode_info must be an array");
+    } else {
+        const auto &arr = info.via.array;
+        m_modes.reserve(arr.size);
+        for(uint32_t i = 0; i < arr.size; ++i) {
+            ModeDescriptor d;
+            const auto &e = arr.ptr[i];
+            d.name = mapKeyStr(e, "name");
+            d.shortName = mapKeyStr(e, "short_name");
+            d.shape = parseShape(mapKeyStr(e, "cursor_shape"));
+            d.cellPercentage = mapKeyInt(e, "cell_percentage", 100);
+            d.blinkWait = mapKeyInt(e, "blinkwait", 0);
+            d.blinkOn = mapKeyInt(e, "blinkon", 0);
+            d.blinkOff = mapKeyInt(e, "blinkoff", 0);
+            d.attrId = mapKeyInt(e, "attr_id", 0);
+            m_modes.push_back(d);
+        }
+    }
+    const ModeDescriptor current = currentDescriptor();
+    if(styleChanged || current != m_current) {
+        m_current = current;
+        emit currentChanged();
     }
 }
 
-void ModeInfo::setCurrentMode(const QString &name, int idx) {
-    if(idx >= 0 && idx < m_modes.size()) {
-        m_current = m_modes[idx];
-        if(m_current.name.isEmpty()) m_current.name = name;
-    } else {
-        m_current = {};
-        m_current.name = name;
+ModeDescriptor ModeInfo::currentDescriptor() const {
+    ModeDescriptor descriptor;
+    if(m_currentIndex >= 0 && m_currentIndex < m_modes.size()) {
+        descriptor = m_modes[m_currentIndex];
     }
+    if(descriptor.name.isEmpty()) descriptor.name = m_currentName;
+    return descriptor;
+}
+
+void ModeInfo::setCurrentMode(const QString &name, int idx) {
+    m_currentIndex = idx;
+    m_currentName = name;
+    m_current = currentDescriptor();
     emit currentChanged();
 }
 
@@ -75,6 +91,8 @@ void ModeInfo::reset() {
     m_modes.clear();
     m_current = ModeDescriptor{};
     m_cursorStyleEnabled = false;
+    m_currentIndex = -1;
+    m_currentName.clear();
     emit currentChanged();
 }
 

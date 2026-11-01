@@ -5,6 +5,47 @@
 
 using namespace dot;
 
+namespace {
+
+struct TestMode {
+    int attrId = 0;
+    int blinkOff = 0;
+    int blinkOn = 0;
+    int blinkWait = 0;
+    const char *name = "";
+    int percentage = 100;
+    const char *shape = "block";
+    const char *shortName = "";
+};
+
+msgpack::object_handle modeTable(std::initializer_list<TestMode> modes) {
+    msgpack::sbuffer buffer;
+    msgpack::packer<msgpack::sbuffer> packer(&buffer);
+    packer.pack_array(static_cast<uint32_t>(modes.size()));
+    for(const TestMode &mode: modes) {
+        packer.pack_map(8);
+        packer.pack("attr_id");
+        packer.pack(mode.attrId);
+        packer.pack("blinkoff");
+        packer.pack(mode.blinkOff);
+        packer.pack("blinkon");
+        packer.pack(mode.blinkOn);
+        packer.pack("blinkwait");
+        packer.pack(mode.blinkWait);
+        packer.pack("cell_percentage");
+        packer.pack(mode.percentage);
+        packer.pack("cursor_shape");
+        packer.pack(mode.shape);
+        packer.pack("name");
+        packer.pack(mode.name);
+        packer.pack("short_name");
+        packer.pack(mode.shortName);
+    }
+    return msgpack::unpack(buffer.data(), buffer.size());
+}
+
+} // namespace
+
 class TestModeInfo : public QObject {
     Q_OBJECT
 private slots:
@@ -54,7 +95,7 @@ private slots:
         QCOMPARE(mi.cursorShapeInt(), static_cast<int>(CursorShape::Block));
     }
 
-    void setModesIgnoresNonArray() {
+    void setModesRejectsNonArray() {
         msgpack::sbuffer buf;
         msgpack::packer<msgpack::sbuffer> pk(&buf);
         pk.pack(7); // not an array
@@ -63,9 +104,141 @@ private slots:
         msgpack::unpack(h, buf.data(), buf.size());
 
         ModeInfo mi;
-        mi.setModes(h.get(), false);
+        const auto initial = modeTable({ { .percentage = 20, .shape = "vertical" } });
+        mi.setModes(initial.get(), true);
         mi.setCurrentMode(QStringLiteral("normal"), 0);
+        QSignalSpy spy(&mi, &ModeInfo::currentChanged);
+        QTest::ignoreMessage(QtWarningMsg, "Invalid mode_info_set: mode_info must be an array");
+        mi.setModes(h.get(), false);
         QCOMPARE(mi.currentName(), QStringLiteral("normal"));
+        QCOMPARE(mi.cursorShapeInt(), static_cast<int>(CursorShape::Block));
+        QCOMPARE(mi.cellPercentage(), 100);
+        QVERIFY(!mi.cursorStyleEnabled());
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void duplicateTableDoesNotNotify() {
+        ModeInfo mode;
+        const auto table =
+            modeTable({ { .blinkWait = 250, .percentage = 20, .shape = "vertical" } });
+        mode.setModes(table.get(), true);
+        mode.setCurrentMode(QStringLiteral("insert"), 0);
+        QSignalSpy spy(&mode, &ModeInfo::currentChanged);
+
+        mode.setModes(table.get(), true);
+
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(mode.blinkWait(), 250);
+        QCOMPARE(mode.cellPercentage(), 20);
+    }
+
+    void missingNamesUseTheLastModeEventName() {
+        ModeInfo mode;
+        const auto initial =
+            modeTable({ { .name = "descriptor-label", .percentage = 20, .shape = "vertical" } });
+        const auto replacement = modeTable({ { .percentage = 40, .shape = "vertical" } });
+        mode.setModes(initial.get(), true);
+        mode.setCurrentMode(QStringLiteral("insert"), 0);
+        QCOMPARE(mode.currentName(), QStringLiteral("descriptor-label"));
+
+        mode.setModes(replacement.get(), true);
+
+        QCOMPARE(mode.currentName(), QStringLiteral("insert"));
+        QCOMPARE(mode.cellPercentage(), 40);
+    }
+
+    void modeTableTracksTheCurrentIndex() {
+        ModeInfo mode;
+        const auto initial = modeTable(
+            { { .name = "normal" }, { .name = "insert", .percentage = 20, .shape = "vertical" } });
+        const auto replacement =
+            modeTable({ { .name = "normal", .percentage = 80, .shape = "horizontal" },
+                        { .name = "insert", .percentage = 40, .shape = "vertical" } });
+        mode.setModes(initial.get(), true);
+        mode.setCurrentMode(QStringLiteral("insert"), 1);
+
+        mode.setModes(replacement.get(), true);
+
+        QCOMPARE(mode.currentName(), QStringLiteral("insert"));
+        QCOMPARE(mode.cellPercentage(), 40);
+        QCOMPARE(mode.cursorShapeInt(), static_cast<int>(CursorShape::Vertical));
+    }
+
+    void removedModeFallsBack() {
+        ModeInfo mode;
+        const auto initial = modeTable({ { .percentage = 20, .shape = "vertical" } });
+        const auto empty = modeTable({});
+        mode.setModes(initial.get(), true);
+        mode.setCurrentMode(QStringLiteral("insert"), 0);
+        QSignalSpy spy(&mode, &ModeInfo::currentChanged);
+
+        mode.setModes(empty.get(), true);
+
+        QCOMPARE(mode.currentName(), QStringLiteral("insert"));
+        QCOMPARE(mode.cellPercentage(), 100);
+        QCOMPARE(mode.cursorShapeInt(), static_cast<int>(CursorShape::Block));
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void resetDiscardsTheCurrentIdentity() {
+        ModeInfo mode;
+        const auto table = modeTable({ { .percentage = 20, .shape = "vertical" } });
+        mode.setModes(table.get(), true);
+        mode.setCurrentMode(QStringLiteral("insert"), 0);
+        mode.reset();
+        QVERIFY(!mode.cursorStyleEnabled());
+
+        mode.setModes(table.get(), true);
+
+        QVERIFY(mode.currentName().isEmpty());
+        QCOMPARE(mode.cellPercentage(), 100);
+        QCOMPARE(mode.cursorShapeInt(), static_cast<int>(CursorShape::Block));
+        mode.setCurrentMode(QStringLiteral("normal"), -1);
+        QCOMPARE(mode.currentName(), QStringLiteral("normal"));
+        QCOMPARE(mode.cellPercentage(), 100);
+    }
+
+    void styleAndBlinkChangesNotify() {
+        ModeInfo mode;
+        const auto initial = modeTable({ { .percentage = 20, .shape = "vertical" } });
+        const auto blinking = modeTable({ { .attrId = 5,
+                                            .blinkOff = 30,
+                                            .blinkOn = 40,
+                                            .blinkWait = 50,
+                                            .percentage = 20,
+                                            .shape = "vertical",
+                                            .shortName = "i" } });
+        mode.setModes(initial.get(), true);
+        mode.setCurrentMode(QStringLiteral("insert"), 0);
+        QSignalSpy spy(&mode, &ModeInfo::currentChanged);
+
+        mode.setModes(initial.get(), false);
+        QCOMPARE(spy.count(), 1);
+        QVERIFY(!mode.cursorStyleEnabled());
+        QCOMPARE(mode.cellPercentage(), 20);
+        mode.setModes(blinking.get(), false);
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(mode.attrId(), 5);
+        QCOMPARE(mode.blinkOff(), 30);
+        QCOMPARE(mode.blinkOn(), 40);
+        QCOMPARE(mode.blinkWait(), 50);
+    }
+
+    void tableReplacementRefreshesCurrentMode() {
+        ModeInfo mode;
+        const auto initial =
+            modeTable({ { .name = "normal", .percentage = 20, .shape = "vertical" } });
+        const auto replacement =
+            modeTable({ { .name = "normal", .percentage = 80, .shape = "horizontal" } });
+        mode.setModes(initial.get(), true);
+        mode.setCurrentMode(QStringLiteral("normal"), 0);
+        QSignalSpy spy(&mode, &ModeInfo::currentChanged);
+
+        mode.setModes(replacement.get(), true);
+
+        QCOMPARE(mode.cellPercentage(), 80);
+        QCOMPARE(mode.cursorShapeInt(), static_cast<int>(CursorShape::Horizontal));
+        QCOMPARE(spy.count(), 1);
     }
 };
 

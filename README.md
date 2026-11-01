@@ -65,6 +65,9 @@ vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
 Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
 location; caches from other application identities are not imported.
 
+Neovim's `guicursor` controls cursor shape, bar/underline percentage, and blink timing, including live changes.
+The cursor uses the shared [design corners](docs/design/DESIGN.md#4-metrics), clamped to its actual shape.
+
 ## Images
 
 Pass PNG bytes to [`vim.ui.img`](https://neovim.io/doc/user/lua.html#vim.ui.img):
