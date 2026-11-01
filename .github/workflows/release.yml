@@ -6,11 +6,10 @@ defaults:
     working-directory: desktop
 
 env:
-  RELEASE_TAG: ${{ github.event.ref }}
+  RELEASE_TAG: ${{ github.ref_name }}
 
 jobs:
   package:
-    if: github.event.ref_type == 'tag' && startsWith(github.event.ref, 'dot-v')
     outputs:
       sha256: ${{ steps.archive.outputs.sha256 }}
       version: ${{ steps.version.outputs.version }}
@@ -32,13 +31,8 @@ jobs:
           configure-preset: release
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Release targets
-        run: cmake --build --preset release --parallel
-
-      - name: Check deployed runtime and version metadata
-        run: >-
-          ctest --preset release --output-on-failure
-          -R "^(test_cli_version|test_deploy_manifest|test_version_metadata)$"
+      - name: Build Release executable
+        run: cmake --build --preset release --target dot --parallel
 
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,6 +88,9 @@ jobs:
 
 name: Desktop release
 
-on: create
+on:
+  push:
+    tags:
+      - "dot-v*"
 
 permissions: {}

@@ -65,7 +65,7 @@ Install [Neovim nightly on PATH](SETUP.md#neovim-nightly-on-path), then download
 
 Keep the accompanying runtime directories and `third_party` notices with the executable.
 
-The [release workflow](.github/workflows/release.yml) publishes verified ZIPs only for new desktop release tags.
+The [release workflow](.github/workflows/release.yml) publishes verified ZIPs when desktop release tags are pushed.
 For a failed publishing run, inspect the Release first. Remove an incomplete draft before retrying the publishing job;
 do not remove a published Release or its version tag.
 
