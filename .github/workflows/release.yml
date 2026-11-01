@@ -1,0 +1,129 @@
+concurrency:
+  cancel-in-progress: false
+  group: release-${{ github.event_name }}-${{ github.ref }}
+
+defaults:
+  run:
+    shell: pwsh
+    working-directory: desktop
+
+jobs:
+  package:
+    if: >-
+      github.event_name != 'create' ||
+      (github.event.ref_type == 'tag' && startsWith(github.event.ref, 'dot-v'))
+    outputs:
+      sha256: ${{ steps.archive.outputs.sha256 }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - env:
+          RELEASE_TAG: ${{ github.event_name == 'create' && github.event.ref || '' }}
+        id: version
+        name: Validate source version and desktop tag
+        run: |
+          $version = & .\scripts\package_release.ps1 -ValidateOnly -Tag $env:RELEASE_TAG
+          if ($env:RELEASE_TAG) {
+            git merge-base --is-ancestor HEAD origin/main
+            if ($LASTEXITCODE -ne 0) { throw "Desktop release tags must point to main's history." }
+          }
+          "tag=$env:RELEASE_TAG" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - uses: ./desktop/actions/setup-dot
+        with:
+          configure-preset: release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Release targets
+        run: cmake --build --preset release --parallel
+
+      - name: Check deployed runtime and version metadata
+        run: >-
+          ctest --preset release --output-on-failure
+          -R "^(test_cli_version|test_deploy_manifest|test_version_metadata)$"
+
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        id: archive
+        name: Package and verify the portable ZIP
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "dot_release_$([guid]::NewGuid())"
+          $package = & .\scripts\package_release.ps1 -OutputDirectory $output -Tag $env:RELEASE_TAG
+          & .\scripts\verify_release.ps1 -ArchivePath $package.ArchivePath -ExpectedVersion $env:RELEASE_VERSION
+          "archive=$($package.ArchivePath)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$($package.Sha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload the verified workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: dot-${{ steps.version.outputs.version }}-win-x64
+          path: ${{ steps.archive.outputs.archive }}
+          retention-days: 1
+
+  publish:
+    defaults:
+      run:
+        working-directory: .
+    if: >-
+      github.event_name == 'create' &&
+      github.event.ref_type == 'tag' &&
+      startsWith(github.event.ref, 'dot-v')
+    needs: package
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dot-${{ needs.package.outputs.version }}-win-x64
+          path: release
+
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA256: ${{ needs.package.outputs.sha256 }}
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.package.outputs.version }}
+        name: Create, upload, and publish the GitHub Release
+        run: |
+          $archive = Join-Path $PWD "release\dot-$env:RELEASE_VERSION-win-x64.zip"
+          $sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($sha256 -cne $env:RELEASE_SHA256) { throw "The downloaded release artifact has changed." }
+          $changelog = "https://github.com/$env:GITHUB_REPOSITORY/blob/$env:RELEASE_TAG/desktop/CHANGELOG.md"
+          $notes = "Portable Windows x64 build. Extract the ZIP and run bin\dot.exe with Neovim nightly on PATH.`n`n" +
+            "Changelog: $changelog`n`nSHA-256: $sha256"
+          gh release create $env:RELEASE_TAG $archive --repo $env:GITHUB_REPOSITORY --verify-tag --draft `
+            --title "dot $env:RELEASE_VERSION" --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw "Creating the draft or uploading the ZIP failed; inspect the draft." }
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the verified draft failed." }
+
+name: Desktop release
+
+on:
+  create:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "desktop/CMakeLists.txt"
+      - "desktop/CMakePresets.json"
+      - "desktop/actions/setup-dot/**"
+      - "desktop/qml/**"
+      - "desktop/resources/**"
+      - "desktop/scripts/package_release.ps1"
+      - "desktop/scripts/verify_release.ps1"
+      - "desktop/vcpkg*.json"
+  workflow_dispatch:
+
+permissions: {}

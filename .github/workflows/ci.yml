@@ -27,11 +27,6 @@ permissions:
   contents: read
   packages: write
 
-env:
-  # Read/write the public GitHub Packages NuGet feed as vcpkg's binary cache.
-  # Public repo => unlimited package storage/transfer; Qt is built once per ABI.
-  VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/aloknigam247/index.json,readwrite"
-
 jobs:
   # Enforce the clang-format standard (.clang-format) on every C++ source. This
   # only needs clang-format, not Qt/vcpkg, so it runs on Linux in ~1 min in

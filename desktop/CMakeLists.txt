@@ -263,20 +263,70 @@ if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-# --- Release deployment ---
-# For non-Debug builds, use Qt's deployment helper to gather all runtime
-# dependencies at install time. windeployqt doesn't support vcpkg's debug
-# prefix layout, so we only run this for Release-style builds.
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
-    qt_generate_deploy_app_script(
-        TARGET dot
-        OUTPUT_SCRIPT deploy_script
-        NO_UNSUPPORTED_PLATFORM_ERROR
-    )
-    install(SCRIPT ${deploy_script})
-endif()
-
 install(TARGETS dot
     RUNTIME DESTINATION bin
     BUNDLE DESTINATION .
 )
+
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
+    include(InstallRequiredSystemLibraries)
+    if(MSVC AND NOT CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+        message(FATAL_ERROR "The MSVC redistributable runtime is required for portable deployment.")
+    endif()
+
+    qt_generate_deploy_app_script(
+        TARGET dot
+        OUTPUT_SCRIPT deploy_script
+        NO_COMPILER_RUNTIME
+        NO_TRANSLATIONS
+        NO_UNSUPPORTED_PLATFORM_ERROR
+        DEPLOY_TOOL_OPTIONS
+            --no-libraries
+            --no-system-d3d-compiler
+            --no-system-dxc-compiler
+            --qmldir "${CMAKE_CURRENT_SOURCE_DIR}/qml"
+            --skip-plugin-types qmltooling
+    )
+    install(SCRIPT ${deploy_script})
+
+    if(MSVC)
+        get_filename_component(DOT_COMPILER_DIRECTORY "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        find_program(DOT_DUMPBIN dumpbin HINTS "${DOT_COMPILER_DIRECTORY}" REQUIRED)
+        install(CODE "set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND \"${DOT_DUMPBIN}\")")
+    endif()
+
+    # Qt's Windows deployment tool does not copy vcpkg's non-Qt dependencies.
+    install(CODE [=[
+        if(POLICY CMP0207)
+            cmake_policy(SET CMP0207 NEW)
+        endif()
+        file(GLOB_RECURSE runtime_modules
+            "${CMAKE_INSTALL_PREFIX}/Qt6/plugins/*.dll"
+            "${CMAKE_INSTALL_PREFIX}/Qt6/qml/*.dll"
+        )
+        file(GET_RUNTIME_DEPENDENCIES
+            EXECUTABLES "${CMAKE_INSTALL_PREFIX}/bin/dot.exe"
+            MODULES ${runtime_modules}
+            DIRECTORIES
+                "${CMAKE_INSTALL_PREFIX}/bin"
+                "$<TARGET_FILE_DIR:Qt6::Core>"
+            PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+            POST_EXCLUDE_REGEXES
+                [[.*[/\\][Ss][Yy][Ss][Tt][Ee][Mm]32[/\\].*]]
+                [[.*[/\\][Ss][Yy][Ss][Ww][Oo][Ww]64[/\\].*]]
+                [[.*[/\\][Ww][Ii][Nn][Ss][Xx][Ss][/\\].*]]
+            RESOLVED_DEPENDENCIES_VAR runtime_dependencies
+            UNRESOLVED_DEPENDENCIES_VAR unresolved_dependencies
+            CONFLICTING_DEPENDENCIES_PREFIX conflicting_dependencies
+        )
+        if(unresolved_dependencies)
+            message(FATAL_ERROR "Unresolved runtime dependencies: ${unresolved_dependencies}")
+        endif()
+        if(conflicting_dependencies_FILENAMES)
+            message(FATAL_ERROR "Conflicting runtime dependencies: ${conflicting_dependencies_FILENAMES}")
+        endif()
+        foreach(dependency IN LISTS runtime_dependencies)
+            file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE SHARED_LIBRARY FILES "${dependency}")
+        endforeach()
+    ]=])
+endif()
