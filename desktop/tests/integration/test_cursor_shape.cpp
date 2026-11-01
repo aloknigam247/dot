@@ -56,9 +56,23 @@ void observeBackground(QSGNode *parent, CursorFrame &frame) {
 
 class ObservedCursor : public CursorItem {
 public:
+    bool failCursorImages = false;
+    bool failCursorTextures = false;
     CursorFrame frame;
+    int imageAttempts = 0;
+    int textureAttempts = 0;
 
 protected:
+    QImage createCursorImage(const QSize &size) override {
+        ++imageAttempts;
+        return failCursorImages ? QImage() : CursorItem::createCursorImage(size);
+    }
+
+    QSGTexture *createCursorTexture(QQuickWindow *window, const QImage &image) override {
+        ++textureAttempts;
+        return failCursorTextures ? nullptr : CursorItem::createCursorTexture(window, image);
+    }
+
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override {
         QElapsedTimer timer;
         timer.start();
@@ -367,6 +381,77 @@ private slots:
         QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(0, 0, 10.25, 20.5));
         QCOMPARE(fixture.cursor.frame.sourceRect, QRectF(0, 0, 10.25 * 1.5, 20.5 * 1.5));
         QCOMPARE(fixture.cursor.frame.textureSize, QSize(qCeil(10.25 * 1.5), qCeil(20.5 * 1.5)));
+    }
+
+    void failedAllocationKeepsAVisibleCursor_data() {
+        QTest::addColumn<bool>("failImage");
+        QTest::addColumn<bool>("populated");
+        QTest::newRow("image-first-frame") << true << false;
+        QTest::newRow("image-replacement") << true << true;
+        QTest::newRow("texture-first-frame") << false << false;
+        QTest::newRow("texture-replacement") << false << true;
+    }
+
+    void failedAllocationKeepsAVisibleCursor() {
+        QFETCH(bool, failImage);
+        QFETCH(bool, populated);
+        CursorFixture fixture;
+        QVERIFY(fixture.start(true));
+        fixture.cursor.setCornerRadius(0);
+        const QImage flat = fixture.paint();
+        QVERIFY(!flat.isNull());
+        fixture.cursor.setCornerRadius(2);
+        if(populated) QVERIFY(!fixture.paint().isNull());
+        fixture.cursor.failCursorImages = failImage;
+        fixture.cursor.failCursorTextures = !failImage;
+        fixture.cursor.setCornerRadius(3);
+        QTest::ignoreMessage(QtWarningMsg, failImage
+                                               ? "Could not allocate the rounded cursor image"
+                                               : "Could not create the rounded cursor texture");
+
+        const QImage fallback = fixture.paint();
+
+        QVERIFY(!fallback.isNull());
+        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(20, 0, 10, 20));
+        QCOMPARE(fallback, flat);
+        QVERIFY(fixture.cursor.frame.glyphNodes > 0);
+        QVERIFY(fixture.cursor.frame.underlineNodes > 0);
+        const int imageAttempts = fixture.cursor.imageAttempts;
+        const int textureAttempts = fixture.cursor.textureAttempts;
+        QCOMPARE(imageAttempts, populated ? 2 : 1);
+        QCOMPARE(textureAttempts, (populated ? 1 : 0) + (failImage ? 0 : 1));
+
+        fixture.cursor.failCursorImages = false;
+        fixture.cursor.failCursorTextures = false;
+        QVERIFY(!fixture.paint().isNull());
+        QCOMPARE(fixture.cursor.imageAttempts, imageAttempts);
+        QCOMPARE(fixture.cursor.textureAttempts, textureAttempts);
+
+        fixture.cursor.setCornerRadius(2);
+        QVERIFY(!fixture.paint().isNull());
+        QCOMPARE(fixture.cursor.imageAttempts, imageAttempts + 1);
+        QCOMPARE(fixture.cursor.textureAttempts, textureAttempts + 1);
+        QVERIFY(fixture.cursor.frame.textureIdentity != 0);
+        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(20, 0, 10, 20));
+    }
+
+    void excessiveTextureDimensionsUseAFlatFallback() {
+        CursorFixture fixture;
+        const qreal width = static_cast<qreal>(std::numeric_limits<int>::max()) + 1;
+        fixture.conn.grid()->setCursor(1, 0, 0);
+        fixture.cursor.setCellWidth(width);
+        QTest::ignoreMessage(QtWarningMsg, "Cursor texture dimensions exceed image limits");
+
+        QVERIFY(!fixture.paint().isNull());
+
+        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(0, 0, width, 20));
+        QCOMPARE(fixture.cursor.imageAttempts, 0);
+        QCOMPARE(fixture.cursor.textureAttempts, 0);
+        fixture.cursor.setCellWidth(10);
+        QVERIFY(!fixture.paint().isNull());
+        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(0, 0, 10, 20));
+        QCOMPARE(fixture.cursor.imageAttempts, 1);
+        QCOMPARE(fixture.cursor.textureAttempts, 1);
     }
 
     void invalidGeometryClearsEveryLayerAndRecovers() {

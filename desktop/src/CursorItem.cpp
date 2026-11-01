@@ -33,8 +33,9 @@ public:
         if(m_textureNode) m_textureNode->setRect({});
     }
 
-    bool update(const QRectF &rect, const QColor &color, qreal radius, QQuickWindow &window) {
-        const Key key{ color, window.effectiveDevicePixelRatio(), radius, rect.size() };
+    bool update(const QRectF &rect, const QColor &color, qreal radius, CursorItem &owner) {
+        QQuickWindow *window = owner.window();
+        const Key key{ color, window->effectiveDevicePixelRatio(), radius, rect.size() };
         if(key != m_key) {
             m_key = key;
             m_valid = false;
@@ -46,8 +47,8 @@ public:
                 qWarning("Cursor texture dimensions exceed image limits");
                 return false;
             }
-            QImage image(QSize(static_cast<int>(pixelWidth), static_cast<int>(pixelHeight)),
-                         QImage::Format_ARGB32_Premultiplied);
+            QImage image = owner.createCursorImage(
+                QSize(static_cast<int>(pixelWidth), static_cast<int>(pixelHeight)));
             if(image.isNull()) {
                 qWarning("Could not allocate the rounded cursor image");
                 return false;
@@ -61,8 +62,7 @@ public:
                 painter.setPen(Qt::NoPen);
                 painter.drawRoundedRect(QRectF(QPointF(), key.size), radius, radius);
             }
-            auto *texture =
-                window.createTextureFromImage(image, QQuickWindow::TextureHasAlphaChannel);
+            auto *texture = owner.createCursorTexture(window, image);
             if(!texture) {
                 qWarning("Could not create the rounded cursor texture");
                 return false;
@@ -140,6 +140,14 @@ CursorItem::CursorItem(QQuickItem *parent) : QQuickItem(parent) {
 }
 
 CursorItem::~CursorItem() = default;
+
+QImage CursorItem::createCursorImage(const QSize &size) {
+    return { size, QImage::Format_ARGB32_Premultiplied };
+}
+
+QSGTexture *CursorItem::createCursorTexture(QQuickWindow *window, const QImage &image) {
+    return window->createTextureFromImage(image, QQuickWindow::TextureHasAlphaChannel);
+}
 
 void CursorItem::setConnector(NvimConnector *c) {
     if(m_conn == c) return;
@@ -273,16 +281,6 @@ std::pair<bool, QPointF> CursorItem::targetCellTopLeft() const {
         return { false, {} };
     }
     return { true, QPointF(localCol * m_cellWidth, localRow * m_cellHeight) };
-}
-
-QRectF CursorItem::currentCursorRect() const {
-    if(!m_hasAnimatedPos) return {};
-    const ModeInfo *m = mode();
-    const CursorShape shape = m && m->cursorStyleEnabled()
-                                  ? static_cast<CursorShape>(m->cursorShapeInt())
-                                  : CursorShape::Block;
-    return cursorRectAtPixel(m_animatedPos, m_cellWidth, m_cellHeight, shape,
-                             m ? m->cellPercentage() : 100);
 }
 
 void CursorItem::scheduleRepaint() {
@@ -486,7 +484,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
             m_roundedBackground = new CursorBackgroundNode;
             m_blockRoot->appendChildNode(m_roundedBackground);
         }
-        roundedVisible = m_roundedBackground->update(rect, curColor, radius, *window());
+        roundedVisible = m_roundedBackground->update(rect, curColor, radius, *this);
         if(!roundedVisible) m_blockPool.add(rect, curColor);
     } else {
         if(m_roundedBackground) {

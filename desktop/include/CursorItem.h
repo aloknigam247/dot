@@ -19,6 +19,11 @@
 #include "RectNodePool.h"
 #include "TextNodePool.h"
 
+QT_BEGIN_NAMESPACE
+class QImage;
+class QSGTexture;
+QT_END_NAMESPACE
+
 namespace dot {
 
 class CursorBackgroundNode;
@@ -84,6 +89,8 @@ public:
                                     CursorShape shape, int cellPercentage);
 
 protected:
+    virtual QImage createCursorImage(const QSize &size);
+    virtual QSGTexture *createCursorTexture(QQuickWindow *window, const QImage &image);
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
 
 signals:
@@ -93,6 +100,8 @@ signals:
     void cornerRadiusChanged();
 
 private:
+    friend class CursorBackgroundNode;
+
     Q_SLOT void onCursorActivity();   // GridModel::cursorChanged — restart blink + dirty old+new
     Q_SLOT void onModeBlinkChanged(); // ModeInfo::currentChanged — update blink params + repaint
     Q_SLOT void onBlinkTimeout();     // QTimer timeout — toggle visibility, dirty current rect
@@ -101,11 +110,6 @@ private:
     GridModel *grid() const;
     HighlightTable *hl() const;
     ModeInfo *mode() const;
-
-    // The cursor's VISIBLE rect in this item's coordinate space, derived
-    // from m_animatedPos + current mode's shape. Returns null if no animated
-    // position has been seeded yet (no cursorChanged has fired).
-    QRectF currentCursorRect() const;
 
     // Top-left pixel of the TARGET cell (where nvim says the cursor should
     // be). Used by onCursorActivity to know where to animate toward. Returns
