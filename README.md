@@ -124,6 +124,8 @@ NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll
 `NvimConnector` exposes redraw notifications as `Q_SIGNAL`s that the QML shell connects to
 directly — there is no imperative pull from QML back into RPC state.
 
+The cursor snaps to Neovim's position with no movement-animation option. Blink timing follows `guicursor`.
+
 `ImageModel` owns PNG resources and projected placements received through image RPC requests. `ImageItem` manages
 independent per-image texture items between the grid's background/text layers. Image-only changes do not repaint
 the text grid.

@@ -487,13 +487,13 @@ private slots:
         QVERIFY(fixture.cursor.frame.backgroundRect.isEmpty());
     }
 
-    void metricChangesCancelObsoletePixelInterpolation() {
+    void metricChangesPreserveImmediatePosition() {
         CursorFixture fixture;
         QVERIFY(!fixture.paint().isNull());
         fixture.conn.grid()->takeDirty(1);
         fixture.conn.grid()->setCursor(1, 0, 3);
         QVERIFY(!fixture.paint().isNull());
-        QVERIFY(fixture.cursor.frame.backgroundRect.left() < 30);
+        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(30, 0, 10, 20));
 
         fixture.cursor.setCellWidth(14);
         fixture.cursor.setCellHeight(30);

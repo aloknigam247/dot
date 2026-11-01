@@ -52,6 +52,7 @@ private slots:
         }
     }
 
+    // Fractional cell metrics can place the cursor between whole pixels.
     void rectAtPixelHandlesFractionalPosition() {
         const QRectF r =
             CursorItem::cursorRectAtPixel(QPointF(42.5, 19.3), 8.0, 16.0, CursorShape::Block, 100);

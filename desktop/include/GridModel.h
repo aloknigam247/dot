@@ -129,10 +129,7 @@ public:
         s->dirty = false;
         return wasDirty;
     }
-    // Peek-only variant. CursorItem checks this on cursorChanged (before
-    // flush) to decide whether the move is part of a content change like
-    // scroll/paste — in which case the cursor snaps instead of animating,
-    // because eased motion relative to text that just moved looks wrong.
+    // Read dirty state without consuming the grid's pending flush update.
     bool isDirty(int gridId) const {
         const auto *s = surface(gridId);
         return s && s->dirty;
