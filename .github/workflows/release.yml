@@ -1,4 +1,4 @@
-concurrency: release-${{ github.event_name }}-${{ github.ref }}
+concurrency: release-${{ github.ref }}
 
 defaults:
   run:
@@ -6,13 +6,11 @@ defaults:
     working-directory: desktop
 
 env:
-  RELEASE_TAG: ${{ github.event_name == 'create' && github.event.ref || '' }}
+  RELEASE_TAG: ${{ github.event.ref }}
 
 jobs:
   package:
-    if: >-
-      github.event_name != 'create' ||
-      (github.event.ref_type == 'tag' && startsWith(github.event.ref, 'dot-v'))
+    if: github.event.ref_type == 'tag' && startsWith(github.event.ref, 'dot-v')
     outputs:
       sha256: ${{ steps.archive.outputs.sha256 }}
       version: ${{ steps.version.outputs.version }}
@@ -66,7 +64,6 @@ jobs:
     defaults:
       run:
         working-directory: .
-    if: github.event_name == 'create'
     needs: package
     permissions:
       contents: write
@@ -97,19 +94,6 @@ jobs:
 
 name: Desktop release
 
-on:
-  create:
-  pull_request:
-    paths:
-      - ".github/workflows/release.yml"
-      - "desktop/CMakeLists.txt"
-      - "desktop/CMakePresets.json"
-      - "desktop/actions/setup-dot/**"
-      - "desktop/qml/**"
-      - "desktop/resources/**"
-      - "desktop/scripts/package_release.ps1"
-      - "desktop/scripts/verify_release.ps1"
-      - "desktop/vcpkg*.json"
-  workflow_dispatch:
+on: create
 
 permissions: {}
