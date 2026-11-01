@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/aloknigam247/dot/compare/dot-v1.2.0...dot-v1.2.1) (2026-11-01)
+
+### Fixed
+
+* **ui:** disable cursor movement animation ([696bd5c](https://github.com/aloknigam247/dot/commit/696bd5c65a711a374db15b17dd06e15be3d8b3f1)), closes [#124](https://github.com/aloknigam247/dot/issues/124)
+* **ui:** honor cursor geometry and live mode updates ([87a02ef](https://github.com/aloknigam247/dot/commit/87a02ef1f8b05926f56ec4625eb2ae8823317440))
+
 ## [1.2.0](https://github.com/aloknigam247/dot/compare/dot-v1.1.0...dot-v1.2.0) (2026-10-31)
 
 ### Added
