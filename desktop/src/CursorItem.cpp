@@ -485,14 +485,14 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
             m_blockRoot->appendChildNode(m_roundedBackground);
         }
         roundedVisible = m_roundedBackground->update(rect, curColor, radius, *this);
-        if(!roundedVisible) m_blockPool.add(rect, curColor);
+        if(!roundedVisible) m_blockPool.add(rect.intersected(boundingRect()), curColor);
     } else {
         if(m_roundedBackground) {
             m_blockRoot->removeChildNode(m_roundedBackground);
             delete m_roundedBackground;
             m_roundedBackground = nullptr;
         }
-        m_blockPool.add(rect, curColor);
+        m_blockPool.add(rect.intersected(boundingRect()), curColor);
     }
 
     if(shape == CursorShape::Block) {
@@ -522,7 +522,8 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
                 const qreal thickness =
                     std::max(1.0, std::round(QFontMetricsF(carryFont).lineWidth()));
                 m_linePool.add(QRectF(drawPos.x(), drawPos.y() + m_cellHeight - thickness,
-                                      m_cellWidth, thickness),
+                                      m_cellWidth, thickness)
+                                   .intersected(boundingRect()),
                                h->defaultBg());
             }
         }

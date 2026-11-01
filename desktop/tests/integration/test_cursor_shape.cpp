@@ -444,7 +444,7 @@ private slots:
 
         QVERIFY(!fixture.paint().isNull());
 
-        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(0, 0, width, 20));
+        QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(0, 0, fixture.cursor.width(), 20));
         QCOMPARE(fixture.cursor.imageAttempts, 0);
         QCOMPARE(fixture.cursor.textureAttempts, 0);
         fixture.cursor.setCellWidth(10);
