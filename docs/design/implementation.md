@@ -1,11 +1,12 @@
 # dot application of Surfaces
 
 This is the approved UI implementation target, not a claim that the native apps already implement it.
-The screenshots are static design references, not native application captures. Identity squares and gradient preview
-surrounds are presentation placeholders, not final product artwork or application surfaces.
+The static reference images specify composition and geometry; [Color bindings](#color-bindings) specifies the colors.
+Identity squares and gradient preview surrounds are presentation placeholders, not final product artwork or
+application surfaces.
 
-[DESIGN.md](DESIGN.md) owns the rules, metrics, profiles, palette, and change-control policy.
-This guide defines their dot-specific composition and implementation mapping for both dark and light themes.
+[DESIGN.md](DESIGN.md) owns the rules, metrics, profiles, reference palette, and change-control policy.
+This guide defines dot's product-specific composition, chrome palette, and native bindings for both themes.
 Use the canonical tokens rather than introducing component-specific values.
 
 ## Applicable rules
@@ -15,22 +16,119 @@ Use the canonical tokens rather than introducing component-specific values.
 | Android app | [Android touch profile](DESIGN.md#101-android-touch-profile) and [opaque chrome profile](DESIGN.md#102-opaque-chrome-profile) |
 | Desktop chat | [Shared metrics](DESIGN.md#4-metrics), [opaque chrome profile](DESIGN.md#102-opaque-chrome-profile), and [chat text alignment](DESIGN.md#103-desktop-chat-text-alignment) |
 | Desktop editor | [Shared metrics](DESIGN.md#4-metrics), [component catalogue](DESIGN.md#9-components), and [opaque chrome profile](DESIGN.md#102-opaque-chrome-profile) |
-| Palette and color pairing | [Canonical palette](DESIGN.md#11-reference-palette) |
+| Dot-owned chrome | [Catppuccin chrome palette](#catppuccin-chrome-palette) |
 
 ## Color bindings
 
 The design defines the color roles and their visual meaning. Whether a value comes through Neovim or dot is an
 implementation detail; the provider does not change which role or state a component uses.
 
-- **Content bindings:** Neovim highlights supply pane background, primary foreground, cursor, text-range selection,
-  and overlay/menu colors. Non-diff buffer syntax remains part of the rendered content.
-- **Fixed chrome:** dot binds frame, resting, raised, selection, muted, and status roles to the design palette.
+- **Content bindings:** Neovim must supply complete resolved values for pane background, primary foreground, cursor,
+  text-range selection, and overlay/menu colors. Non-diff buffer syntax remains part of the rendered content.
+- **Fixed chrome:** dot binds frame, resting, raised, selection, muted, and status roles to the chrome palette below.
   Changing a content theme does not recalculate these tones.
 - **Materials:** map Neovim transparency settings to the material intensity defined in
   [Translucency](DESIGN.md#5-translucency), without dimming foreground text or icons.
-- **Resolution:** for configurable content roles, use an explicit user setting, then the corresponding Neovim value,
-  then the matching palette entry when no value is available. A missing cursor color uses the reversed Text/Pane pair.
-  This resolution order belongs to dot's bindings, not to the design language.
+- **Validation:** resolve omitted highlight channels only through Neovim's own default colors and highlight
+  inheritance. A missing required event, group association, or resolved channel is an error. Do not retain a stale
+  value or substitute a dot color, black/white default, or reversed pair.
+
+### Required Neovim content bindings
+
+Each role must resolve to a complete usable value from the redraw/highlight stream before its consumer is ready.
+Neovim may express an omitted highlight channel through its `default_colors_set` value; dot does not add another
+resolution layer.
+
+| Content role | Required Neovim source |
+|--------------|------------------------|
+| Cursor | Mode highlight referenced by `mode_info_set` / `mode_change` and defined by `hl_attr_define` |
+| Menu foreground/background | `Pmenu` association with attributes defined by `hl_attr_define` |
+| Overlay foreground/background | `NormalFloat` association with attributes defined by `hl_attr_define` |
+| Pane background and primary Text | `default_colors_set` |
+| Text-range selection foreground/background | `Visual` association with attributes defined by `hl_attr_define` |
+
+`hl_group_set` and the `ui_name` / `hi_name` metadata in the four-element `hl_attr_define` event associate names with
+attributes. If a required role cannot resolve after the applicable Neovim events, report the missing role/channel and
+leave the affected surface unavailable. A later valid event may complete or update the role.
+
+### Catppuccin chrome palette
+
+Use [Catppuccin](https://catppuccin.com/palette/) Mocha for dark and Latte for light on dot-owned chrome and Android
+application surfaces. These opaque swatches do not replace Neovim-owned content values. Use no custom shades,
+host-relative mixtures, or per-flavor role substitutions. Material and mark recipes retain the exceptions in the
+[opaque chrome profile](DESIGN.md#102-opaque-chrome-profile).
+
+| Swatch | Mocha: dark | Latte: light |
+|--------|-------------|--------------|
+| Base | `#1e1e2e` | `#eff1f5` |
+| Blue | `#89b4fa` | `#1e66f5` |
+| Crust | `#11111b` | `#dce0e8` |
+| Green | `#a6e3a1` | `#40a02b` |
+| Mantle | `#181825` | `#e6e9ef` |
+| Mauve | `#cba6f7` | `#8839ef` |
+| Red | `#f38ba8` | `#d20f39` |
+| Subtext 1 | `#bac2de` | `#5c5f77` |
+| Surface 0 | `#313244` | `#ccd0da` |
+| Surface 1 | `#45475a` | `#bcc0cc` |
+| Teal | `#94e2d5` | `#179299` |
+| Text | `#cdd6f4` | `#4c4f69` |
+| Yellow | `#f9e2af` | `#df8e1d` |
+
+### Dot-owned chrome roles
+
+Desktop editor chrome, chat, and Android use the same mapping. Android retains its
+[continuous pane](DESIGN.md#single-pane-surface), not a separate Crust frame.
+These roles do not replace Neovim content colors or identity-artwork colors.
+
+| Role and aliases | Swatch in both flavors |
+|------------------|------------------------|
+| Accent: active editing, scrollbar thumb, context-used fill | Mauve |
+| Changed content and linked references | Blue |
+| Error/failure and removed content | Red |
+| Frame/base | Crust |
+| Information and hint | Teal |
+| Muted text | Subtext 1 |
+| Raised/surface, soft exterior, region outline, status outer | Surface 1 |
+| Resting, status-body, message tone, status-chip fill | Surface 0 |
+| Selection, selected-hover, working fill | Mauve |
+| Success and added content | Green |
+| Warning | Yellow |
+
+QML chrome consumers bind to these roles. The Compose theme supplies the same roles to Android consumers; toolkit
+defaults must not introduce a different palette or give ordinary action buttons an accent fill.
+
+### Foreground pairings
+
+These pairings apply to dot-owned chrome and dot-rendered chat/Android content, not Neovim-rendered editor content.
+They use the same swatch names in both flavors.
+
+- Dot-rendered added-diff fills use Green; removed-diff fills use Red. Code, line numbers, and signs use Base.
+  Counts and change markers retain their semantic colors.
+- Links and navigable references use Blue with an underline.
+- Neutral and message surfaces use Text for primary labels and Subtext 1 for secondary labels.
+- Selected controls use Base for label and metadata foregrounds on Mauve. This does not change text-range selection.
+- Status cards/chips use Text labels and semantic-colored marks on their neutral surfaces. Preserve a meaningful
+  label or sign; a low-contrast colored mark must not be the sole indicator.
+
+### Known contrast limitations
+
+The dot-owned same-name mapping does not guarantee WCAG contrast compliance. Reference targets are 4.5:1 for normal
+text and 3:1 for essential standalone graphical indicators. The following opaque Latte pairings fall below those
+targets:
+
+| Foreground / background | Use | Contrast |
+|-------------------------|-----|----------|
+| Base / Green | Added-diff text | 2.9566:1 |
+| Blue / Base | Link text | 4.3448:1 |
+| Green / Surface 0 | Status mark | 2.17:1 |
+| Mauve / Surface 1 | Editing or working mark | 2.978:1 |
+| Subtext 1 / Surface 0 | Secondary or inactive label | 4.05:1 |
+| Subtext 1 / Surface 1 | Secondary label on a raised surface | 3.4392:1 |
+| Text / Surface 1 | Raised-control or selected-content text | 4.3922:1 |
+| Yellow / Surface 0 | Warning mark | 1.70:1 |
+
+Report these limitations when assessing dot-owned native adoption; do not silently replace swatches or claim a pass.
+The table does not assess Neovim-provided colors, other pairings, or translucent composites.
 
 ## Desktop editor
 
@@ -96,7 +194,7 @@ Represent each session state explicitly:
 | ![Dark diff card](images/after_card_dark.png) | ![Light diff card](images/after_card_light.png) |
 
 The heading identifies the file and exposes file actions. The inset body contains the diff; line fills and their text
-pairing come from the [palette contract](DESIGN.md#113-foreground-pairings).
+pairing come from the [dot foreground pairings](#foreground-pairings).
 
 **Approval**
 
