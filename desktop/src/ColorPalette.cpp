@@ -47,10 +47,34 @@ QString ColorPalette::theme() const {
 
 QColor ColorPalette::swatch(Swatch color) const {
     static constexpr std::array profiles{
-        std::to_array<QRgb>({ 0x1e1e2e, 0x89b4fa, 0x11111b, 0xa6e3a1, 0xcba6f7, 0xf38ba8, 0xbac2de,
-                              0x313244, 0x45475a, 0x94e2d5, 0xcdd6f4, 0xf9e2af }),
-        std::to_array<QRgb>({ 0xeff1f5, 0x1e66f5, 0xdce0e8, 0x40a02b, 0x8839ef, 0xd20f39, 0x5c5f77,
-                              0xccd0da, 0xbcc0cc, 0x179299, 0x4c4f69, 0xdf8e1d }),
+        std::to_array<QRgb>({
+            0x1e1e2e,
+            0x89b4fa,
+            0x11111b,
+            0xa6e3a1,
+            0xcba6f7,
+            0xf38ba8,
+            0xbac2de,
+            0x313244,
+            0x45475a,
+            0x94e2d5,
+            0xcdd6f4,
+            0xf9e2af,
+        }),
+        std::to_array<QRgb>({
+            0xeff1f5,
+            0x1e66f5,
+            0xdce0e8,
+            0x40a02b,
+            0x8839ef,
+            0xd20f39,
+            0x5c5f77,
+            0xccd0da,
+            0xbcc0cc,
+            0x179299,
+            0x4c4f69,
+            0xdf8e1d,
+        }),
     };
     return QColor::fromRgb(
         profiles.at(static_cast<size_t>(m_theme)).at(static_cast<size_t>(color)));
@@ -112,9 +136,14 @@ void ColorPalette::publishContent() {
 
 void ColorPalette::resetContent() {
     ContentSnapshot empty;
-    for(const Error error:
-        { Error::PaneForeground, Error::PaneBackground, Error::CursorMode, Error::MenuAssociation,
-          Error::OverlayAssociation, Error::SelectionAssociation }) {
+    for(const Error error: {
+            Error::PaneForeground,
+            Error::PaneBackground,
+            Error::CursorMode,
+            Error::MenuAssociation,
+            Error::OverlayAssociation,
+            Error::SelectionAssociation,
+        }) {
         empty.errors.set(static_cast<size_t>(error));
     }
     m_contentDirty = true;

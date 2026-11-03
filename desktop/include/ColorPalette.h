@@ -131,7 +131,7 @@ private:
 
     enum class Theme {
         Dark,
-        Light
+        Light,
     };
 
     using Errors = std::bitset<static_cast<size_t>(Error::Count)>;
