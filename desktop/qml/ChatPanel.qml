@@ -10,8 +10,11 @@ import Dot 1.0
 Rectangle {
     id: panel
     objectName: "chatPanel"
-    color: "#252526"
+    color: colors.paneBackground
+    opacity: colors.paneValid ? 1 : 0
     visible: false
+
+    readonly property ColorPalette colors: $connector.colorPalette
 
     // Public surface for bindings and tests.
     property alias model: chatModel
@@ -40,9 +43,10 @@ Rectangle {
     // Left divider between the grid and the panel.
     Rectangle {
         id: divider
+        objectName: "chatDivider"
         anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
         width: 1
-        color: "#3c3c3c"
+        color: panel.colors.raised
     }
 
     Column {
@@ -82,6 +86,7 @@ Rectangle {
 
                     Text {
                         id: msg
+                        objectName: "chatMessage"
                         x: 6
                         y: 6
                         width: parent.width - 12
@@ -90,7 +95,7 @@ Rectangle {
                         // text / HTML.
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
-                        color: "#e6e6e6"
+                        color: panel.colors.primaryText
                         font.family: $connector.guifontFamily
                         font.pointSize: $connector.guifontSize
                     }
@@ -104,8 +109,8 @@ Rectangle {
             width: parent.width
             height: panel.metrics.rowHeight + 2 * panel.metrics.padding
             radius: panel.metrics.cornerRadius
-            color: "#1e1e1e"
-            border.color: "#3c3c3c"
+            color: panel.colors.resting
+            border.color: input.activeFocus ? panel.colors.accent : panel.colors.raised
             border.width: 1
 
             TextInput {
@@ -114,7 +119,7 @@ Rectangle {
                 anchors.fill: parent
                 padding: panel.metrics.padding
                 verticalAlignment: TextInput.AlignVCenter
-                color: "#e6e6e6"
+                color: panel.colors.primaryText
                 clip: true
                 selectByMouse: true
                 font: panel.metrics.textFont

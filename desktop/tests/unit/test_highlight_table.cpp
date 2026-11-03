@@ -85,6 +85,13 @@ private slots:
         QCOMPARE(a.fg, QColor(0xaa, 0xaa, 0xaa));
         QCOMPARE(a.bg, QColor(0x11, 0x11, 0x11));
         QVERIFY(a.bold);
+        QCOMPARE(a.sp, QColor(0xff, 0x00, 0x00));
+
+        h.setDefaultColors(-1, 0, -1);
+        a = h.resolved(5);
+        QVERIFY(!a.fg.isValid());
+        QCOMPARE(a.bg, QColor(0, 0, 0));
+        QVERIFY(!a.sp.isValid());
     }
 
     void resolvedReverseSwapsFgBg() {
@@ -96,6 +103,13 @@ private slots:
         HlAttr a = h.resolved(6);
         QCOMPARE(a.fg, QColor(0x88, 0x88, 0x88));
         QCOMPARE(a.bg, QColor(0x22, 0x22, 0x22));
+
+        const auto inherited = packAttrMap({ { "blend", 35 } }, { { "reverse", true } });
+        h.defineAttr(6, inherited.get());
+        a = h.resolved(6);
+        QCOMPARE(a.fg, h.defaultBg());
+        QCOMPARE(a.bg, h.defaultFg());
+        QCOMPARE(a.blend, 35);
     }
 
     void getIntHandlesNegativeAndNonIntValues() {
@@ -119,14 +133,23 @@ private slots:
         QVERIFY(!h.isRounded(4));
         h.setRoundedHighlights({ QStringLiteral("Search") });
         QVERIFY(h.isRounded(4));
+        h.setHighlightGroup(QStringLiteral("NormalFloat"), 4);
+        QCOMPARE(h.requiredAttrId(RequiredHighlight::NormalFloat), std::optional<int>(4));
+        QVERIFY(h.resolved(4).isRounded);
+        h.setRoundedHighlights({});
+        QVERIFY(!h.resolved(4).isRounded);
+        QCOMPARE(h.requiredAttrId(RequiredHighlight::NormalFloat), std::optional<int>(4));
     }
 
-    void negativeColorsPreserveDefaults() {
+    void negativeColorsInvalidateDefaults() {
+        QFETCH(int, background);
+        QFETCH(int, foreground);
+        QFETCH(int, special);
         HighlightTable table;
         const auto attrs =
             packAttrMap({ { "background", -1 }, { "foreground", -1 }, { "special", -1 } }, {});
         table.setDefaultColors(0x123456, 0x654321, 0xabcdef);
-        table.setDefaultColors(-1, -1, -1);
+        table.setDefaultColors(foreground, background, special);
         table.defineAttr(1, attrs.get());
 
         const HlAttr attr = table.attr(1);
@@ -135,9 +158,99 @@ private slots:
         QVERIFY(!attr.sp.isValid());
 
         const HlAttr resolved = table.resolved(1);
-        QCOMPARE(resolved.fg, QColor(0x12, 0x34, 0x56));
-        QCOMPARE(resolved.bg, QColor(0x65, 0x43, 0x21));
-        QCOMPARE(resolved.sp, QColor(0xab, 0xcd, 0xef));
+        QCOMPARE(resolved.fg.isValid(), foreground >= 0);
+        QCOMPARE(resolved.bg.isValid(), background >= 0);
+        QCOMPARE(resolved.sp.isValid(), special >= 0);
+        if(foreground >= 0) QCOMPARE(resolved.fg, QColor(0, 0, 0));
+        if(background >= 0) QCOMPARE(resolved.bg, QColor(0, 0, 0));
+        if(special >= 0) QCOMPARE(resolved.sp, QColor(0, 0, 0));
+    }
+
+    void negativeColorsInvalidateDefaults_data() {
+        QTest::addColumn<int>("background");
+        QTest::addColumn<int>("foreground");
+        QTest::addColumn<int>("special");
+        QTest::newRow("all") << -1 << -1 << -1;
+        QTest::newRow("background") << -1 << 0 << 0;
+        QTest::newRow("foreground") << 0 << -1 << 0;
+        QTest::newRow("special") << 0 << 0 << -1;
+    }
+
+    void requiredAssociationsUseLatestEvent() {
+        HighlightTable table;
+        const auto attrs = packAttrMap({ { "background", 0x123456 } }, {});
+        const auto info = packInfoNames({ "Pmenu", "Visual" });
+        QSignalSpy changed(&table, &HighlightTable::changed);
+        QVERIFY(!table.requiredAttrId(RequiredHighlight::Pmenu));
+        QVERIFY(!table.contains(7));
+        QVERIFY(table.contains(0));
+
+        table.setHighlightGroup(QStringLiteral("Pmenu"), 0);
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Pmenu), std::optional<int>(0));
+        const auto count = changed.count();
+        table.setHighlightGroup(QStringLiteral("Pmenu"), 0);
+        table.setHighlightGroup(QStringLiteral("pmenu"), 8);
+        table.setHighlightGroup(QStringLiteral("Unknown"), 9);
+        QCOMPARE(changed.count(), count);
+
+        table.defineAttr(7, attrs.get(), &info.get());
+        QVERIFY(table.contains(7));
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Pmenu), std::optional<int>(7));
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Visual), std::optional<int>(7));
+        QVERIFY(!table.requiredAttrId(RequiredHighlight::NormalFloat));
+        table.setHighlightGroup(QStringLiteral("Pmenu"), 11);
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Pmenu), std::optional<int>(11));
+        table.defineAttr(12, attrs.get(), &info.get());
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Pmenu), std::optional<int>(12));
+        QTest::ignoreMessage(QtWarningMsg,
+                             "Invalid hl_group_set: highlight id must be non-negative");
+        table.setHighlightGroup(QStringLiteral("Pmenu"), -1);
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Pmenu), std::optional<int>(12));
+    }
+
+    void requiredAssociationsUseBothMetadataNames() {
+        HighlightTable table;
+        msgpack::sbuffer buffer;
+        msgpack::packer<msgpack::sbuffer> packer(&buffer);
+        const auto attrs = packAttrMap({}, {});
+        packer.pack_array(1);
+        packer.pack_map(2);
+        packer.pack("hi_name");
+        packer.pack("NormalFloat");
+        packer.pack("ui_name");
+        packer.pack("Pmenu");
+        const auto info = msgpack::unpack(buffer.data(), buffer.size());
+        table.defineAttr(4, attrs.get(), &info.get());
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::NormalFloat), std::optional<int>(4));
+        QCOMPARE(table.requiredAttrId(RequiredHighlight::Pmenu), std::optional<int>(4));
+        QCOMPARE(table.attr(4).names, QStringList{ QStringLiteral("Pmenu") });
+    }
+
+    void resetClearsNamedAssociations() {
+        HighlightTable table;
+        const auto attrs = packAttrMap({}, {});
+        const auto info = packInfoNames({ "NormalFloat", "Visual" });
+        QVERIFY(!table.defaultFg().isValid());
+        QVERIFY(!table.defaultBg().isValid());
+        QVERIFY(!table.defaultSp().isValid());
+        table.setDefaultColors(0x123456, 0x654321, 0xabcdef);
+        table.setRoundedHighlights({ QStringLiteral("NormalFloat") });
+        table.defineAttr(4, attrs.get(), &info.get());
+        table.setHighlightGroup(QStringLiteral("Pmenu"), 4);
+        QSignalSpy changed(&table, &HighlightTable::changed);
+
+        table.clear();
+
+        QCOMPARE(changed.count(), 1);
+        QVERIFY(!table.defaultFg().isValid());
+        QVERIFY(!table.defaultBg().isValid());
+        QVERIFY(!table.defaultSp().isValid());
+        QVERIFY(!table.contains(4));
+        QVERIFY(!table.requiredAttrId(RequiredHighlight::NormalFloat));
+        QVERIFY(!table.requiredAttrId(RequiredHighlight::Pmenu));
+        QVERIFY(!table.requiredAttrId(RequiredHighlight::Visual));
+        table.defineAttr(4, attrs.get(), &info.get());
+        QVERIFY(table.isRounded(4));
     }
 
     void packedRgbColors() {

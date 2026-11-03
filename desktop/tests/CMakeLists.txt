@@ -64,6 +64,8 @@ dot_add_test(test_rounded_highlight   unit/test_rounded_highlight.cpp)
 dot_add_test(test_scroll_perf_micro   unit/test_scroll_perf_micro.cpp)
 dot_add_test(test_session_cache       unit/test_session_cache.cpp)
 dot_add_test(test_text_node_pool      unit/test_text_node_pool.cpp)
+dot_add_test(test_ui_colors          unit/test_ui_colors.cpp
+    TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_ui_colors.txt,txt")
 dot_add_test(test_version             unit/test_version.cpp)
 target_compile_definitions(test_version PRIVATE DOT_EXPECTED_VERSION=${PROJECT_VERSION})
 
@@ -133,8 +135,11 @@ target_link_libraries(test_scroll_perf PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_startup_activation            integration/test_startup_activation.cpp)
 target_link_libraries(test_startup_activation PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_title_updates                 integration/test_title_updates.cpp)
-dot_add_test(test_titlebar_color                integration/test_titlebar_color.cpp)
-dot_add_test(test_visual_on_drag                integration/test_visual_on_drag.cpp)
+dot_add_test(test_ui_color_bindings             integration/test_ui_color_bindings.cpp
+    TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_ui_color_bindings.txt,txt")
+target_link_libraries(test_ui_color_bindings PRIVATE dot_libplugin Qt6::Quick)
+dot_add_test(test_visual_on_drag                integration/test_visual_on_drag.cpp
+    TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_visual_on_drag.txt,txt")
 target_link_libraries(test_visual_on_drag PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_wheel_scroll                  integration/test_wheel_scroll.cpp)
 target_link_libraries(test_wheel_scroll PRIVATE dot_libplugin Qt6::Quick)
@@ -162,7 +167,7 @@ target_link_libraries(test_boot_perf           PRIVATE dot_libplugin Qt6::Quick)
 # Instantiates GridItem (a QQuickItem) to exercise GridItem::maybeResizeUi.
 target_link_libraries(test_restart_resize_fit  PRIVATE dot_libplugin Qt6::Quick)
 
-foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_cursor_motion test_cursor_shape test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_titlebar_color test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
+foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_config_g_globals test_ctrl_shift_mapping test_cursor_motion test_cursor_shape test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_title_updates test_ui_color_bindings test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
     set_tests_properties(${t} PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"

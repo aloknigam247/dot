@@ -13,7 +13,7 @@ Window {
     // window pop up at 80x24 and visibly jump to 1200x780 a moment later.
     visible: false
     title: $connector.title || "dot"
-    color: "#1e1e1e"
+    color: $connector.colorPalette.frame
 
     // Target grid size requested by Component.onCompleted. Set once; the
     // flush-listener below compares against this to decide when to show.
@@ -142,19 +142,18 @@ Window {
 
     function _syncTitleBar() {
         if (typeof $windowChrome === "undefined") return
-        const bg = $connector.defaultBackground
-        if (!bg || !bg.valid) return
-        $windowChrome.applyToWindow(window, bg)
+        $windowChrome.applyToWindow(window, $connector.colorPalette.frame)
     }
 
     Connections {
-        target: $connector
-        function onDefaultBackgroundChanged() { _syncTitleBar() }
+        target: $connector.colorPalette
+        function onPaletteChanged() { _syncTitleBar() }
     }
 
     Shell {
         id: shell
         objectName: "shell"
+        opacity: $connector.colorPalette.paneValid ? 1 : 0
         anchors.left: parent.left
         anchors.right: chatPanel.visible ? chatPanel.left : parent.right
         anchors.top: parent.top
@@ -209,8 +208,9 @@ Window {
             id: chatIcon
             objectName: "chatIcon"
             anchors.fill: parent
-            property color tint: chatPanel.visible ? "#5a9fd4"
-                               : (toggleArea.containsMouse ? "#e0e0e0" : "#9d9d9d")
+            property color tint: chatPanel.visible ? $connector.colorPalette.accent
+                               : (toggleArea.containsMouse ? $connector.colorPalette.text
+                                                          : $connector.colorPalette.mutedText)
             readonly property real cornerRadius: chatToggle.cornerRadius
             readonly property real padding: chatToggle.padding
             readonly property real strokeWidth: Math.min(1.5, symbolSize)

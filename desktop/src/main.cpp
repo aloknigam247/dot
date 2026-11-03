@@ -20,6 +20,7 @@
 
 #include "AppIcon.h"
 #include "ArgvParser.h"
+#include "ColorPalette.h"
 #include "Config.h"
 #include "ConfigCliReader.h"
 #include "ConfigGGlobalReader.h"
@@ -107,6 +108,8 @@ int main(int argc, char **argv) {
                    "  -v, --version    Show dot version and exit.\n"
                    "  --dot-rounded_highlights=<groups>\n"
                    "                   Comma-separated rounded highlight groups.\n"
+                   "  --dot-theme=<dark|light>\n"
+                   "                   Select the fixed chrome color profile.\n"
                    "\n"
                    "Everything else (e.g. `foo.txt`, `-O a.txt b.txt`, `+10 foo.txt`,\n"
                    "`-c \"set number\" foo.txt`) is forwarded to nvim.\n"
@@ -186,6 +189,7 @@ int main(int argc, char **argv) {
     dot::Config cfg;
     cfg.registerOption(QStringLiteral("rounded_highlights"), dot::ConfigType::StringList,
                        QStringList{});
+    dot::ColorPalette::registerConfig(cfg);
 
     QStringList forwardArgs = cli.editorArgs;
     dot::ConfigCliReader::extract(forwardArgs, cfg);
@@ -193,6 +197,7 @@ int main(int argc, char **argv) {
 
     dot::NvimConnector connector;
     dot::WindowChrome windowChrome;
+    connector.colorPalette()->bindConfig(cfg);
     boot.mark("NvimConnector ctor done");
 
     if(!connector.start(locateNvim(), forwardArgs)) {

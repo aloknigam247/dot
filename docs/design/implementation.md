@@ -51,6 +51,13 @@ resolution layer.
 attributes. If a required role cannot resolve after the applicable Neovim events, report the missing role/channel and
 leave the affected surface unavailable. A later valid event may complete or update the role.
 
+For a valid current mode, cursor attribute ID `0` requests Neovim's default foreground/background swap. It is a
+protocol-defined cursor mode, not a substitute for missing mode or highlight data.
+
+Desktop consumers read [`ColorPalette`](../../desktop/include/ColorPalette.h) through `$connector.colorPalette`.
+Content colors, validity flags, and `resolutionErrors` publish together before `flush`; restart invalidates them
+immediately. The fixed profile follows the [theme configuration](../../README.md#configuration) independently.
+
 ### Catppuccin chrome palette
 
 Use [Catppuccin](https://catppuccin.com/palette/) Mocha for dark and Latte for light on dot-owned chrome and Android

@@ -5,6 +5,7 @@
 
 #include <QDebug>
 #include <QMetaType>
+#include <QPointer>
 #include <QStringList>
 #include <QVariant>
 
@@ -53,36 +54,37 @@ static std::optional<QVariant> coerce(ConfigType type, const QVariant &raw) {
 }
 
 void ConfigGGlobalReader::read(NvimConnector &connector, Config &cfg) {
-    const QStringList names = cfg.registeredNames();
-    for(const QString &name: names) {
-        const ConfigType t = cfg.type(name);
-        const QString gName = QString::fromLatin1(kGGlobalPrefix) + name;
-        connector.getVar(gName, [name, t, &cfg](std::optional<QVariant> v) {
-            if(!v.has_value() || !v->isValid()) return;
-            const auto coerced = coerce(t, *v);
-            if(!coerced.has_value()) {
-                qDebug() << "ConfigGGlobalReader: g:" << QString::fromLatin1(kGGlobalPrefix) + name
-                         << "has unexpected type — ignoring";
-                return;
-            }
-            cfg.setFromGGlobal(name, *coerced);
-        });
-    }
+    const quint64 generation = ++cfg.m_gGlobalReadGeneration;
+    QStringList names = cfg.registeredNames();
+    const QPointer<Config> target(&cfg);
+    for(QString &name: names) name.prepend(QLatin1StringView(kGGlobalPrefix));
+    connector.readGGlobals(names,
+                           [generation, target](NvimConnector::GGlobalSnapshotResult result) {
+        if(!target || target->m_gGlobalReadGeneration != generation) return;
+        if(!result) {
+            qWarning().noquote() << "ConfigGGlobalReader:" << result.error().message;
+            return;
+        }
+        readFromMap(*result, *target);
+    });
 }
 
 void ConfigGGlobalReader::readFromMap(const QHash<QString, QVariant> &vars, Config &cfg) {
+    QHash<QString, QVariant> snapshot;
     const QStringList names = cfg.registeredNames();
+    snapshot.reserve(names.size());
     for(const QString &name: names) {
         const QString gName = QString::fromLatin1(kGGlobalPrefix) + name;
-        const auto it = vars.find(gName);
-        if(it == vars.end()) continue;
+        const auto it = vars.constFind(gName);
+        if(it == vars.cend()) continue;
         const auto coerced = coerce(cfg.type(name), *it);
-        if(!coerced.has_value()) {
-            qDebug() << "ConfigGGlobalReader: g:" << gName << "has unexpected type — ignoring";
+        if(!coerced) {
+            qWarning().noquote() << "ConfigGGlobalReader:" << gName << "has an invalid type";
             continue;
         }
-        cfg.setFromGGlobal(name, *coerced);
+        snapshot.insert(name, *coerced);
     }
+    cfg.replaceGGlobals(snapshot);
 }
 
 } // namespace dot

@@ -71,15 +71,6 @@ void clickItem(QQuickWindow *window, QQuickItem *item) {
     QTest::mouseClick(window, Qt::LeftButton, {}, c.toPoint());
 }
 
-QQuickItem *findTextItem(QQuickItem *root, const QString &text) {
-    if(root->inherits("QQuickText") && root->property("text").toString() == text) { return root; }
-    const auto children = root->childItems();
-    for(QQuickItem *child: children) {
-        if(auto *item = findTextItem(child, text)) return item;
-    }
-    return nullptr;
-}
-
 } // namespace
 
 class TestChatPanel : public QObject {

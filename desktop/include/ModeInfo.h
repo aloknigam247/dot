@@ -25,6 +25,9 @@ struct ModeDescriptor {
     int blinkOff = 0;
     int attrId = 0;
 
+    bool highlightValid = false;
+    bool valid = false;
+
     bool operator==(const ModeDescriptor &) const = default;
 };
 
@@ -37,6 +40,8 @@ class ModeInfo : public QObject {
     Q_PROPERTY(int cellPercentage READ cellPercentage NOTIFY currentChanged)
     Q_PROPERTY(int attrId READ attrId NOTIFY currentChanged)
     Q_PROPERTY(bool cursorStyleEnabled READ cursorStyleEnabled NOTIFY currentChanged)
+    Q_PROPERTY(bool currentHighlightValid READ currentHighlightValid NOTIFY currentChanged)
+    Q_PROPERTY(bool currentModeValid READ currentModeValid NOTIFY currentChanged)
 
 public:
     explicit ModeInfo(QObject *parent = nullptr);
@@ -55,6 +60,8 @@ public:
     int blinkOn() const { return m_current.blinkOn; }
     int blinkOff() const { return m_current.blinkOff; }
     bool cursorStyleEnabled() const { return m_cursorStyleEnabled; }
+    bool currentHighlightValid() const { return m_current.highlightValid; }
+    bool currentModeValid() const { return m_current.valid; }
 
 signals:
     void currentChanged();

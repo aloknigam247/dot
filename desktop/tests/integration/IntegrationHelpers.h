@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QQuickItem>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QString>
@@ -14,6 +15,15 @@
 #include "NvimConnector.h"
 
 namespace dot::test {
+
+inline QQuickItem *findTextItem(QQuickItem *root, const QString &text) {
+    if(root->inherits("QQuickText") && root->property("text").toString() == text) return root;
+    const auto children = root->childItems();
+    for(QQuickItem *child: children) {
+        if(auto *item = findTextItem(child, text)) return item;
+    }
+    return nullptr;
+}
 
 inline QString locateNvim() {
     const QString p = QStandardPaths::findExecutable(QStringLiteral("nvim"));

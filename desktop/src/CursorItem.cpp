@@ -137,10 +137,14 @@ QSGTexture *CursorItem::createCursorTexture(QQuickWindow *window, const QImage &
 
 void CursorItem::setConnector(NvimConnector *c) {
     if(m_conn == c) return;
-    if(m_conn) disconnect(m_conn, nullptr, this, nullptr);
+    if(m_conn) {
+        disconnect(m_conn, nullptr, this, nullptr);
+        disconnect(m_conn->colorPalette(), nullptr, this, nullptr);
+    }
     m_conn = c;
     if(m_conn) {
         connect(m_conn, &NvimConnector::flush, this, &CursorItem::onFlush);
+        connect(colorPalette(), &ColorPalette::paletteChanged, this, &CursorItem::scheduleRepaint);
         if(const auto *g = grid()) {
             connect(g, &GridModel::cursorChanged, this, &CursorItem::onCursorActivity);
         }
@@ -209,6 +213,7 @@ void CursorItem::rebuildFont() {
     m_font.setPointSizeF(m_fontSize);
 }
 
+ColorPalette *CursorItem::colorPalette() const { return m_conn ? m_conn->colorPalette() : nullptr; }
 GridModel *CursorItem::grid() const { return m_conn ? m_conn->grid() : nullptr; }
 HighlightTable *CursorItem::hl() const { return m_conn ? m_conn->highlights() : nullptr; }
 ModeInfo *CursorItem::mode() const { return m_conn ? m_conn->modeInfo() : nullptr; }
@@ -337,9 +342,10 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
         return root;
     };
 
+    const ColorPalette *colors = colorPalette();
     const GridModel *g = grid();
     const HighlightTable *h = hl();
-    if(!g || !h || !window()) return commit();
+    if(!colors || !colors->cursorValid() || !g || !h || !window()) return commit();
     const ModeInfo *m = mode();
 
     const int active = g->activeGrid();
@@ -354,9 +360,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
     const bool drawCursor = cursorOn || !m || !m->cursorStyleEnabled();
     if(!drawCursor) return commit();
 
-    const HlAttr a = h->resolved(m ? m->attrId() : 0);
-    QColor curColor = a.bg.isValid() ? a.bg : h->defaultFg();
-    if(curColor == h->defaultBg()) curColor = h->defaultFg();
+    const QColor curColor = colors->cursorBackground();
 
     const CursorShape shape = m && m->cursorStyleEnabled()
                                   ? static_cast<CursorShape>(m->cursorShapeInt())
@@ -399,7 +403,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
             // A single cell at an explicit x, so the PUA zero-advance defect
             // (QTBUG-116417) that collapses multi-glyph runs cannot bite here:
             // nothing is ever positioned relative to this glyph.
-            m_textPool.addText(0, cell.text, carryFont, h->defaultBg(),
+            m_textPool.addText(0, cell.text, carryFont, colors->cursorForeground(),
                                QPointF(drawPos.x(), drawPos.y() + m_baseline));
 
             if(cellAttr.underline) {
@@ -410,7 +414,7 @@ QSGNode *CursorItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*d
                 m_linePool.add(QRectF(drawPos.x(), drawPos.y() + m_cellHeight - thickness,
                                       m_cellWidth, thickness)
                                    .intersected(boundingRect()),
-                               h->defaultBg());
+                               colors->cursorForeground());
             }
         }
     }

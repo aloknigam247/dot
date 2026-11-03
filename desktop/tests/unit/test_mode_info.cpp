@@ -83,6 +83,8 @@ private slots:
         QCOMPARE(mi.blinkOn(), 0);
         QCOMPARE(mi.blinkWait(), 250);
         QVERIFY(spy.count() >= 1);
+        QVERIFY(mi.currentModeValid());
+        QVERIFY(!mi.currentHighlightValid());
     }
 
     void setCurrentModeOutOfRangeUsesNameOnly() {
@@ -93,6 +95,8 @@ private slots:
         QCOMPARE(mi.currentName(), QStringLiteral("cmdline"));
         QCOMPARE(mi.cellPercentage(), 100); // default descriptor
         QCOMPARE(mi.cursorShapeInt(), static_cast<int>(CursorShape::Block));
+        QVERIFY(!mi.currentModeValid());
+        QVERIFY(!mi.currentHighlightValid());
     }
 
     void setModesRejectsNonArray() {
@@ -130,6 +134,64 @@ private slots:
         QCOMPARE(spy.count(), 0);
         QCOMPARE(mode.blinkWait(), 250);
         QCOMPARE(mode.cellPercentage(), 20);
+    }
+
+    void highlightValidityRequiresAValidInteger() {
+        QFETCH(QVariant, value);
+        QFETCH(bool, valid);
+        ModeInfo mode;
+        msgpack::sbuffer buffer;
+        msgpack::packer<msgpack::sbuffer> packer(&buffer);
+        QVERIFY(!mode.currentModeValid());
+        QVERIFY(!mode.currentHighlightValid());
+        packer.pack_array(1);
+        packer.pack_map(value.isValid() ? 1 : 0);
+        if(value.isValid()) {
+            packer.pack("attr_id");
+            if(value.typeId() == QMetaType::QString) packer.pack(value.toString().toStdString());
+            else if(value.typeId() == QMetaType::ULongLong) packer.pack(value.toULongLong());
+            else packer.pack(value.toInt());
+        }
+        const auto table = msgpack::unpack(buffer.data(), buffer.size());
+        mode.setModes(table.get(), true);
+        QVERIFY(!mode.currentModeValid());
+        QVERIFY(!mode.currentHighlightValid());
+        mode.setCurrentMode(QStringLiteral("normal"), 0);
+        QVERIFY(mode.currentModeValid());
+        QCOMPARE(mode.currentHighlightValid(), valid);
+        if(valid) QCOMPARE(mode.attrId(), value.toInt());
+        mode.reset();
+        QVERIFY(!mode.currentModeValid());
+        QVERIFY(!mode.currentHighlightValid());
+    }
+
+    void highlightValidityRequiresAValidInteger_data() {
+        QTest::addColumn<QVariant>("value");
+        QTest::addColumn<bool>("valid");
+        QTest::newRow("missing") << QVariant() << false;
+        QTest::newRow("negative") << QVariant(-1) << false;
+        QTest::newRow("overflow") << QVariant::fromValue<qulonglong>(0x100000000ULL) << false;
+        QTest::newRow("positive") << QVariant(17) << true;
+        QTest::newRow("string") << QVariant(QStringLiteral("0")) << false;
+        QTest::newRow("zero") << QVariant(0) << true;
+    }
+
+    void modeValidityFollowsTableReplacement() {
+        ModeInfo mode;
+        const auto empty = modeTable({});
+        const auto table = modeTable({ {} });
+        mode.setCurrentMode(QStringLiteral("normal"), 0);
+        QVERIFY(!mode.currentModeValid());
+        QSignalSpy changed(&mode, &ModeInfo::currentChanged);
+        mode.setModes(table.get(), false);
+        QCOMPARE(changed.count(), 1);
+        QVERIFY(mode.currentModeValid());
+        QVERIFY(mode.currentHighlightValid());
+        QCOMPARE(mode.attrId(), 0);
+        mode.setModes(empty.get(), false);
+        QCOMPARE(changed.count(), 2);
+        QVERIFY(!mode.currentModeValid());
+        QVERIFY(!mode.currentHighlightValid());
     }
 
     void missingNamesUseTheLastModeEventName() {

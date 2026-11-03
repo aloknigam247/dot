@@ -1,5 +1,6 @@
 #include "ModeInfo.h"
 
+#include <utility>
 #include <QDebug>
 
 namespace dot {
@@ -26,8 +27,10 @@ static int mapKeyInt(const msgpack::object &mapObj, const char *key, int def = 0
         const auto &s = m.ptr[i].key.via.str;
         if(s.size != std::strlen(key) || std::memcmp(s.ptr, key, s.size) != 0) continue;
         const auto &v = m.ptr[i].val;
-        if(v.type == msgpack::type::POSITIVE_INTEGER) return static_cast<int>(v.via.u64);
-        if(v.type == msgpack::type::NEGATIVE_INTEGER) return static_cast<int>(v.via.i64);
+        if(v.type == msgpack::type::POSITIVE_INTEGER && std::in_range<int>(v.via.u64))
+            return static_cast<int>(v.via.u64);
+        if(v.type == msgpack::type::NEGATIVE_INTEGER && std::in_range<int>(v.via.i64))
+            return static_cast<int>(v.via.i64);
         return def;
     }
     return def;
@@ -53,6 +56,7 @@ void ModeInfo::setModes(const msgpack::object &info, bool cursorStyleEnabled) {
         for(uint32_t i = 0; i < arr.size; ++i) {
             ModeDescriptor d;
             const auto &e = arr.ptr[i];
+            const int attrId = mapKeyInt(e, "attr_id", -1);
             d.name = mapKeyStr(e, "name");
             d.shortName = mapKeyStr(e, "short_name");
             d.shape = parseShape(mapKeyStr(e, "cursor_shape"));
@@ -60,7 +64,9 @@ void ModeInfo::setModes(const msgpack::object &info, bool cursorStyleEnabled) {
             d.blinkWait = mapKeyInt(e, "blinkwait", 0);
             d.blinkOn = mapKeyInt(e, "blinkon", 0);
             d.blinkOff = mapKeyInt(e, "blinkoff", 0);
-            d.attrId = mapKeyInt(e, "attr_id", 0);
+            d.attrId = attrId >= 0 ? attrId : 0;
+            d.highlightValid = attrId >= 0;
+            d.valid = e.type == msgpack::type::MAP;
             m_modes.push_back(d);
         }
     }

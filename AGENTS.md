@@ -52,6 +52,7 @@ include/                    # all project headers, flat, included as "Foo.h"
   GridItem.h                # QQuickPaintedItem renderer (cell content only)
   CursorItem.h              # QQuickPaintedItem cursor overlay (sibling of grid)
   InputHandler.h            # QKeyEvent → nvim keycodes
+  ColorPalette.h            # published semantic colors for QML and the cursor
 src/                        # implementation .cpp files
 qml/                        # UI shell (Main, Shell, ChatPanel)
 tests/

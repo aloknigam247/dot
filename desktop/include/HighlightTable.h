@@ -1,7 +1,9 @@
 #ifndef HIGHLIGHTTABLE_H
 #define HIGHLIGHTTABLE_H
 
+#include <array>
 #include <msgpack.hpp>
+#include <optional>
 #include <unordered_map>
 #include <QColor>
 #include <QObject>
@@ -11,6 +13,12 @@
 #include <QStringList>
 
 namespace dot {
+
+enum class RequiredHighlight {
+    NormalFloat,
+    Pmenu,
+    Visual,
+};
 
 struct HlAttr {
     QColor fg;
@@ -41,6 +49,10 @@ public:
 
     void setRoundedHighlights(const QStringList &names);
 
+    bool contains(int id) const;
+    std::optional<int> requiredAttrId(RequiredHighlight role) const;
+    void setHighlightGroup(const QString &name, int id);
+
     HlAttr attr(int id) const;
     bool isRounded(int id) const;
     QColor defaultFg() const { return m_defaultFg; }
@@ -53,11 +65,12 @@ signals:
     void changed();
 
 private:
-    QColor m_defaultFg = Qt::white;
-    QColor m_defaultBg = Qt::black;
-    QColor m_defaultSp = Qt::red;
+    QColor m_defaultFg;
+    QColor m_defaultBg;
+    QColor m_defaultSp;
     QSet<QString> m_roundedHighlights;
     std::unordered_map<int, HlAttr> m_attrs;
+    std::array<std::optional<int>, 3> m_requiredAttrIds;
 };
 
 } // namespace dot

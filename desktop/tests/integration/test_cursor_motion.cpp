@@ -1,5 +1,6 @@
 #include "CursorItem.h"
 #include "IntegrationHelpers.h"
+#include "support/ColorHelpers.h"
 #include "support/QuickRasterizer.h"
 
 #include <QGuiApplication>
@@ -79,6 +80,7 @@ void setBlink(NvimConnector &conn, int wait, int on, int off) {
 }
 
 void prepareCursor(NvimConnector &conn, CursorItem &cursor, QPoint initialCell = {}) {
+    seedColorState(conn, 0xff00ff, 0x000000);
     conn.grid()->resize(12, 8);
     conn.grid()->setCursor(initialCell.y(), initialCell.x());
     conn.highlights()->setDefaultColors(0xFF00FF, 0x000000, 0x000000);
@@ -99,7 +101,10 @@ struct CursorScene {
         prepareCursor(conn, cursor, initialCell);
     }
 
-    QImage render() { return raster.render(&cursor); }
+    QImage render() {
+        conn.colorPalette()->publishContent();
+        return raster.render(&cursor);
+    }
 };
 
 } // namespace

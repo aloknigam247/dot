@@ -6,6 +6,7 @@
 #include <QtQuickTest>
 
 #include "NvimConnector.h"
+#include "support/ColorHelpers.h"
 
 namespace {
 
@@ -21,6 +22,7 @@ public slots:
         // Provide a real NvimConnector but do NOT call start() — its child
         // models are valid QObjects with sensible defaults for binding tests.
         auto *connector = new dot::NvimConnector(this);
+        dot::test::seedColorState(*connector);
         engine->rootContext()->setContextProperty(QStringLiteral("$connector"), connector);
         engine->rootContext()->setContextProperty(
             QStringLiteral("$expectedScaleFactor"),

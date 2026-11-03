@@ -35,6 +35,14 @@ static int64_t asInt(const msgpack::object &o, int64_t def = 0) {
     return def;
 }
 
+static std::optional<int> colorEventInteger(const msgpack::object &value) {
+    if(value.type == msgpack::type::POSITIVE_INTEGER && std::in_range<int>(value.via.u64))
+        return static_cast<int>(value.via.u64);
+    if(value.type == msgpack::type::NEGATIVE_INTEGER && std::in_range<int>(value.via.i64))
+        return static_cast<int>(value.via.i64);
+    return std::nullopt;
+}
+
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
 // diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
@@ -146,7 +154,7 @@ NvimConnector::NvimConnector(QObject *parent) :
     m_hl(new HighlightTable(this)), m_mode(new ModeInfo(this)),
     m_resizeCoalescer(new ResizeCoalescer(this)), m_restartTimer(new QTimer(this)),
     m_backendClientId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
-    m_images(new ImageModel(this)) {
+    m_images(new ImageModel(this)), m_colorPalette(new ColorPalette(*m_hl, *m_mode, this)) {
     m_restartTimer->setSingleShot(true);
     connect(m_rpc, &MsgpackRpc::notification, this, &NvimConnector::onNotification);
     connect(m_rpc, &MsgpackRpc::transportClosed, this, &NvimConnector::onRpcDisconnected);
@@ -501,6 +509,65 @@ void NvimConnector::getVar(const QString &name, GetVarCallback cb) {
     });
 }
 
+void NvimConnector::readGGlobals(const QStringList &names, ReadGGlobalsCallback cb) {
+    m_rpc->request(QStringLiteral("nvim_exec_lua"),
+                   [&names](msgpack::packer<msgpack::sbuffer> &pk) {
+        pk.pack_array(2);
+        pk.pack(R"lua(
+local names = ...
+local values = {}
+for i, name in ipairs(names) do
+  local value = vim.g[name]
+  if value == nil then
+    values[i] = { false }
+  else
+    values[i] = { true, value }
+  end
+end
+return values
+)lua");
+        pk.pack_array(1);
+        pk.pack_array(static_cast<uint32_t>(names.size()));
+        for(const QString &name: names) pk.pack(name.toStdString());
+    }, [cb = std::move(cb), names](RpcResult result) {
+        if(!result) {
+            cb(std::unexpected(result.error()));
+            return;
+        }
+        const auto invalid = [&cb] {
+            cb(std::unexpected(
+                RpcError{ -1, QStringLiteral("Invalid g-global snapshot response") }));
+        };
+        const auto &root = (*result)->get();
+        if(root.type != msgpack::type::ARRAY || root.via.array.size != 4) {
+            invalid();
+            return;
+        }
+        const auto &values = root.via.array.ptr[3];
+        if(values.type != msgpack::type::ARRAY || values.via.array.size != names.size()) {
+            invalid();
+            return;
+        }
+        QHash<QString, QVariant> snapshot;
+        snapshot.reserve(names.size());
+        for(uint32_t i = 0; i < values.via.array.size; ++i) {
+            const auto &entry = values.via.array.ptr[i];
+            if(entry.type != msgpack::type::ARRAY || entry.via.array.size == 0 ||
+               entry.via.array.ptr[0].type != msgpack::type::BOOLEAN) {
+                invalid();
+                return;
+            }
+            const bool present = entry.via.array.ptr[0].via.boolean;
+            if(entry.via.array.size != (present ? 2U : 1U)) {
+                invalid();
+                return;
+            }
+            if(present) snapshot.insert(names[i], msgpackToVariant(entry.via.array.ptr[1]));
+        }
+        cb(std::move(snapshot));
+    });
+}
+
 void NvimConnector::input(const QString &keys) {
     m_rpc->notify(QStringLiteral("nvim_input"), [&keys](msgpack::packer<msgpack::sbuffer> &pk) {
         pk.pack_array(1);
@@ -751,7 +818,7 @@ void NvimConnector::resetUiState() {
     m_hl->clear();
     m_mode->reset();
     m_sentUiSizes.clear();
-    emit defaultBackgroundChanged();
+    m_colorPalette->resetContent();
 }
 
 void NvimConnector::handleRedraw(const msgpack::object &events) {
@@ -838,20 +905,45 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         return;
     }
     if(name == "default_colors_set") {
-        if(a.size >= 4) {
-            m_hl->setDefaultColors(static_cast<int>(asInt(a.ptr[0], -1)),
-                                   static_cast<int>(asInt(a.ptr[1], -1)),
-                                   static_cast<int>(asInt(a.ptr[2], -1)));
-            emit defaultBackgroundChanged();
+        if(a.size < 5) {
+            qWarning("Invalid default_colors_set: expected five color channels");
+            return;
         }
+        const auto background = colorEventInteger(a.ptr[1]);
+        const auto foreground = colorEventInteger(a.ptr[0]);
+        const auto special = colorEventInteger(a.ptr[2]);
+        if(!background || !foreground || !special) {
+            qWarning("Invalid default_colors_set: RGB channels must be integers");
+            return;
+        }
+        m_hl->setDefaultColors(*foreground, *background, *special);
         return;
     }
     if(name == "hl_attr_define") {
-        if(a.size >= 4) {
-            m_hl->defineAttr(static_cast<int>(asInt(a.ptr[0])), a.ptr[1], &a.ptr[3]);
-        } else if(a.size >= 2) {
-            m_hl->defineAttr(static_cast<int>(asInt(a.ptr[0])), a.ptr[1]);
+        if(a.size < 4 || a.ptr[1].type != msgpack::type::MAP ||
+           a.ptr[2].type != msgpack::type::MAP || a.ptr[3].type != msgpack::type::ARRAY) {
+            qWarning("Invalid hl_attr_define: expected id, RGB map, cterm map, and info array");
+            return;
         }
+        const auto id = colorEventInteger(a.ptr[0]);
+        if(!id || *id < 0) {
+            qWarning("Invalid hl_attr_define: highlight id must be a non-negative integer");
+            return;
+        }
+        m_hl->defineAttr(*id, a.ptr[1], &a.ptr[3]);
+        return;
+    }
+    if(name == "hl_group_set") {
+        if(a.size < 2 || a.ptr[0].type != msgpack::type::STR) {
+            qWarning("Invalid hl_group_set: expected name and highlight id");
+            return;
+        }
+        const auto id = colorEventInteger(a.ptr[1]);
+        if(!id || *id < 0) {
+            qWarning("Invalid hl_group_set: highlight id must be a non-negative integer");
+            return;
+        }
+        m_hl->setHighlightGroup(asQString(a.ptr[0]), *id);
         return;
     }
     if(name == "mode_info_set") {
@@ -901,6 +993,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
     }
     if(name == "flush") {
         m_images->flush();
+        m_colorPalette->publishContent();
         emit flush();
         return;
     }
@@ -915,7 +1008,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         return;
     }
     // mouse_on, mouse_off, busy_start, busy_stop, set_icon, update_menu,
-    // hl_group_set, msg_set_pos, wildmenu_* — ignored in v0.
+    // msg_set_pos, wildmenu_* — ignored in v0.
 }
 
 } // namespace dot
