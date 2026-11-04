@@ -56,36 +56,36 @@ public:
     static void registerConfig(Config &config);
     void resetContent();
 
-    QColor accent() const { return swatch(Swatch::Mauve); }
-    QColor changed() const { return swatch(Swatch::Blue); }
+    QColor accent() const { return QColor::fromRgb(fixedColors().accent); }
+    QColor changed() const { return QColor::fromRgb(fixedColors().changed); }
     QColor cursorBackground() const { return m_snapshot.cursor.background; }
     QColor cursorForeground() const { return m_snapshot.cursor.foreground; }
     bool cursorValid() const { return m_snapshot.cursor.isValid(); }
-    QColor error() const { return swatch(Swatch::Red); }
-    QColor frame() const { return swatch(Swatch::Crust); }
-    QColor information() const { return swatch(Swatch::Teal); }
+    QColor error() const { return QColor::fromRgb(fixedColors().error); }
+    QColor frame() const { return QColor::fromRgb(fixedColors().frame); }
+    QColor information() const { return QColor::fromRgb(fixedColors().information); }
     QColor menuBackground() const { return m_snapshot.menu.background; }
     QColor menuForeground() const { return m_snapshot.menu.foreground; }
     bool menuValid() const { return m_snapshot.menu.isValid(); }
-    QColor mutedText() const { return swatch(Swatch::Subtext1); }
+    QColor mutedText() const { return QColor::fromRgb(fixedColors().mutedText); }
     QColor overlayBackground() const { return m_snapshot.overlay.background; }
     QColor overlayForeground() const { return m_snapshot.overlay.foreground; }
     bool overlayValid() const { return m_snapshot.overlay.isValid(); }
     QColor paneBackground() const { return m_snapshot.pane.background; }
     bool paneValid() const { return m_snapshot.pane.isValid(); }
     QColor primaryText() const { return m_snapshot.pane.foreground; }
-    QColor raised() const { return swatch(Swatch::Surface1); }
+    QColor raised() const { return QColor::fromRgb(fixedColors().raised); }
     QStringList resolutionErrors() const { return m_resolutionErrors; }
-    QColor resting() const { return swatch(Swatch::Surface0); }
-    QColor selectedText() const { return swatch(Swatch::Base); }
-    QColor selection() const { return swatch(Swatch::Mauve); }
-    QColor success() const { return swatch(Swatch::Green); }
-    QColor text() const { return swatch(Swatch::Text); }
+    QColor resting() const { return QColor::fromRgb(fixedColors().resting); }
+    QColor selectedText() const { return QColor::fromRgb(fixedColors().selectedText); }
+    QColor selection() const { return QColor::fromRgb(fixedColors().selection); }
+    QColor success() const { return QColor::fromRgb(fixedColors().success); }
+    QColor text() const { return QColor::fromRgb(fixedColors().text); }
     QColor textSelectionBackground() const { return m_snapshot.textSelection.background; }
     QColor textSelectionForeground() const { return m_snapshot.textSelection.foreground; }
     bool textSelectionValid() const { return m_snapshot.textSelection.isValid(); }
     QString theme() const;
-    QColor warning() const { return swatch(Swatch::Yellow); }
+    QColor warning() const { return QColor::fromRgb(fixedColors().warning); }
 
 signals:
     void paletteChanged();
@@ -114,19 +114,20 @@ private:
         Count,
     };
 
-    enum class Swatch {
-        Base,
-        Blue,
-        Crust,
-        Green,
-        Mauve,
-        Red,
-        Subtext1,
-        Surface0,
-        Surface1,
-        Teal,
-        Text,
-        Yellow,
+    struct FixedColors {
+        QRgb accent;
+        QRgb changed;
+        QRgb error;
+        QRgb frame;
+        QRgb information;
+        QRgb mutedText;
+        QRgb raised;
+        QRgb resting;
+        QRgb selectedText;
+        QRgb selection;
+        QRgb success;
+        QRgb text;
+        QRgb warning;
     };
 
     enum class Theme {
@@ -156,7 +157,7 @@ private:
     };
 
     void commitContent(ContentSnapshot snapshot);
-    QColor swatch(Swatch color) const;
+    const FixedColors &fixedColors() const;
 
     QMetaObject::Connection m_configConnection;
     bool m_contentDirty = true;

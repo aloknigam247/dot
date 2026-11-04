@@ -45,39 +45,38 @@ QString ColorPalette::theme() const {
     return m_theme == Theme::Dark ? QStringLiteral("dark") : QStringLiteral("light");
 }
 
-QColor ColorPalette::swatch(Swatch color) const {
-    static constexpr std::array profiles{
-        std::to_array<QRgb>({
-            0x1e1e2e,
-            0x89b4fa,
-            0x11111b,
-            0xa6e3a1,
-            0xcba6f7,
-            0xf38ba8,
-            0xbac2de,
-            0x313244,
-            0x45475a,
-            0x94e2d5,
-            0xcdd6f4,
-            0xf9e2af,
-        }),
-        std::to_array<QRgb>({
-            0xeff1f5,
-            0x1e66f5,
-            0xdce0e8,
-            0x40a02b,
-            0x8839ef,
-            0xd20f39,
-            0x5c5f77,
-            0xccd0da,
-            0xbcc0cc,
-            0x179299,
-            0x4c4f69,
-            0xdf8e1d,
-        }),
+const ColorPalette::FixedColors &ColorPalette::fixedColors() const {
+    static constexpr FixedColors dark{
+        .accent = 0xcba6f7,
+        .changed = 0x89b4fa,
+        .error = 0xf38ba8,
+        .frame = 0x11111b,
+        .information = 0x94e2d5,
+        .mutedText = 0xbac2de,
+        .raised = 0x45475a,
+        .resting = 0x313244,
+        .selectedText = 0x1e1e2e,
+        .selection = 0xcba6f7,
+        .success = 0xa6e3a1,
+        .text = 0xcdd6f4,
+        .warning = 0xf9e2af,
     };
-    return QColor::fromRgb(
-        profiles.at(static_cast<size_t>(m_theme)).at(static_cast<size_t>(color)));
+    static constexpr FixedColors light{
+        .accent = 0x8839ef,
+        .changed = 0x1e66f5,
+        .error = 0xd20f39,
+        .frame = 0xdce0e8,
+        .information = 0x179299,
+        .mutedText = 0x5c5f77,
+        .raised = 0xbcc0cc,
+        .resting = 0xccd0da,
+        .selectedText = 0xeff1f5,
+        .selection = 0x8839ef,
+        .success = 0x40a02b,
+        .text = 0x4c4f69,
+        .warning = 0xdf8e1d,
+    };
+    return m_theme == Theme::Dark ? dark : light;
 }
 
 void ColorPalette::publishContent() {

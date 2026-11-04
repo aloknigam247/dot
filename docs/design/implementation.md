@@ -103,6 +103,7 @@ These roles do not replace Neovim content colors or identity-artwork colors.
 
 QML chrome consumers bind to these roles. The Compose theme supplies the same roles to Android consumers; toolkit
 defaults must not introduce a different palette or give ordinary action buttons an accent fill.
+Implement profiles with independent semantic-role fields and hex values, not palette-specific swatch types.
 
 ### Foreground pairings
 
