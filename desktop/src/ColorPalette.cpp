@@ -104,13 +104,14 @@ std::expected<ColorPalette::ChromeDefinition, QString>
                 if(field.val.type != msgpack::type::POSITIVE_INTEGER ||
                    field.val.via.u64 > 0xffffff)
                     return fail(QStringLiteral("%1 %2 must be an RGB color or nil").arg(name, key));
-                auto &color = key == QStringLiteral("bg") ? attr.background : attr.foreground;
-                color = QColor::fromRgb(static_cast<QRgb>(field.val.via.u64));
+                const QColor color = QColor::fromRgb(static_cast<QRgb>(field.val.via.u64));
+                if(key == QStringLiteral("bg")) attr.background = color;
+                else attr.foreground = color;
             } else if(key == QStringLiteral("exists") || key == QStringLiteral("reverse")) {
                 if(field.val.type != msgpack::type::BOOLEAN)
                     return fail(QStringLiteral("%1 %2 must be a boolean").arg(name, key));
-                auto &value = key == QStringLiteral("exists") ? attr.exists : attr.reverse;
-                value = field.val.via.boolean;
+                if(key == QStringLiteral("exists")) attr.exists = field.val.via.boolean;
+                else attr.reverse = field.val.via.boolean;
             } else {
                 return fail(QStringLiteral("%1 unknown field %2").arg(name, key));
             }
