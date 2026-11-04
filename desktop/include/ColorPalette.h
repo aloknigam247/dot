@@ -1,15 +1,19 @@
 #ifndef COLORPALETTE_H
 #define COLORPALETTE_H
 
+#include <array>
 #include <bitset>
+#include <expected>
+#include <msgpack.hpp>
+#include <optional>
 #include <QColor>
+#include <QLatin1StringView>
 #include <QObject>
 #include <qqmlregistration.h>
 #include <QStringList>
 
 namespace dot {
 
-class Config;
 class HighlightTable;
 class ModeInfo;
 
@@ -19,6 +23,7 @@ class ColorPalette : public QObject {
     QML_UNCREATABLE("Owned by NvimConnector")
     Q_PROPERTY(QColor accent READ accent NOTIFY paletteChanged)
     Q_PROPERTY(QColor changed READ changed NOTIFY paletteChanged)
+    Q_PROPERTY(bool chromeValid READ chromeValid NOTIFY paletteChanged)
     Q_PROPERTY(QColor cursorBackground READ cursorBackground NOTIFY paletteChanged)
     Q_PROPERTY(QColor cursorForeground READ cursorForeground NOTIFY paletteChanged)
     Q_PROPERTY(bool cursorValid READ cursorValid NOTIFY paletteChanged)
@@ -51,41 +56,42 @@ class ColorPalette : public QObject {
 public:
     explicit ColorPalette(HighlightTable &highlights, ModeInfo &mode, QObject *parent = nullptr);
 
-    void bindConfig(Config &config);
+    void invalidateChrome(const QString &error);
     void publishContent();
-    static void registerConfig(Config &config);
     void resetContent();
+    void stageChromeSnapshot(const msgpack::object &snapshot);
 
-    QColor accent() const { return QColor::fromRgb(fixedColors().accent); }
-    QColor changed() const { return QColor::fromRgb(fixedColors().changed); }
+    QColor accent() const { return chromeColor(Role::Accent); }
+    QColor changed() const { return chromeColor(Role::Changed); }
+    bool chromeValid() const;
     QColor cursorBackground() const { return m_snapshot.cursor.background; }
     QColor cursorForeground() const { return m_snapshot.cursor.foreground; }
     bool cursorValid() const { return m_snapshot.cursor.isValid(); }
-    QColor error() const { return QColor::fromRgb(fixedColors().error); }
-    QColor frame() const { return QColor::fromRgb(fixedColors().frame); }
-    QColor information() const { return QColor::fromRgb(fixedColors().information); }
+    QColor error() const { return chromeColor(Role::Error); }
+    QColor frame() const { return chromeColor(Role::Frame); }
+    QColor information() const { return chromeColor(Role::Information); }
     QColor menuBackground() const { return m_snapshot.menu.background; }
     QColor menuForeground() const { return m_snapshot.menu.foreground; }
     bool menuValid() const { return m_snapshot.menu.isValid(); }
-    QColor mutedText() const { return QColor::fromRgb(fixedColors().mutedText); }
+    QColor mutedText() const { return chromeColor(Role::MutedText); }
     QColor overlayBackground() const { return m_snapshot.overlay.background; }
     QColor overlayForeground() const { return m_snapshot.overlay.foreground; }
     bool overlayValid() const { return m_snapshot.overlay.isValid(); }
     QColor paneBackground() const { return m_snapshot.pane.background; }
     bool paneValid() const { return m_snapshot.pane.isValid(); }
     QColor primaryText() const { return m_snapshot.pane.foreground; }
-    QColor raised() const { return QColor::fromRgb(fixedColors().raised); }
+    QColor raised() const { return chromeColor(Role::Raised); }
     QStringList resolutionErrors() const { return m_resolutionErrors; }
-    QColor resting() const { return QColor::fromRgb(fixedColors().resting); }
-    QColor selectedText() const { return QColor::fromRgb(fixedColors().selectedText); }
-    QColor selection() const { return QColor::fromRgb(fixedColors().selection); }
-    QColor success() const { return QColor::fromRgb(fixedColors().success); }
-    QColor text() const { return QColor::fromRgb(fixedColors().text); }
+    QColor resting() const { return chromeColor(Role::Resting); }
+    QColor selectedText() const { return chromeColor(Role::SelectedText); }
+    QColor selection() const { return chromeColor(Role::Selection); }
+    QColor success() const { return chromeColor(Role::Success); }
+    QColor text() const { return chromeColor(Role::Text); }
     QColor textSelectionBackground() const { return m_snapshot.textSelection.background; }
     QColor textSelectionForeground() const { return m_snapshot.textSelection.foreground; }
     bool textSelectionValid() const { return m_snapshot.textSelection.isValid(); }
-    QString theme() const;
-    QColor warning() const { return QColor::fromRgb(fixedColors().warning); }
+    QString theme() const { return m_snapshot.chrome.theme; }
+    QColor warning() const { return chromeColor(Role::Warning); }
 
 signals:
     void paletteChanged();
@@ -114,25 +120,45 @@ private:
         Count,
     };
 
-    struct FixedColors {
-        QRgb accent;
-        QRgb changed;
-        QRgb error;
-        QRgb frame;
-        QRgb information;
-        QRgb mutedText;
-        QRgb raised;
-        QRgb resting;
-        QRgb selectedText;
-        QRgb selection;
-        QRgb success;
-        QRgb text;
-        QRgb warning;
+    enum class Role {
+        Accent,
+        Changed,
+        Error,
+        Frame,
+        Information,
+        MutedText,
+        Raised,
+        Resting,
+        SelectedText,
+        Selection,
+        Success,
+        Text,
+        Warning,
+        Count,
     };
 
-    enum class Theme {
-        Dark,
-        Light,
+    static constexpr size_t kRoleCount = static_cast<size_t>(Role::Count);
+    static const std::array<QLatin1StringView, kRoleCount> kRoleNames;
+
+    struct ChromeAttribute {
+        QColor background;
+        bool exists = false;
+        QColor foreground;
+        bool reverse = false;
+    };
+
+    struct ChromeDefinition {
+        std::array<ChromeAttribute, kRoleCount> attributes;
+        QString error;
+        QString theme;
+    };
+
+    struct ChromeSnapshot {
+        std::array<QColor, kRoleCount> colors;
+        QStringList errors;
+        QString theme;
+
+        bool operator==(const ChromeSnapshot &) const = default;
     };
 
     using Errors = std::bitset<static_cast<size_t>(Error::Count)>;
@@ -146,6 +172,7 @@ private:
     };
 
     struct ContentSnapshot {
+        ChromeSnapshot chrome;
         Pair cursor;
         Errors errors;
         Pair menu;
@@ -156,16 +183,20 @@ private:
         bool operator==(const ContentSnapshot &) const = default;
     };
 
-    void commitContent(ContentSnapshot snapshot);
-    const FixedColors &fixedColors() const;
+    QColor chromeColor(Role role) const {
+        return m_snapshot.chrome.colors.at(static_cast<size_t>(role));
+    }
+    void commitContent(const ContentSnapshot &snapshot);
+    static std::expected<ChromeDefinition, QString>
+        parseChromeSnapshot(const msgpack::object &snapshot);
+    ChromeSnapshot resolveChrome(const ChromeDefinition &definition) const;
 
-    QMetaObject::Connection m_configConnection;
     bool m_contentDirty = true;
     HighlightTable &m_highlights;
     ModeInfo &m_mode;
+    std::optional<ChromeDefinition> m_pendingChrome;
     QStringList m_resolutionErrors;
     ContentSnapshot m_snapshot;
-    Theme m_theme = Theme::Dark;
 };
 
 } // namespace dot

@@ -25,8 +25,8 @@ implementation detail; the provider does not change which role or state a compon
 
 - **Content bindings:** Neovim must supply complete resolved values for pane background, primary foreground, cursor,
   text-range selection, and overlay/menu colors. Non-diff buffer syntax remains part of the rendered content.
-- **Fixed chrome:** dot binds frame, resting, raised, selection, muted, and status roles to the chrome palette below.
-  Changing a content theme does not recalculate these tones.
+- **Chrome bindings:** Neovim supplies the semantic `Dot*` highlights below. Their default links select the chrome
+  palette using Neovim's `background` option; user and colorscheme overrides remain authoritative.
 - **Materials:** map Neovim transparency settings to the material intensity defined in
   [Translucency](DESIGN.md#5-translucency), without dimming foreground text or icons.
 - **Validation:** resolve omitted highlight channels only through Neovim's own default colors and highlight
@@ -55,8 +55,11 @@ For a valid current mode, cursor attribute ID `0` requests Neovim's default fore
 protocol-defined cursor mode, not a substitute for missing mode or highlight data.
 
 Desktop consumers read [`ColorPalette`](../../desktop/include/ColorPalette.h) through `$connector.colorPalette`.
-Content colors, validity flags, and `resolutionErrors` publish together before `flush`; restart invalidates them
-immediately. The fixed profile follows the [theme configuration](../../README.md#configuration) independently.
+Colors, validity flags, and `resolutionErrors` publish together before `flush`; restart invalidates them immediately.
+Chrome snapshots include resolved links and Neovim's `background`. Highlight and default-color changes request a
+coalesced refresh; grid/cursor-only redraws do not. All chrome roles, including inherited channels, publish at the
+snapshot's following redraw boundary, never at an earlier flush.
+The initial window waits for valid chrome and pane colors, including on the startup safety-timer path.
 
 ### Catppuccin chrome palette
 
@@ -87,23 +90,29 @@ Desktop editor chrome, chat, and Android use the same mapping. Android retains i
 [continuous pane](DESIGN.md#single-pane-surface), not a separate Crust frame.
 These roles do not replace Neovim content colors or identity-artwork colors.
 
-| Role and aliases | Swatch in both flavors |
-|------------------|------------------------|
-| Accent: active editing, scrollbar thumb, context-used fill | Mauve |
-| Changed content and linked references | Blue |
-| Error/failure and removed content | Red |
-| Frame/base | Crust |
-| Information and hint | Teal |
-| Muted text | Subtext 1 |
-| Raised/surface, soft exterior, region outline, status outer | Surface 1 |
-| Resting, status-body, message tone, status-chip fill | Surface 0 |
-| Selection, selected-hover, working fill | Mauve |
-| Success and added content | Green |
-| Warning | Yellow |
+| Role and aliases | Default swatch | Neovim highlight | Channel |
+|------------------|----------------|------------------|---------|
+| Accent: active editing, scrollbar thumb, context-used fill | Mauve | `DotAccent` | `fg` |
+| Changed content and linked references | Blue | `DotChanged` | `fg` |
+| Error/failure and removed content | Red | `DotError` | `fg` |
+| Frame/base | Crust | `DotFrame` | `bg` |
+| Information and hint | Teal | `DotInformation` | `fg` |
+| Muted text | Subtext 1 | `DotMutedText` | `fg` |
+| Raised/surface, soft exterior, region outline, status outer | Surface 1 | `DotRaised` | `bg` |
+| Resting, status-body, message tone, status-chip fill | Surface 0 | `DotResting` | `bg` |
+| Selected text on chrome fills | Base | `DotSelectedText` | `fg` |
+| Selection, selected-hover, working fill | Mauve | `DotSelection` | `bg` |
+| Success and added content | Green | `DotSuccess` | `fg` |
+| Text on chrome | Text | `DotText` | `fg` |
+| Warning | Yellow | `DotWarning` | `fg` |
+
+[`dot_backend.lua`](../../desktop/lua/dot_backend.lua) defines the desktop defaults independently of image support.
+Public groups default-link to private `DotDefault*` groups after user initialization. `ColorScheme` recreates cleared
+defaults; `OptionSet background` updates the private groups without replacing public overrides. Customize the public
+groups with `vim.api.nvim_set_hl()` or normal highlight links. C++ only caches Neovim values, with no built-in palette.
 
 QML chrome consumers bind to these roles. The Compose theme supplies the same roles to Android consumers; toolkit
 defaults must not introduce a different palette or give ordinary action buttons an accent fill.
-Implement profiles with independent semantic-role fields and hex values, not palette-specific swatch types.
 
 ### Foreground pairings
 

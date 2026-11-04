@@ -1,7 +1,6 @@
 #include "ChatModel.h"
 #include "ColorPalette.h"
 #include "Config.h"
-#include "ConfigCliReader.h"
 #include "ConfigGGlobalReader.h"
 #include "CursorItem.h"
 #include "GridItem.h"
@@ -41,31 +40,36 @@ QImage capture(QQuickItem *item) {
 }
 
 struct UiColorHarness {
-    Config config;
     NvimConnector conn;
     WindowChrome chrome;
     QQmlApplicationEngine engine;
     QQuickItem *input = nullptr;
+    bool paletteReadyAtFirstVisibility = false;
     QQuickItem *panel = nullptr;
+    bool visibilityObserved = false;
     QQuickWindow *window = nullptr;
 
-    bool start(QStringList args = {}) {
-        ColorPalette::registerConfig(config);
-        ConfigCliReader::extract(args, config);
-        conn.colorPalette()->bindConfig(config);
-        QObject::connect(&conn, &NvimConnector::attachComplete, &config,
-                         [this] { ConfigGGlobalReader::read(conn, config); });
+    bool start(const QStringList &args = {}, bool waitForVisible = true) {
         if(!startTestNvim(conn, args)) return false;
         engine.rootContext()->setContextProperty(QStringLiteral("$connector"), &conn);
         engine.rootContext()->setContextProperty(QStringLiteral("$windowChrome"), &chrome);
         engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
         if(engine.rootObjects().isEmpty()) return false;
         window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
-        if(!window || !QTest::qWaitForWindowExposed(window)) return false;
+        if(!window || window->isVisible()) return false;
+        QObject::connect(window, &QWindow::visibleChanged, &conn, [this](bool visible) {
+            if(visible && !visibilityObserved) {
+                const auto *colors = conn.colorPalette();
+                visibilityObserved = true;
+                paletteReadyAtFirstVisibility = colors->chromeValid() && colors->paneValid() &&
+                                                window->color() == colors->frame();
+            }
+        });
         input = window->findChild<QQuickItem *>(QStringLiteral("chatInput"));
         panel = window->findChild<QQuickItem *>(QStringLiteral("chatPanel"));
-        return input && panel &&
-               waitUntil([&] { return conn.attached() && conn.colorPalette()->paneValid(); });
+        if(!input || !panel) return false;
+        if(!waitForVisible) return true;
+        return QTest::qWaitForWindowExposed(window) && paletteReadyAtFirstVisibility;
     }
 
     bool openChat() {
@@ -119,7 +123,7 @@ private slots:
         QFETCH(QColor, frame);
         QFETCH(QColor, resting);
         UiColorHarness ui;
-        QVERIFY(ui.start({ QStringLiteral("--dot-theme=") + theme }));
+        QVERIFY(ui.start({ QStringLiteral("--cmd"), QStringLiteral("set background=") + theme }));
         QVERIFY(ui.openChat());
         QVERIFY(ui.defineColors());
         auto *colors = ui.conn.colorPalette();
@@ -184,36 +188,333 @@ private slots:
         QTest::newRow("light") << QStringLiteral("light") << QColor("#dce0e8") << QColor("#ccd0da");
     }
 
-    void profileConfigUsesProductionPrecedence() {
-        QFETCH(QString, cli);
-        QFETCH(QString, global);
-        QFETCH(QString, expected);
+    void exactProfilesFollowNeovimBackground() {
+        QFETCH(QString, background);
+        QFETCH(QStringList, expected);
         UiColorHarness ui;
-        QStringList arguments{
-            QStringLiteral("--cmd"),
-            QStringLiteral("let g:dot_theme = '%1'").arg(global),
-        };
-        if(!cli.isEmpty()) arguments.append(QStringLiteral("--dot-theme=") + cli);
-        QVERIFY(ui.start(arguments));
-        QTRY_COMPARE(ui.config.value(QStringLiteral("theme")).toString(), expected);
-        QCOMPARE(ui.conn.colorPalette()->theme(), expected);
-        QCOMPARE(ui.window->color(),
-                 expected == QStringLiteral("light") ? QColor("#dce0e8") : QColor("#11111b"));
-
-        ui.conn.command(QStringLiteral("unlet g:dot_theme"));
-        ConfigGGlobalReader::read(ui.conn, ui.config);
-        const QString after = cli.isEmpty() ? QStringLiteral("dark") : cli;
-        QTRY_COMPARE(ui.config.value(QStringLiteral("theme")).toString(), after);
-        QCOMPARE(ui.conn.colorPalette()->theme(), after);
+        QVERIFY(
+            ui.start({ QStringLiteral("--cmd"), QStringLiteral("set background=") + background }));
+        auto *colors = ui.conn.colorPalette();
+        QCOMPARE(colors->theme(), background);
+        QCOMPARE(expected.size(), static_cast<qsizetype>(chromeRoles.size()));
+        for(size_t i = 0; i < chromeRoles.size(); ++i) {
+            QString property = QString::fromLatin1(chromeRoles.at(i)).mid(3);
+            property[0] = property[0].toLower();
+            QCOMPARE(colors->property(qPrintable(property)).value<QColor>(),
+                     QColor(expected.at(static_cast<qsizetype>(i))));
+        }
+        QVERIFY(colors->chromeValid());
+        QVERIFY(ui.paletteReadyAtFirstVisibility);
+        QVERIFY(colors->resolutionErrors().isEmpty());
+        const auto *paletteObject = colors;
+        const QString other =
+            background == QStringLiteral("dark") ? QStringLiteral("light") : QStringLiteral("dark");
+        ui.conn.command(QStringLiteral("set background=") + other);
+        QTRY_COMPARE(colors->theme(), other);
+        QCOMPARE(colors->frame(),
+                 other == QStringLiteral("light") ? QColor("#dce0e8") : QColor("#11111b"));
+        QCOMPARE(ui.window->color(), colors->frame());
+        ui.conn.command(QStringLiteral("set background=") + background);
+        QTRY_COMPARE(colors->theme(), background);
+        QCOMPARE(ui.conn.colorPalette(), paletteObject);
+        for(size_t i = 0; i < chromeRoles.size(); ++i) {
+            QString property = QString::fromLatin1(chromeRoles.at(i)).mid(3);
+            property[0] = property[0].toLower();
+            QCOMPARE(colors->property(qPrintable(property)).value<QColor>(),
+                     QColor(expected.at(static_cast<qsizetype>(i))));
+        }
     }
 
-    void profileConfigUsesProductionPrecedence_data() {
-        QTest::addColumn<QString>("cli");
-        QTest::addColumn<QString>("global");
-        QTest::addColumn<QString>("expected");
-        QTest::newRow("cli") << QStringLiteral("dark") << QStringLiteral("light")
-                             << QStringLiteral("dark");
-        QTest::newRow("global") << QString() << QStringLiteral("light") << QStringLiteral("light");
+    void exactProfilesFollowNeovimBackground_data() {
+        QTest::addColumn<QString>("background");
+        QTest::addColumn<QStringList>("expected");
+        QTest::newRow("dark") << QStringLiteral("dark")
+                              << QStringList{ "#cba6f7", "#89b4fa", "#f38ba8", "#11111b", "#94e2d5",
+                                              "#bac2de", "#45475a", "#313244", "#1e1e2e", "#cba6f7",
+                                              "#a6e3a1", "#cdd6f4", "#f9e2af" };
+        QTest::newRow("light") << QStringLiteral("light")
+                               << QStringList{ "#8839ef", "#1e66f5", "#d20f39", "#dce0e8",
+                                               "#179299", "#5c5f77", "#bcc0cc", "#ccd0da",
+                                               "#eff1f5", "#8839ef", "#40a02b", "#4c4f69",
+                                               "#df8e1d" };
+    }
+
+    void startupPreservesUserHighlights() {
+        QFETCH(QString, event);
+        QTemporaryDir directory;
+        UiColorHarness ui;
+        QVERIFY(directory.isValid());
+        const QString initPath = directory.filePath(QStringLiteral("init.lua"));
+        QFile init(initPath);
+        QVERIFY(init.open(QIODevice::WriteOnly));
+        const QString apply = QStringLiteral(R"lua(
+local function apply()
+  vim.api.nvim_set_hl(0, "DotUserAccent", { fg = 0x123456 })
+  vim.api.nvim_set_hl(0, "DotAccent", { link = "DotUserAccent" })
+  vim.api.nvim_set_hl(0, "DotFrame", { bg = 0x456789 })
+end
+)lua");
+        const QString action =
+            event.isEmpty()
+                ? QStringLiteral("apply()")
+                : QStringLiteral("vim.api.nvim_create_autocmd('%1', { callback = apply })")
+                      .arg(event);
+        const QByteArray code =
+            (QStringLiteral("vim.o.background = 'light'\n") + apply + action).toUtf8();
+        QCOMPARE(init.write(code), static_cast<qint64>(code.size()));
+        init.close();
+        QVERIFY(ui.start({ QStringLiteral("-u"), initPath }));
+        auto *colors = ui.conn.colorPalette();
+        QCOMPARE(colors->theme(), QStringLiteral("light"));
+        QCOMPARE(colors->accent(), QColor("#123456"));
+        QCOMPARE(colors->frame(), QColor("#456789"));
+        QCOMPARE(colors->text(), QColor("#4c4f69"));
+        QCOMPARE(ui.window->color(), QColor("#456789"));
+        QVERIFY(ui.paletteReadyAtFirstVisibility);
+        ui.conn.command(QStringLiteral("set background=dark"));
+        QTRY_COMPARE(colors->theme(), QStringLiteral("dark"));
+        QCOMPARE(colors->accent(), QColor("#123456"));
+        QCOMPARE(colors->frame(), QColor("#456789"));
+        QCOMPARE(colors->text(), QColor("#cdd6f4"));
+    }
+
+    void startupPreservesUserHighlights_data() {
+        QTest::addColumn<QString>("event");
+        QTest::newRow("init") << QString();
+        QTest::newRow("ui-enter") << QStringLiteral("UIEnter");
+        QTest::newRow("vim-enter") << QStringLiteral("VimEnter");
+    }
+
+    void directEditsAndLinkedTargetsUpdateExistingObjects() {
+        UiColorHarness ui;
+        QVERIFY(ui.start());
+        QVERIFY(ui.openChat());
+        auto *colors = ui.conn.colorPalette();
+        auto *cursor = ui.window->findChild<CursorItem *>();
+        auto *grid = ui.window->findChild<GridItem *>();
+        auto *inputRow = ui.window->findChild<QQuickItem *>(QStringLiteral("chatInputRow"));
+        QVERIFY(cursor && grid && inputRow);
+        ui.conn.execLua(QStringLiteral(R"lua(
+vim.api.nvim_set_hl(0, "DotAccent", { fg = 0x102030 })
+vim.api.nvim_set_hl(0, "DotFrame", { bg = 0x304050 })
+vim.api.nvim_set_hl(0, "DotResting", { bg = 0x506070 })
+vim.cmd("redraw")
+)lua"));
+        QTRY_COMPARE(colors->accent(), QColor("#102030"));
+        QCOMPARE(colors->frame(), QColor("#304050"));
+        QCOMPARE(ui.window->color(), QColor("#304050"));
+        QCOMPARE(inputRow->property("color").value<QColor>(), QColor("#506070"));
+        ui.conn.execLua(QStringLiteral(R"lua(
+vim.api.nvim_set_hl(0, "DotUserTarget", { bg = 0x345678, fg = 0x123456 })
+vim.api.nvim_set_hl(0, "DotAccent", { link = "DotUserTarget" })
+vim.api.nvim_set_hl(0, "DotResting", { link = "DotUserTarget" })
+vim.cmd("redraw")
+)lua"));
+        QTRY_COMPARE(colors->accent(), QColor("#123456"));
+        QCOMPARE(colors->resting(), QColor("#345678"));
+        ui.conn.execLua(QStringLiteral(R"lua(
+vim.api.nvim_set_hl(0, "DotUserTarget", { bg = 0x6789ab, fg = 0xabcdef, reverse = true })
+vim.cmd("redraw")
+)lua"));
+        QTRY_COMPARE(colors->accent(), QColor("#6789ab"));
+        QCOMPARE(colors->resting(), QColor("#abcdef"));
+        QCOMPARE(inputRow->property("color").value<QColor>(), QColor("#abcdef"));
+        ui.conn.execLua(QStringLiteral(R"lua(
+vim.api.nvim_set_hl(0, "DotAccent", { bold = true })
+vim.api.nvim_set_hl(0, "DotResting", { italic = true })
+vim.api.nvim_set_hl(0, "Normal", { bg = 0x102030, fg = 0xaabbcc })
+vim.cmd("redraw")
+)lua"));
+        QTRY_COMPARE(colors->accent(), QColor("#aabbcc"));
+        QCOMPARE(colors->resting(), QColor("#102030"));
+        QCOMPARE(inputRow->property("color").value<QColor>(), QColor("#102030"));
+        ui.conn.command(QStringLiteral("highlight Normal guifg=#abcdef guibg=#123456"));
+        QTRY_COMPARE(colors->accent(), QColor("#abcdef"));
+        QCOMPARE(colors->resting(), QColor("#123456"));
+        QCOMPARE(ui.window->findChild<QQuickItem *>(QStringLiteral("chatInput")), ui.input);
+        QCOMPARE(ui.window->findChild<QQuickItem *>(QStringLiteral("chatPanel")), ui.panel);
+        QCOMPARE(ui.window->findChild<CursorItem *>(), cursor);
+        QCOMPARE(ui.window->findChild<GridItem *>(), grid);
+        QCOMPARE(ui.window->activeFocusItem(), ui.input);
+        QVERIFY(colors->resolutionErrors().isEmpty());
+    }
+
+    void colorschemeReloadRecreatesDefaultsAfterUserHandlers() {
+        UiColorHarness ui;
+        QVERIFY(ui.start({ QStringLiteral("--cmd"), QStringLiteral("set background=light") }));
+        ui.conn.execLua(QStringLiteral(R"lua(
+vim.api.nvim_create_autocmd("ColorScheme", {
+  callback = function()
+    vim.api.nvim_set_hl(0, "DotAccent", { fg = 0x123456 })
+  end,
+})
+vim.api.nvim_set_hl(0, "DotDefaultFrame", { bg = 0x987654 })
+vim.cmd("colorscheme default")
+)lua"));
+        auto *colors = ui.conn.colorPalette();
+        QTRY_COMPARE(colors->accent(), QColor("#123456"));
+        QTRY_COMPARE(colors->frame(), QColor("#dce0e8"));
+        QVERIFY(colors->chromeValid());
+        ui.conn.execLua(QStringLiteral(R"lua(
+vim.api.nvim_set_hl(0, "DotAccent", { fg = 0xabcdef })
+vim.cmd("colorscheme default")
+)lua"));
+        QTRY_COMPARE(colors->accent(), QColor("#123456"));
+        QCOMPARE(colors->frame(), QColor("#dce0e8"));
+        QCOMPARE(colors->text(), QColor("#4c4f69"));
+        QVERIFY(colors->resolutionErrors().isEmpty());
+    }
+
+    void firstVisibilityWaitsForColorsAndRecovers() {
+        QFETCH(bool, safetyTimer);
+        QTemporaryDir directory;
+        UiColorHarness ui;
+        QVERIFY(directory.isValid());
+        const QString initPath = directory.filePath(QStringLiteral("init.lua"));
+        QFile init(initPath);
+        QVERIFY(init.open(QIODevice::WriteOnly));
+        const QByteArray code = R"lua(
+local colors = require("dot.colors")
+local refresh = colors.refresh
+colors.refresh = function(generation)
+  _G.dot_test_release_colors = function()
+    colors.refresh = refresh
+    return refresh(generation)
+  end
+  return true
+end
+)lua";
+        QCOMPARE(init.write(code), static_cast<qint64>(code.size()));
+        init.close();
+        QVERIFY(ui.start({ QStringLiteral("-u"), initPath }, false));
+        QVERIFY(
+            waitUntil([&] { return ui.conn.attached() && ui.conn.colorPalette()->paneValid(); }));
+        QVERIFY(!ui.conn.colorPalette()->chromeValid());
+        QVERIFY(!ui.window->isVisible());
+        if(safetyTimer) {
+            ui.window->setProperty("_requestedCols",
+                                   ui.window->property("_requestedCols").toInt() + 1);
+            QVERIFY(waitUntil([&] { return ui.window->property("_showSafetyExpired").toBool(); }));
+            QVERIFY(!ui.window->isVisible());
+            const msgpack::object invalid;
+            ui.conn.colorPalette()->stageChromeSnapshot(invalid);
+            QTest::ignoreMessage(
+                QtCriticalMsg,
+                "ColorPalette: chrome: invalid snapshot: expected background and roles");
+            QVERIFY(redrawEvent(ui.conn, "flush", [](auto &pk) { pk.pack_array(0); }));
+            QVERIFY(!ui.window->isVisible());
+        }
+        ui.conn.execLua(QStringLiteral("assert(_G.dot_test_release_colors)()"));
+        QVERIFY(QTest::qWaitForWindowExposed(ui.window));
+        QVERIFY(ui.paletteReadyAtFirstVisibility);
+        QVERIFY(ui.conn.colorPalette()->chromeValid());
+        QVERIFY(ui.conn.colorPalette()->resolutionErrors().isEmpty());
+    }
+
+    void firstVisibilityWaitsForColorsAndRecovers_data() {
+        QTest::addColumn<bool>("safetyTimer");
+        QTest::newRow("normal") << false;
+        QTest::newRow("safety-timer") << true;
+    }
+
+    void colorRefreshBatchesHighlightEditsAndBecomesIdle() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn));
+        QVERIFY(conn.attachUi(80, 24));
+        QVERIFY(waitUntil([&] { return conn.colorPalette()->chromeValid(); }));
+        conn.execLua(QStringLiteral(R"lua(
+local colors = require("dot.colors")
+local refresh = colors.refresh
+colors.refresh = function(...)
+  vim.g.dot_test_color_requests = vim.g.dot_test_color_requests + 1
+  return refresh(...)
+end
+vim.g.dot_test_color_requests = 0
+vim.api.nvim_buf_set_lines(0, 0, -1, false, {"first line", "second line"})
+vim.cmd("redraw")
+)lua"));
+        QVERIFY(evalSync(conn, QStringLiteral("g:dot_test_color_requests")));
+        QTest::qWait(100);
+        conn.execLua(QStringLiteral(R"lua(
+vim.g.dot_test_color_requests = 0
+for index = 1, 40 do
+  vim.api.nvim_set_hl(0, "DotAccent", { fg = index })
+end
+vim.cmd("redraw")
+)lua"));
+        QTRY_COMPARE(conn.colorPalette()->accent(), QColor::fromRgb(40));
+        QTest::qWait(100);
+        const auto highlightRequests = evalSync(conn, QStringLiteral("g:dot_test_color_requests"));
+        QVERIFY(highlightRequests);
+        QCOMPARE(highlightRequests->toInt(), 1);
+        conn.execLua(QStringLiteral(R"lua(
+vim.g.dot_test_color_requests = 0
+for index = 1, 12 do
+  vim.api.nvim_win_set_cursor(0, {1, index % 4})
+  vim.api.nvim_buf_set_lines(0, 1, 2, false, {"line " .. index})
+  vim.cmd("redraw")
+end
+vim.g.dot_test_grid_edits_done = true
+)lua"));
+        const auto done = evalSync(conn, QStringLiteral("g:dot_test_grid_edits_done"));
+        QVERIFY(done && done->toBool());
+        QTest::qWait(100);
+        const auto gridRequests = evalSync(conn, QStringLiteral("g:dot_test_color_requests"));
+        QVERIFY(gridRequests);
+        QCOMPARE(gridRequests->toInt(), 0);
+    }
+
+    void reinstallDiscardsStaleScheduledSetup() {
+        NvimConnector conn;
+        QFile script(QStringLiteral(":/dot_backend.lua"));
+        QVERIFY(startTestNvim(conn));
+        QVERIFY(conn.attachUi(80, 24));
+        QVERIFY(waitUntil([&] { return conn.colorPalette()->chromeValid(); }));
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QString code = QString::fromUtf8(script.readAll());
+        conn.execLua(QStringLiteral(R"lua(
+local bootstrap = assert(loadstring([====[%1]====]))
+local client_id
+for _, info in ipairs(vim.api.nvim_list_chans()) do
+  if info.client and info.client.attributes.dot_backend then
+    client_id = info.client.attributes.dot_backend
+  end
+end
+assert(client_id)
+vim.api.nvim_set_hl(0, "DotAccent", { fg = 0x123456 })
+vim.o.background = "light"
+local define = vim.api.nvim_set_hl
+vim.g.dot_test_default_definitions = 0
+vim.api.nvim_set_hl = function(namespace, name, attributes)
+  if name:match("^DotDefault") then
+    vim.g.dot_test_default_definitions = vim.g.dot_test_default_definitions + 1
+  end
+  return define(namespace, name, attributes)
+end
+bootstrap(client_id, %2, 1)
+bootstrap(client_id, %2, 1)
+vim.schedule(function()
+  vim.api.nvim_set_hl = define
+  vim.g.dot_test_reinstalled = true
+end)
+)lua")
+                         .arg(code)
+                         .arg(ImageModel::kMaxEncodedBytes));
+        QVERIFY(waitUntil([&] {
+            const auto done =
+                evalSync(conn, QStringLiteral("get(g:, 'dot_test_reinstalled', v:false)"));
+            return done && done->toBool();
+        }));
+        const auto definitions = evalSync(conn, QStringLiteral("g:dot_test_default_definitions"));
+        QVERIFY(definitions);
+        QCOMPARE(definitions->toInt(), static_cast<int>(chromeRoles.size()));
+        QTRY_COMPARE(conn.colorPalette()->theme(), QStringLiteral("light"));
+        QCOMPARE(conn.colorPalette()->accent(), QColor("#123456"));
+        QCOMPARE(conn.colorPalette()->frame(), QColor("#dce0e8"));
+        const auto autocmds =
+            evalSync(conn, QStringLiteral("len(nvim_get_autocmds({'group': 'DotColors'}))"));
+        QVERIFY(autocmds);
+        QCOMPARE(autocmds->toInt(), 2);
     }
 
     void realSnapshotPreservesMissingFalseAndZero() {
@@ -280,8 +581,7 @@ private slots:
         QCOMPARE(ui.window->activeFocusItem(), ui.input);
     }
 
-    void restartDropsColorsAndMissingGlobals() {
-        QFETCH(bool, cliOverride);
+    void restartDropsColorsAndReinitializesTheProvider() {
         bool sawInvalid = false;
         QTemporaryDir directory;
         UiColorHarness ui;
@@ -293,7 +593,9 @@ private slots:
         const QByteArray code = QStringLiteral(R"lua(
 if vim.fn.filereadable([[%1]]) == 0 then
   vim.fn.writefile({'started'}, [[%1]])
-  vim.g.dot_theme = 'light'
+  vim.o.background = 'light'
+else
+  vim.o.background = 'dark'
 end
 )lua")
                                     .arg(marker)
@@ -301,7 +603,6 @@ end
         QCOMPARE(init.write(code), static_cast<qint64>(code.size()));
         init.close();
         QStringList args{ QStringLiteral("-u"), initPath };
-        if(cliOverride) args.append(QStringLiteral("--dot-theme=light"));
         QVERIFY(ui.start(args));
         const auto apiLevel = evalSync(ui.conn, QStringLiteral("api_info().version.api_level"));
         QVERIFY(apiLevel);
@@ -314,9 +615,12 @@ end
         auto *grid = ui.window->findChild<GridItem *>();
         const auto oldPid = evalSync(ui.conn, QStringLiteral("getpid()"));
         QVERIFY(oldPid);
-        connect(colors, &ColorPalette::paletteChanged, &ui.config, [&] {
+        connect(colors, &ColorPalette::paletteChanged, &ui.conn, [&] {
             if(!colors->paneValid()) {
                 sawInvalid = true;
+                QVERIFY(!colors->chromeValid());
+                QVERIFY(!colors->frame().isValid());
+                QVERIFY(colors->theme().isEmpty());
                 QVERIFY(!colors->cursorValid());
                 QVERIFY(!colors->menuValid());
                 QVERIFY(!colors->overlayValid());
@@ -325,15 +629,14 @@ end
         });
         ui.conn.command(QStringLiteral("restart!"));
         QVERIFY(waitUntil([&] {
-            return sawInvalid && ui.conn.attached() && colors->paneValid() &&
-                   colors->paneBackground() != QColor("#1c1f25");
+            return sawInvalid && ui.conn.attached() && colors->chromeValid() &&
+                   colors->paneValid() && colors->paneBackground() != QColor("#1c1f25");
         }, 20000));
-        const QString expected = cliOverride ? QStringLiteral("light") : QStringLiteral("dark");
-        QTRY_COMPARE(colors->theme(), expected);
+        QTRY_COMPARE(colors->theme(), QStringLiteral("dark"));
         const auto newPid = evalSync(ui.conn, QStringLiteral("getpid()"));
         QVERIFY(newPid);
         QVERIFY(newPid != oldPid);
-        QCOMPARE(ui.window->color(), cliOverride ? QColor("#dce0e8") : QColor("#11111b"));
+        QCOMPARE(ui.window->color(), QColor("#11111b"));
         QCOMPARE(ui.window->findChild<QQuickItem *>(QStringLiteral("chatInput")), ui.input);
         QCOMPARE(ui.window->findChild<QQuickItem *>(QStringLiteral("chatPanel")), ui.panel);
         QCOMPARE(ui.window->findChild<CursorItem *>(), cursor);
@@ -341,12 +644,6 @@ end
         QCOMPARE(ui.conn.colorPalette(), colors);
         QCOMPARE(ui.window->activeFocusItem(), ui.input);
         QVERIFY(ui.panel->isVisible());
-    }
-
-    void restartDropsColorsAndMissingGlobals_data() {
-        QTest::addColumn<bool>("cliOverride");
-        QTest::newRow("cli-survives") << true;
-        QTest::newRow("missing-global") << false;
     }
 };
 

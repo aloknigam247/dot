@@ -75,15 +75,14 @@ Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` 
 
 ```lua
 vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
-vim.g.dot_theme = "light"
+vim.o.background = "light"
 ```
 
-`g:dot_theme` selects `dark` (default, Mocha) or `light` (Latte) for
-[dot-owned chrome](docs/design/implementation.md#catppuccin-chrome-palette), not Neovim content.
-`--dot-theme=light` overrides the Neovim global. Invalid theme values report an error and leave the last valid profile.
+Desktop colors come from Neovim. Set `background` and override or link the
+[`Dot*` highlights](docs/design/implementation.md#dot-owned-chrome-roles) in your Neovim configuration or colorscheme.
 Globals are read atomically on attach and restart; missing values return to defaults without overriding CLI values.
 
-Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
+Dot-specific settings use the `g:dot_*` and `--dot-*` application prefixes. The session cache uses dot's Qt application-data
 location; caches from other application identities are not imported.
 
 Neovim's `guicursor` controls cursor shape, bar/underline percentage, and blink timing, including live changes.

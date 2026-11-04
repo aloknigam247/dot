@@ -206,6 +206,42 @@ vim.g.image_init_ok = true
         QCOMPARE(conn.images()->count(), qsizetype(1));
     }
 
+    void bootstrapFailureInvalidatesColorsAndReinstallRecovers() {
+        NvimConnector conn;
+        QVERIFY(startImageNvim(conn));
+        QVERIFY(waitUntil([&] { return conn.colorPalette()->chromeValid(); }));
+        conn.execLua(QStringLiteral(R"lua(
+_G.dot_test_list_chans = vim.api.nvim_list_chans
+vim.api.nvim_list_chans = function() error("blocked color bootstrap") end
+vim.g.dot_test_bootstrap_blocked = true
+)lua"));
+        const auto setup = evalSync(conn, QStringLiteral("g:dot_test_bootstrap_blocked"));
+        QVERIFY(setup && setup->toBool());
+        QTest::ignoreMessage(
+            QtCriticalMsg,
+            QRegularExpression(
+                "ColorPalette: chrome: initialization failed: .*blocked color bootstrap"));
+        QTest::ignoreMessage(
+            QtWarningMsg,
+            QRegularExpression(
+                "dot: Could not initialize the dot backend: .*blocked color bootstrap"));
+        conn.installDotBackend();
+        QVERIFY(waitUntil([&] { return !conn.colorPalette()->chromeValid(); }));
+        QVERIFY(!conn.colorPalette()->frame().isValid());
+        QVERIFY(!conn.colorPalette()->resolutionErrors().isEmpty());
+        QVERIFY(waitUntil(
+            [&] { return conn.grid()->dumpAscii(1).contains(QStringLiteral("Press ENTER")); }));
+        conn.input(QStringLiteral("<CR>"));
+        const auto restore = runLua(conn, QStringLiteral(R"lua(
+vim.api.nvim_list_chans = _G.dot_test_list_chans
+_G.dot_test_list_chans = nil
+)lua"));
+        QVERIFY2(restore.has_value(), qPrintable(restore ? QString{} : restore.error()));
+        conn.installDotBackend();
+        QVERIFY(waitUntil([&] { return conn.colorPalette()->chromeValid(); }));
+        QVERIFY(conn.colorPalette()->resolutionErrors().isEmpty());
+    }
+
     void coalescedNestedRepliesKeepTheUiAttached() {
         std::optional<RpcReplyToken> outer;
         int requests = 0;
@@ -370,6 +406,8 @@ vim.api.nvim_get_runtime_file = function(pattern, all)
   if pattern == "lua/vim/ui/img.lua" then return {} end
   return lookup(pattern, all)
 end
+vim.api.nvim_set_hl(0, "DotAccent", { fg = 0x123456 })
+vim.o.background = "light"
 )lua"));
         QVERIFY2(setup.has_value(), qPrintable(setup ? QString{} : setup.error()));
         QTest::ignoreMessage(QtWarningMsg,
@@ -382,6 +420,16 @@ end
         }));
         QVERIFY(!conn.imagesAvailable());
         QVERIFY(conn.attached());
+        QVERIFY(waitUntil([&] {
+            return conn.colorPalette()->chromeValid() &&
+                   conn.colorPalette()->theme() == QStringLiteral("light");
+        }));
+        QCOMPARE(conn.colorPalette()->accent(), QColor("#123456"));
+        QCOMPARE(conn.colorPalette()->frame(), QColor("#dce0e8"));
+        conn.command(QStringLiteral("set background=dark"));
+        QVERIFY(waitUntil([&] { return conn.colorPalette()->theme() == QStringLiteral("dark"); }));
+        QCOMPARE(conn.colorPalette()->accent(), QColor("#123456"));
+        QCOMPARE(conn.colorPalette()->frame(), QColor("#11111b"));
         conn.input(QStringLiteral("iordinary editing<Esc>"));
         QVERIFY(waitUntil([&] {
             const auto line = evalSync(conn, QStringLiteral("getline(1)"));

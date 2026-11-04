@@ -159,6 +159,8 @@ private:
     Q_SLOT void onRequest(const dot::RpcRequest &request);
 
     void installDotBackend();
+    void requestColorSnapshot();
+    void resetColorRequests();
     void setImagesAvailable(bool available);
     void showImageError(const QString &message);
     void handleRedraw(const msgpack::object &events);
@@ -216,6 +218,10 @@ private:
     ImageModel *m_images = nullptr;
     bool m_imagesAvailable = false;
     ColorPalette *m_colorPalette = nullptr;
+    quint64 m_colorGeneration = 0;
+    bool m_colorRefreshInFlight = false;
+    bool m_colorRefreshPending = false;
+    bool m_colorSnapshotReceived = false;
 };
 
 } // namespace dot

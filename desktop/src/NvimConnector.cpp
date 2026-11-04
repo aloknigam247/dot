@@ -201,6 +201,7 @@ void NvimConnector::showImageError(const QString &message) {
 
 void NvimConnector::installDotBackend() {
     qInitResources_dot();
+    resetColorRequests();
     setImagesAvailable(false);
     QFile script(QStringLiteral(":/dot_backend.lua"));
     if(!script.open(QIODevice::ReadOnly)) {
@@ -234,12 +235,15 @@ void NvimConnector::installDotBackend() {
         pk.pack_array(2);
         pk.pack_str(static_cast<uint32_t>(code.size()));
         pk.pack_str_body(code.constData(), static_cast<uint32_t>(code.size()));
-        pk.pack_array(2);
+        pk.pack_array(3);
         pk.pack(m_backendClientId.toStdString());
         pk.pack(static_cast<int64_t>(ImageModel::kMaxEncodedBytes));
-    }, [this](RpcResult result) {
-        if(!m_rpc->isRunning()) return;
+        pk.pack(m_colorGeneration);
+    }, [this, generation = m_colorGeneration](RpcResult result) {
+        if(generation != m_colorGeneration || !m_rpc->isRunning()) return;
         if(!result) {
+            m_colorPalette->invalidateChrome(
+                QStringLiteral("initialization failed: %1").arg(result.error().message));
             showImageError(QStringLiteral("Could not initialize the dot backend: %1")
                                .arg(result.error().message));
             return;
@@ -256,6 +260,42 @@ void NvimConnector::installDotBackend() {
             showImageError(QStringLiteral("Neovim image API is unavailable; images are disabled."));
         }
     });
+}
+
+void NvimConnector::requestColorSnapshot() {
+    if(!m_colorRefreshPending || m_colorRefreshInFlight || !m_colorSnapshotReceived ||
+       !m_rpc->isRunning())
+        return;
+    m_colorRefreshPending = false;
+    m_colorRefreshInFlight = true;
+    m_rpc->request(QStringLiteral("nvim_exec_lua"), [this](auto &pk) {
+        pk.pack_array(2);
+        pk.pack("return require('dot.colors').refresh(...)");
+        pk.pack_array(1);
+        pk.pack(m_colorGeneration);
+    }, [this, generation = m_colorGeneration](RpcResult result) {
+        if(generation != m_colorGeneration || !m_rpc->isRunning()) return;
+        m_colorRefreshInFlight = false;
+        if(!result) {
+            m_colorPalette->invalidateChrome(
+                QStringLiteral("refresh failed: %1").arg(result.error().message));
+        } else {
+            const auto &root = result.value()->get();
+            if(root.type != msgpack::type::ARRAY || root.via.array.size != 4 ||
+               root.via.array.ptr[3].type != msgpack::type::BOOLEAN ||
+               !root.via.array.ptr[3].via.boolean) {
+                m_colorPalette->invalidateChrome(QStringLiteral("invalid refresh response"));
+            }
+        }
+        requestColorSnapshot();
+    });
+}
+
+void NvimConnector::resetColorRequests() {
+    ++m_colorGeneration;
+    m_colorRefreshInFlight = false;
+    m_colorRefreshPending = false;
+    m_colorSnapshotReceived = false;
 }
 
 void NvimConnector::onRequest(const dot::RpcRequest &request) {
@@ -762,10 +802,23 @@ void NvimConnector::onNotification(const dot::Notification &note) {
         handleRedraw(note.params());
         return;
     }
+    if(note.method == QStringLiteral("dot_colors")) {
+        const auto &params = note.params();
+        if(params.type != msgpack::type::ARRAY || params.via.array.size != 2 ||
+           params.via.array.ptr[0].type != msgpack::type::POSITIVE_INTEGER) {
+            qCritical("Invalid dot_colors: expected generation and snapshot");
+            return;
+        }
+        if(params.via.array.ptr[0].via.u64 != m_colorGeneration) return;
+        m_colorSnapshotReceived = true;
+        m_colorPalette->stageChromeSnapshot(params.via.array.ptr[1]);
+        return;
+    }
     emit customNotification(note);
 }
 
 void NvimConnector::onRpcDisconnected() {
+    resetColorRequests();
     m_attachPending = false;
     m_images->cancelPending();
     setImagesAvailable(false);
@@ -917,6 +970,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             return;
         }
         m_hl->setDefaultColors(*foreground, *background, *special);
+        m_colorRefreshPending = true;
         return;
     }
     if(name == "hl_attr_define") {
@@ -931,6 +985,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             return;
         }
         m_hl->defineAttr(*id, a.ptr[1], &a.ptr[3]);
+        m_colorRefreshPending = true;
         return;
     }
     if(name == "hl_group_set") {
@@ -995,6 +1050,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         m_images->flush();
         m_colorPalette->publishContent();
         emit flush();
+        requestColorSnapshot();
         return;
     }
     if(name == "restart") {

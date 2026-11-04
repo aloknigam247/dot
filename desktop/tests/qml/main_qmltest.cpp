@@ -19,8 +19,7 @@ public slots:
     void applicationAvailable() { QQuickWindow::setGraphicsApi(QSGRendererInterface::Software); }
 
     void qmlEngineAvailable(QQmlEngine *engine) {
-        // Provide a real NvimConnector but do NOT call start() — its child
-        // models are valid QObjects with sensible defaults for binding tests.
+        // Isolated QML has no Neovim process to supply its required color snapshot.
         auto *connector = new dot::NvimConnector(this);
         dot::test::seedColorState(*connector);
         engine->rootContext()->setContextProperty(QStringLiteral("$connector"), connector);

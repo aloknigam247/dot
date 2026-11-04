@@ -20,6 +20,7 @@ Window {
     property int _requestedCols: 0
     property int _requestedRows: 0
     property bool _shown: false
+    property bool _showSafetyExpired: false
 
     Component.onCompleted: {
         _recomputeTarget()
@@ -58,17 +59,18 @@ Window {
 
     function _showIfReady() {
         if (_shown) return
+        if (!$connector.colorPalette.chromeValid || !$connector.colorPalette.paneValid) return
         if (_requestedCols === 0 || _requestedRows === 0) return
         const g = $connector.grid
         const gc = g.gridCols(1)
         const gr = g.gridRows(1)
-        if (gc === _requestedCols && gr === _requestedRows) {
+        if (gc > 0 && gr > 0 && (_showSafetyExpired || (gc === _requestedCols && gr === _requestedRows))) {
             _shown = true
             const cw = shell.cellWidth
             const ch = shell.cellHeight
             if (cw > 0 && ch > 0) {
-                window.width  = _requestedCols * cw
-                window.height = _requestedRows * ch
+                window.width  = gc * cw
+                window.height = gr * ch
             }
             window.visible = true
         }
@@ -124,30 +126,23 @@ Window {
         interval: 1000
         repeat: false
         onTriggered: {
-            if (!_shown) {
-                _shown = true
-                const g = $connector.grid
-                const gc = g.gridCols(1)
-                const gr = g.gridRows(1)
-                const cw = shell.cellWidth
-                const ch = shell.cellHeight
-                if (gc > 0 && gr > 0 && cw > 0 && ch > 0) {
-                    window.width  = gc * cw
-                    window.height = gr * ch
-                }
-                window.visible = true
-            }
+            _showSafetyExpired = true
+            _showIfReady()
         }
     }
 
     function _syncTitleBar() {
         if (typeof $windowChrome === "undefined") return
+        if (!$connector.colorPalette.chromeValid) return
         $windowChrome.applyToWindow(window, $connector.colorPalette.frame)
     }
 
     Connections {
         target: $connector.colorPalette
-        function onPaletteChanged() { _syncTitleBar() }
+        function onPaletteChanged() {
+            _syncTitleBar()
+            _showIfReady()
+        }
     }
 
     Shell {
