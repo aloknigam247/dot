@@ -295,6 +295,7 @@ void NvimConnector::resetColorRequests() {
     ++m_colorGeneration;
     m_colorRefreshInFlight = false;
     m_colorRefreshPending = false;
+    m_colorSnapshotBoundaryPending = false;
     m_colorSnapshotReceived = false;
 }
 
@@ -810,6 +811,9 @@ void NvimConnector::onNotification(const dot::Notification &note) {
             return;
         }
         if(params.via.array.ptr[0].via.u64 != m_colorGeneration) return;
+        // The following redraw boundary may define attributes already represented by this snapshot.
+        m_colorRefreshPending = false;
+        m_colorSnapshotBoundaryPending = true;
         m_colorSnapshotReceived = true;
         m_colorPalette->stageChromeSnapshot(params.via.array.ptr[1]);
         return;
@@ -970,7 +974,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             return;
         }
         m_hl->setDefaultColors(*foreground, *background, *special);
-        m_colorRefreshPending = true;
+        if(!m_colorSnapshotBoundaryPending) m_colorRefreshPending = true;
         return;
     }
     if(name == "hl_attr_define") {
@@ -985,7 +989,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             return;
         }
         m_hl->defineAttr(*id, a.ptr[1], &a.ptr[3]);
-        m_colorRefreshPending = true;
+        if(!m_colorSnapshotBoundaryPending) m_colorRefreshPending = true;
         return;
     }
     if(name == "hl_group_set") {
@@ -1049,6 +1053,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
     if(name == "flush") {
         m_images->flush();
         m_colorPalette->publishContent();
+        m_colorSnapshotBoundaryPending = false;
         emit flush();
         requestColorSnapshot();
         return;

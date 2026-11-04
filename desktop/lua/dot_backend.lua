@@ -13,52 +13,20 @@ assert(channel, "The dot RPC channel was not found")
 
 local colors = {}
 local pending = false
-local profiles = {
-  dark = {
-    Accent = 0xcba6f7,
-    Changed = 0x89b4fa,
-    Error = 0xf38ba8,
-    Frame = 0x11111b,
-    Information = 0x94e2d5,
-    MutedText = 0xbac2de,
-    Raised = 0x45475a,
-    Resting = 0x313244,
-    SelectedText = 0x1e1e2e,
-    Selection = 0xcba6f7,
-    Success = 0xa6e3a1,
-    Text = 0xcdd6f4,
-    Warning = 0xf9e2af,
-  },
-  light = {
-    Accent = 0x8839ef,
-    Changed = 0x1e66f5,
-    Error = 0xd20f39,
-    Frame = 0xdce0e8,
-    Information = 0x179299,
-    MutedText = 0x5c5f77,
-    Raised = 0xbcc0cc,
-    Resting = 0xccd0da,
-    SelectedText = 0xeff1f5,
-    Selection = 0x8839ef,
-    Success = 0x40a02b,
-    Text = 0x4c4f69,
-    Warning = 0xdf8e1d,
-  },
-}
-local role_channels = {
-  Accent = "fg",
-  Changed = "fg",
-  Error = "fg",
-  Frame = "bg",
-  Information = "fg",
-  MutedText = "fg",
-  Raised = "bg",
-  Resting = "bg",
-  SelectedText = "fg",
-  Selection = "bg",
-  Success = "fg",
-  Text = "fg",
-  Warning = "fg",
+local role_links = {
+  Accent = { "Statement" },
+  Changed = { "Changed" },
+  Error = { "ErrorMsg" },
+  Frame = { "TabLine" },
+  Information = { "DiagnosticHint" },
+  MutedText = { "MiniStatuslineFileinfo", "Comment" },
+  Raised = { "Substitute" },
+  Resting = { "PmenuSbar" },
+  SelectedText = { "Cursor" },
+  Selection = { "MiniStatuslineModeVisual", "Visual" },
+  Success = { "Added" },
+  Text = { "Normal" },
+  Warning = { "WarningMsg" },
 }
 local entered = vim.v.vim_did_enter ~= 0
 local group = vim.api.nvim_create_augroup("DotColors", { clear = true })
@@ -71,7 +39,7 @@ end
 function colors.refresh(request_generation)
   assert(current() and request_generation == generation, "Stale dot color request")
   local roles = {}
-  for role in pairs(role_channels) do
+  for role in pairs(role_links) do
     local name = "Dot" .. role
     local attr = vim.api.nvim_get_hl(0, { create = false, link = false, name = name })
     roles[name] = {
@@ -87,6 +55,14 @@ function colors.refresh(request_generation)
   return true
 end
 
+local function link_target(candidates)
+  if #candidates == 1 then
+    return candidates[1]
+  end
+  local preferred = vim.api.nvim_get_hl(0, { create = false, link = true, name = candidates[1] })
+  return next(preferred) and candidates[1] or candidates[2]
+end
+
 local function schedule_colors()
   if not entered or pending then
     return
@@ -97,10 +73,9 @@ local function schedule_colors()
       return
     end
     pending = false
-    local profile = assert(profiles[vim.o.background], "Invalid Neovim background")
-    for role, color_channel in pairs(role_channels) do
+    for role, candidates in pairs(role_links) do
       local default = "DotDefault" .. role
-      vim.api.nvim_set_hl(0, default, { [color_channel] = profile[role] })
+      vim.api.nvim_set_hl(0, default, { link = link_target(candidates) })
       vim.api.nvim_set_hl(0, "Dot" .. role, { default = true, link = default })
     end
     colors.refresh(generation)

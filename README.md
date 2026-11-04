@@ -75,11 +75,12 @@ Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` 
 
 ```lua
 vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
-vim.o.background = "light"
+vim.api.nvim_set_hl(0, "DotAccent", { link = "Function" })
 ```
 
-Desktop colors come from Neovim. Set `background` and override or link the
-[`Dot*` highlights](docs/design/implementation.md#dot-owned-chrome-roles) in your Neovim configuration or colorscheme.
+Desktop colors come from Neovim. The default [`Dot*` highlights](docs/design/implementation.md#dot-owned-chrome-roles)
+link to standard highlight groups after startup; muted text and selection prefer the matching MiniStatusline groups when
+available. Override or relink any public `Dot*` group in your Neovim configuration or colorscheme.
 Globals are read atomically on attach and restart; missing values return to defaults without overriding CLI values.
 
 Dot-specific settings use the `g:dot_*` and `--dot-*` application prefixes. The session cache uses dot's Qt application-data
@@ -147,7 +148,8 @@ NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll
 directly — there is no imperative pull from QML back into RPC state.
 
 [`ColorPalette`](desktop/include/ColorPalette.h) resolves `HighlightTable` and `ModeInfo` into complete content-color
-pairs before each redraw `flush`, alongside the fixed chrome profile. QML and `CursorItem` read these cached properties.
+pairs before each redraw `flush`, alongside a complete Neovim-owned chrome snapshot. QML and `CursorItem` read these
+cached properties.
 Missing required values invalidate the affected pair and appear in `resolutionErrors`; restart invalidates content
 immediately. See the [color-binding contract](docs/design/implementation.md#color-bindings) and its documented contrast
 limitations.

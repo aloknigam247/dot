@@ -221,6 +221,7 @@ private:
     quint64 m_colorGeneration = 0;
     bool m_colorRefreshInFlight = false;
     bool m_colorRefreshPending = false;
+    bool m_colorSnapshotBoundaryPending = false;
     bool m_colorSnapshotReceived = false;
 };
 

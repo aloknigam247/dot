@@ -151,6 +151,21 @@ private slots:
         QVERIFY(colorNotification(conn, 0, updated.get()));
         QCOMPARE(conn.colorPalette()->theme(), QStringLiteral("dark"));
         QCOMPARE(changed.count(), 0);
+        QVERIFY(redrawEvent(conn, "default_colors_set", [](auto &pk) {
+            pk.pack_array(5);
+            pk.pack(0xffffff);
+            pk.pack(0);
+            pk.pack(-1);
+            pk.pack(0);
+            pk.pack(0);
+        }));
+        QVERIFY(redrawEvent(conn, "hl_attr_define", [](auto &pk) {
+            pk.pack_array(4);
+            pk.pack(9);
+            pk.pack_map(0);
+            pk.pack_map(0);
+            pk.pack_array(0);
+        }));
         QVERIFY(redrawEvent(conn, "flush", [](auto &pk) { pk.pack_array(0); }));
         QCOMPARE(conn.colorPalette()->theme(), QStringLiteral("light"));
         QCOMPARE(changed.count(), 1);
@@ -167,6 +182,7 @@ private slots:
         seedColorState(conn);
         const auto initial = chromeSnapshot();
         QVERIFY(colorNotification(conn, 0, initial.get()));
+        QVERIFY(redrawEvent(conn, "flush", [](auto &pk) { pk.pack_array(0); }));
         QVERIFY(highlightAndFlush(conn));
         const auto first = readFrames(peer, 1);
         QCOMPARE(first.size(), size_t(1));
@@ -199,6 +215,7 @@ private slots:
         seedColorState(conn);
         const auto initial = chromeSnapshot();
         QVERIFY(colorNotification(conn, 0, initial.get()));
+        QVERIFY(redrawEvent(conn, "flush", [](auto &pk) { pk.pack_array(0); }));
         QVERIFY(highlightAndFlush(conn));
         const auto request = readFrames(peer, 1);
         QCOMPARE(request.size(), size_t(1));
@@ -241,6 +258,7 @@ private slots:
         const auto dark = chromeSnapshot();
         const auto light = chromeSnapshot("light");
         QVERIFY(colorNotification(conn, 0, dark.get()));
+        QVERIFY(redrawEvent(conn, "flush", [](auto &pk) { pk.pack_array(0); }));
         QVERIFY(highlightAndFlush(conn));
         const auto oldRequest = readFrames(peer, 1);
         QCOMPARE(oldRequest.size(), size_t(1));
@@ -249,6 +267,7 @@ private slots:
         QVERIFY(redrawEvent(conn, "flush", [](auto &pk) { pk.pack_array(0); }));
         QCOMPARE(conn.colorPalette()->theme(), QStringLiteral("dark"));
         QVERIFY(colorNotification(conn, 1, light.get()));
+        QVERIFY(redrawEvent(conn, "flush", [](auto &pk) { pk.pack_array(0); }));
         QVERIFY(highlightAndFlush(conn));
         const auto current = readFrames(peer, 1);
         QCOMPARE(current.size(), size_t(1));
