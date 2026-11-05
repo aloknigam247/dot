@@ -128,13 +128,14 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // `dot -`: slurp stdin synchronously before Qt is up. Reading via the CRT
+    // `dot -`: detect redirected stdin before Qt is up. Reading via the CRT
     // works even though dot is /SUBSYSTEM:WINDOWS — when the parent shell
     // redirects stdin (e.g. `echo test | dot -`), the inherited handle is a
     // valid pipe. QProcess gives the embedded nvim its own RPC stdin pipe, so
     // dot's stdin stays ours to consume.
-    // Stdin slurp happens on a background thread so the rest of dot's boot
-    // (Qt construction, nvim spawn, QML load) is not blocked by the pipe.
+    // The background read starts only after nvim launches successfully so a
+    // failed `dot -` can close without waiting for an open pipe writer.
+    // On success the rest of dot's boot (attach and QML load) stays unblocked.
     // PowerShell's pipeline can hold the pipe writer open for seconds even
     // after the producer has exited; doing this synchronously stalled the
     // visible launch to multi-second times for `echo X | dot -`. The future
@@ -155,17 +156,6 @@ int main(int argc, char **argv) {
         stdinIsRedirected = !isatty(fileno(stdin));
 #endif
     }
-    if(cli.stdinAsBuffer && stdinIsRedirected) {
-        stdinFuture = std::async(std::launch::async, [] {
-            QByteArray buf;
-            std::array<char, 4096> chunk{};
-            while(std::size_t n = std::fread(chunk.data(), 1, chunk.size(), stdin)) {
-                buf.append(chunk.data(), static_cast<qsizetype>(n));
-            }
-            return buf;
-        });
-    }
-
 #ifdef _WIN32
     // Detach from the parent shell's console so the shell prompt returns
     // immediately. Under /SUBSYSTEM:WINDOWS Windows doesn't allocate its own
@@ -196,30 +186,33 @@ int main(int argc, char **argv) {
     dot::WindowChrome windowChrome;
     boot.mark("NvimConnector ctor done");
 
-    if(!connector.start(locateNvim(), forwardArgs)) {
-        qFatal("Failed to start nvim. Ensure it is on PATH.");
-        return 1;
-    }
-    boot.mark("nvim --embed spawn returned");
+    const bool nvimStarted = connector.start(locateNvim(), forwardArgs);
+    if(nvimStarted) {
+        if(cli.stdinAsBuffer && stdinIsRedirected) {
+            stdinFuture = std::async(std::launch::async, [] {
+                QByteArray buf;
+                std::array<char, 4096> chunk{};
+                while(std::size_t n = std::fread(chunk.data(), 1, chunk.size(), stdin)) {
+                    buf.append(chunk.data(), static_cast<qsizetype>(n));
+                }
+                return buf;
+            });
+        }
+        boot.mark("nvim --embed spawn returned");
 
-    // Fire nvim_ui_attach NOW with the best-known grid size so the round-trip
-    // (nvim sources init, builds initial highlights + grid, responds)
-    // overlaps with QQmlApplicationEngine compilation/instantiation below
-    // instead of stacking serially after it. Main.qml's Component.onCompleted
-    // issues an nvim_ui_try_resize once GridItem has measured the real cell
-    // size against the window — nvim handles the resize cheaply. This is
-    // the single biggest cold-launch win: the ~400-700ms attach handshake
-    // and the ~300-600ms QML cold load now run concurrently instead of
-    // serially. Main.qml guards against double-attach via $connector.attached.
-    //
-    // If a session cache exists with a valid (cols, rows) from the last run,
-    // use those dimensions — they'll match the real geometry when the font
-    // hasn't changed, eliminating the tryResize round-trip entirely.
-    const dot::SessionCache sessionCache = dot::SessionCache::load();
-    const int attachCols = sessionCache.isValid() ? sessionCache.cols : 80;
-    const int attachRows = sessionCache.isValid() ? sessionCache.rows : 24;
-    connector.attachUi(attachCols, attachRows);
-    boot.mark("nvim_ui_attach sent (early)");
+        // Fire nvim_ui_attach NOW with the best-known grid size so the round-trip
+        // (nvim sources init, builds initial highlights + grid, responds)
+        // overlaps with QQmlApplicationEngine compilation/instantiation below.
+        // If a valid session cache exists, use its dimensions to avoid the
+        // placeholder-to-real-size resize round-trip.
+        const dot::SessionCache sessionCache = dot::SessionCache::load();
+        const int attachCols = sessionCache.isValid() ? sessionCache.cols : 80;
+        const int attachRows = sessionCache.isValid() ? sessionCache.rows : 24;
+        connector.attachUi(attachCols, attachRows);
+        boot.mark("nvim_ui_attach sent (early)");
+    } else {
+        boot.mark("nvim --embed spawn failed");
+    }
 
     // Push the resolved rounded_highlights list into HighlightTable on
     // startup and whenever Config changes — must be wired BEFORE the
@@ -249,7 +242,7 @@ int main(int argc, char **argv) {
         boot.mark("first redraw flush received");
     });
 
-    if(cli.stdinAsBuffer && stdinIsRedirected) {
+    if(nvimStarted && cli.stdinAsBuffer && stdinIsRedirected) {
         QObject::connect(
             &connector, &dot::NvimConnector::attachComplete, &connector,
             [&connector, fut = std::make_shared<std::future<QByteArray>>(std::move(stdinFuture))] {

@@ -84,6 +84,7 @@ public:
     DOT_DISABLE_COPY_MOVE(MsgpackRpc)
 
     bool startEmbeddedNvim(const QString &nvimExe, const QStringList &extraArgs = {});
+    QString startError() const { return m_startError; }
     // Connects to an already-running nvim server's listen address (Windows named
     // pipe / unix socket via QLocalSocket, or host:port via QTcpSocket). Used by
     // the :restart reconnect path. Retires the current transport, resets the
@@ -128,6 +129,7 @@ private:
         RpcReplyToken token;
     };
 
+    QString m_startError;
     std::unique_ptr<QProcess> m_process;
     std::unique_ptr<QLocalSocket> m_localSocket;
     std::unique_ptr<QTcpSocket> m_tcpSocket;

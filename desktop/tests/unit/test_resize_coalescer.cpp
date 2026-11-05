@@ -23,6 +23,23 @@ private slots:
         QCOMPARE(args.at(1).toInt(), 49);
     }
 
+    void cancelPendingSuppressesQueuedResize() {
+        ResizeCoalescer c;
+        c.setIntervalMs(50);
+        QSignalSpy spy(&c, &ResizeCoalescer::resizeRequested);
+
+        c.requestResize(80, 24);
+        c.cancelPending();
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 0);
+
+        c.requestResize(120, 40);
+        QVERIFY(spy.wait(200));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 120);
+        QCOMPARE(spy.at(0).at(1).toInt(), 40);
+    }
+
     void duplicateValuesSuppressedOnSecondCycle() {
         ResizeCoalescer c;
         c.setIntervalMs(5);

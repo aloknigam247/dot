@@ -63,6 +63,8 @@ Install [Neovim nightly on PATH](SETUP.md#neovim-nightly-on-path), then download
 .\bin\dot.exe
 ```
 
+If Neovim cannot start, dot keeps its main window open and shows the attempted executable and native launch error.
+
 Keep the accompanying runtime directories and `third_party` notices with the executable.
 
 The [release workflow](.github/workflows/release.yml) publishes verified ZIPs when desktop release tags are pushed.

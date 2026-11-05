@@ -54,7 +54,12 @@ MsgpackRpc::~MsgpackRpc() {
 }
 
 bool MsgpackRpc::startEmbeddedNvim(const QString &nvimExe, const QStringList &extraArgs) {
-    if(m_process) return false;
+    m_startError.clear();
+    if(m_process) {
+        m_startError = QStringLiteral("Neovim process already exists");
+        emit error(m_startError);
+        return false;
+    }
 
     m_process = std::make_unique<QProcess>(this);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
@@ -76,7 +81,8 @@ bool MsgpackRpc::startEmbeddedNvim(const QString &nvimExe, const QStringList &ex
 
     m_process->start(nvimExe, args);
     if(!m_process->waitForStarted(5000)) {
-        emit error(QStringLiteral("nvim failed to start: %1").arg(m_process->errorString()));
+        m_startError = m_process->errorString();
+        emit error(QStringLiteral("nvim failed to start: %1").arg(m_startError));
         m_process = nullptr;
         return false;
     }
@@ -359,7 +365,11 @@ void MsgpackRpc::dispatchUnpacked(ObjectHandlePtr handle) {
 }
 
 void MsgpackRpc::onProcessError(QProcess::ProcessError err) {
-    emit error(QStringLiteral("QProcess error: %1").arg(static_cast<int>(err)));
+    Q_UNUSED(err);
+    if(!m_process) return;
+    const QString message = m_process->errorString();
+    if(m_process->state() == QProcess::NotRunning) m_startError = message;
+    emit error(QStringLiteral("QProcess error: %1").arg(message));
 }
 
 void MsgpackRpc::onProcessFinished(int /*exitCode*/, QProcess::ExitStatus /*status*/) {

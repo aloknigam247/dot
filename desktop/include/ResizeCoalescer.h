@@ -18,6 +18,7 @@ class ResizeCoalescer : public QObject {
 public:
     explicit ResizeCoalescer(QObject *parent = nullptr);
 
+    void cancelPending();
     void requestResize(int cols, int rows);
     void setIntervalMs(int ms);
     Q_INVOKABLE void flushNow();

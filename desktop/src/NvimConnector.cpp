@@ -5,6 +5,7 @@
 #include "MsgpackRpc.h"
 
 #include <QDebug>
+#include <QDir>
 #include <QFile>
 #include <QFontDatabase>
 #include <QUuid>
@@ -173,7 +174,22 @@ NvimConnector::NvimConnector(QObject *parent) :
 NvimConnector::~NvimConnector() = default;
 
 bool NvimConnector::start(const QString &nvimExe, const QStringList &nvimForwardArgs) {
-    if(!m_rpc->startEmbeddedNvim(nvimExe, nvimForwardArgs)) return false;
+    m_startAttempted = true;
+    if(!m_startupError.isEmpty()) {
+        m_startupError.clear();
+        emit startupErrorChanged();
+    }
+    if(!m_rpc->startEmbeddedNvim(nvimExe, nvimForwardArgs)) {
+        const QString startupError =
+            QStringLiteral("Failed to start Neovim.\nExecutable: %1\nError: %2")
+                .arg(QDir::toNativeSeparators(nvimExe), m_rpc->startError());
+        if(m_startupError != startupError) {
+            m_startupError = startupError;
+            emit startupErrorChanged();
+        }
+        m_resizeCoalescer->cancelPending();
+        return false;
+    }
     installDotBackend();
     return true;
 }
@@ -446,6 +462,7 @@ qreal NvimConnector::guifontSize() const {
 }
 
 bool NvimConnector::attachUi(int cols, int rows) {
+    if(!m_startAttempted || !m_startupError.isEmpty() || !m_rpc->isRunning()) return false;
     if(m_attachPending) return true;
     m_attachPending = true;
     m_currentCols = cols;
@@ -632,6 +649,7 @@ void NvimConnector::inputMouse(const QString &button, const QString &action,
 }
 
 void NvimConnector::tryResize(int cols, int rows) {
+    if(!m_startAttempted || !m_startupError.isEmpty()) return;
     m_currentCols = cols;
     m_currentRows = rows;
     m_sentUiSizes.emplace_back(cols, rows);
@@ -648,6 +666,7 @@ void NvimConnector::tryResize(int cols, int rows) {
 }
 
 void NvimConnector::requestResize(int cols, int rows) {
+    if(!m_startAttempted || !m_startupError.isEmpty()) return;
     m_resizeCoalescer->requestResize(cols, rows);
 }
 
