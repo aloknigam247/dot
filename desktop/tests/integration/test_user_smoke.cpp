@@ -8,31 +8,68 @@
 // test drives ':<command><CR>' through the focus chain and asserts nvim
 // actually received it, so a focus regression fails hard.
 
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QProcess>
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSharedPointer>
 #include <QSignalSpy>
+#include <QUuid>
 #include <QtTest>
 
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
+#include "WindowChrome.h"
 
 using namespace dot;
 using namespace dot::test;
 
 namespace {
 
-QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn) {
+bool hasMultipleColors(const QImage &image) {
+    if(image.isNull() || image.width() <= 0 || image.height() <= 0) return false;
+    const QRgb first = image.pixel(0, 0);
+    for(int y = 0; y < image.height(); ++y) {
+        for(int x = 0; x < image.width(); ++x) {
+            if(image.pixel(x, y) != first) return true;
+        }
+    }
+    return false;
+}
+
+QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn,
+                          WindowChrome *chrome = nullptr) {
     engine.rootContext()->setContextProperty(QStringLiteral("$connector"), conn);
+    if(chrome) {
+        engine.rootContext()->setContextProperty(QStringLiteral("$windowChrome"), chrome);
+    }
     engine.loadFromModule(QStringLiteral("Dot"), QStringLiteral("Main"));
     if(engine.rootObjects().isEmpty()) return nullptr;
     return qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+}
+
+QString missingExecutable() {
+    const QString fileName = QStringLiteral("dot_missing_%1.exe").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    return QDir::toNativeSeparators(QDir::temp().absoluteFilePath(fileName));
+}
+
+QString nativeStartError(const QString &executable) {
+    QProcess probe;
+    probe.start(executable, { QStringLiteral("--embed"), QStringLiteral("--clean") });
+    if(probe.waitForStarted(5000)) {
+        probe.kill();
+        probe.waitForFinished();
+        return {};
+    }
+    return probe.errorString();
 }
 
 // Polls a predicate up to timeoutMs, processing events between checks. Returns
@@ -99,6 +136,117 @@ private slots:
         QVERIFY2(applied,
                  "keystrokes after ':' never reached nvim — focus was lost after the colon");
         QVERIFY2(window->activeFocusItem() != nullptr, "Focus lost after command entry");
+    }
+
+    void launchFailureAfterQmlShowsInlineDetails() {
+        WindowChrome chrome;
+        NvimConnector conn;
+        QQmlApplicationEngine engine;
+        QSignalSpy activationSpy(&chrome, &WindowChrome::activated);
+        QSignalSpy attachedSpy(&conn, &NvimConnector::attachComplete);
+        QSignalSpy resizeSpy(conn.resizeCoalescer(), &ResizeCoalescer::resizeRequested);
+        const QString missing = missingExecutable();
+        const QString nativeError = nativeStartError(missing);
+        const QString expected =
+            QStringLiteral("Failed to start Neovim.\nExecutable: %1\nError: %2")
+                .arg(missing, nativeError);
+
+        QVERIFY(!QFileInfo::exists(missing));
+        QVERIFY(!nativeError.isEmpty());
+
+        QQuickWindow *window = loadMainQml(engine, &conn, &chrome);
+        QVERIFY(window);
+        QVERIFY(!window->isVisible());
+        chrome.activateOnShow(window);
+
+        QVERIFY(!conn.start(missing, { QStringLiteral("--clean") }));
+        QCOMPARE(conn.startupError(), expected);
+        QVERIFY(waitUntil([&] { return window->isVisible(); }, 5000));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QCOMPARE(activationSpy.count(), 1);
+
+        QVERIFY(waitUntil([&] {
+            return window->findChild<QQuickItem *>(QStringLiteral("startupErrorText")) != nullptr;
+        }, 5000));
+        auto *details =
+            window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
+        auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
+        QVERIFY(details);
+        QVERIFY(shell);
+        QVERIFY(details->isVisible());
+        QCOMPARE(details->property("text").toString(), expected);
+        QVERIFY(!shell->isVisible());
+        QVERIFY(!shell->isEnabled());
+        QCOMPARE(attachedSpy.count(), 0);
+        QCOMPARE(resizeSpy.count(), 0);
+
+        QVERIFY(window->close());
+        QVERIFY(!window->isVisible());
+    }
+
+    void launchFailureBeforeQmlShowsInlineDetails() {
+        WindowChrome chrome;
+        NvimConnector conn;
+        QQmlApplicationEngine engine;
+        QSignalSpy activationSpy(&chrome, &WindowChrome::activated);
+        QSignalSpy attachedSpy(&conn, &NvimConnector::attachComplete);
+        QSignalSpy resizeSpy(conn.resizeCoalescer(), &ResizeCoalescer::resizeRequested);
+        const QString missing = missingExecutable();
+        const QString nativeError = nativeStartError(missing);
+        const QString expected =
+            QStringLiteral("Failed to start Neovim.\nExecutable: %1\nError: %2")
+                .arg(missing, nativeError);
+
+        QVERIFY(!QFileInfo::exists(missing));
+        QVERIFY(!nativeError.isEmpty());
+        QVERIFY(!conn.start(missing, { QStringLiteral("--clean") }));
+        QCOMPARE(conn.startupError(), expected);
+
+        QQuickWindow *window = loadMainQml(engine, &conn, &chrome);
+        QVERIFY(window);
+        QVERIFY(!window->isVisible());
+        chrome.activateOnShow(window);
+        QVERIFY(waitUntil([&] { return window->isVisible(); }, 5000));
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QCOMPARE(activationSpy.count(), 1);
+
+        QVERIFY(waitUntil([&] {
+            return window->findChild<QQuickItem *>(QStringLiteral("startupErrorText")) != nullptr;
+        }, 5000));
+        auto *chatToggle = window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
+        auto *details =
+            window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
+        auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
+        QVERIFY(chatToggle);
+        QVERIFY(details);
+        QVERIFY(shell);
+        QVERIFY(details->isVisible());
+        QCOMPARE(details->property("text").toString(), expected);
+        QVERIFY(!chatToggle->isVisible());
+        QVERIFY(!chatToggle->isEnabled());
+        QVERIFY(!shell->isVisible());
+        QVERIFY(!shell->isEnabled());
+
+        QVERIFY(!conn.attachUi(80, 24));
+        conn.tryResize(90, 30);
+        conn.requestResize(100, 40);
+        QTest::qWait(50);
+        QCOMPARE(attachedSpy.count(), 0);
+        QCOMPARE(resizeSpy.count(), 0);
+
+        window->resize(480, 240);
+        QTest::qWait(1200);
+        QCOMPARE(activationSpy.count(), 1);
+        QCOMPARE(details->property("text").toString(), expected);
+        QVERIFY(details->isVisible());
+
+        const QSharedPointer<QQuickItemGrabResult> grab = window->contentItem()->grabToImage();
+        QSignalSpy grabSpy(grab.data(), &QQuickItemGrabResult::ready);
+        if(grab->image().isNull()) QVERIFY(grabSpy.wait(5000));
+        QVERIFY(hasMultipleColors(grab->image()));
+
+        QVERIFY(window->close());
+        QVERIFY(!window->isVisible());
     }
 };
 

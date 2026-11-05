@@ -13,7 +13,11 @@ Window {
     // window pop up at 80x24 and visibly jump to 1200x780 a moment later.
     visible: false
     title: $connector.title || "dot"
-    color: $connector.colorPalette.frame
+    color: _startupFailed ? systemPalette.window : $connector.colorPalette.frame
+
+    SystemPalette {
+        id: systemPalette
+    }
 
     // Target grid size requested by Component.onCompleted. Set once; the
     // flush-listener below compares against this to decide when to show.
@@ -21,11 +25,17 @@ Window {
     property int _requestedRows: 0
     property bool _shown: false
     property bool _showSafetyExpired: false
+    readonly property bool _startupFailed: $connector.startupError.length > 0
 
     Component.onCompleted: {
-        _recomputeTarget()
-        _maybeResize()
-        _syncTitleBar()
+        if (_startupFailed) {
+            _syncTitleBar()
+            Qt.callLater(function() { window._showStartupFailure() })
+        } else {
+            _recomputeTarget()
+            _maybeResize()
+            _syncTitleBar()
+        }
     }
 
     // Recompute target (cols, rows) from the current window and cell dimensions.
@@ -47,6 +57,7 @@ Window {
     // late, which fires tryResize against an already-attached UI.
     property bool _attachIssued: false
     function _maybeResize() {
+        if (_startupFailed) return
         if (_requestedCols === 0 || _requestedRows === 0) return
         if ($connector.attached) {
             $connector.tryResize(_requestedCols, _requestedRows)
@@ -59,6 +70,7 @@ Window {
 
     function _showIfReady() {
         if (_shown) return
+        if (_startupFailed) return
         if (!$connector.colorPalette.chromeValid || !$connector.colorPalette.paneValid) return
         if (_requestedCols === 0 || _requestedRows === 0) return
         const g = $connector.grid
@@ -74,6 +86,13 @@ Window {
             }
             window.visible = true
         }
+    }
+
+    function _showStartupFailure() {
+        if (_shown || !_startupFailed) return
+        _showSafetyTimer.stop()
+        _shown = true
+        window.visible = true
     }
 
     // nvim changed grid 1's size itself (:set columns/lines). Resize the window
@@ -93,6 +112,12 @@ Window {
 
     Connections {
         target: $connector
+        function onStartupErrorChanged() {
+            _syncTitleBar()
+            if ($connector.startupError.length > 0) {
+                Qt.callLater(function() { window._showStartupFailure() })
+            }
+        }
         // When attach lands after Component.onCompleted (engine cold-loaded
         // faster than nvim handshake), fire the deferred tryResize — but only
         // during the initial boot show. attachedChanged also fires on a :restart
@@ -133,6 +158,10 @@ Window {
 
     function _syncTitleBar() {
         if (typeof $windowChrome === "undefined") return
+        if (_startupFailed) {
+            $windowChrome.applyToWindow(window, systemPalette.window)
+            return
+        }
         if (!$connector.colorPalette.chromeValid) return
         $windowChrome.applyToWindow(window, $connector.colorPalette.frame)
     }
@@ -145,10 +174,49 @@ Window {
         }
     }
 
+    Loader {
+        id: startupErrorLoader
+        anchors.fill: parent
+        active: window._startupFailed
+        z: 200
+
+        sourceComponent: Component {
+            Rectangle {
+                color: systemPalette.window
+
+                Flickable {
+                    id: startupErrorFlickable
+                    anchors.fill: parent
+                    anchors.margins: 32
+                    boundsBehavior: Flickable.StopAtBounds
+                    clip: true
+                    contentHeight: startupErrorText.implicitHeight
+                    contentWidth: width
+
+                    Text {
+                        id: startupErrorText
+                        objectName: "startupErrorText"
+                        width: startupErrorFlickable.width
+                        color: systemPalette.windowText
+                        font.pixelSize: 16
+                        text: $connector.startupError
+                        textFormat: Text.PlainText
+                        wrapMode: Text.WrapAnywhere
+
+                        Accessible.name: text
+                        Accessible.role: Accessible.StaticText
+                    }
+                }
+            }
+        }
+    }
+
     Shell {
         id: shell
         objectName: "shell"
+        enabled: visible
         opacity: $connector.colorPalette.paneValid ? 1 : 0
+        visible: !window._startupFailed
         anchors.left: parent.left
         anchors.right: chatPanel.visible ? chatPanel.left : parent.right
         anchors.top: parent.top
@@ -162,6 +230,7 @@ Window {
     // the grid to <=0 width (which would suppress the resize entirely).
     ChatPanel {
         id: chatPanel
+        enabled: !window._startupFailed
         metrics: shell.metrics
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -178,12 +247,14 @@ Window {
     Item {
         id: chatToggle
         objectName: "chatToggle"
+        enabled: visible
         width: metrics.rowHeight + 2 * padding
         height: width
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.rightMargin: 6
         anchors.topMargin: 3
+        visible: !window._startupFailed
         z: 150
 
         readonly property real cornerRadius: metrics.cornerRadius

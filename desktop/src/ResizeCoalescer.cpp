@@ -8,6 +8,12 @@ ResizeCoalescer::ResizeCoalescer(QObject *parent) : QObject(parent) {
     connect(&m_timer, &QTimer::timeout, this, &ResizeCoalescer::onTimeout);
 }
 
+void ResizeCoalescer::cancelPending() {
+    m_pendingCols = -1;
+    m_pendingRows = -1;
+    m_timer.stop();
+}
+
 void ResizeCoalescer::requestResize(int cols, int rows) {
     m_pendingCols = cols;
     m_pendingRows = rows;

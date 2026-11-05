@@ -2,12 +2,17 @@
 #include <msgpack.hpp>
 #include <vector>
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileInfo>
 #include <QHostAddress>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QUuid>
 #include <QtTest>
 
 #include "MsgpackRpc.h"
@@ -87,13 +92,27 @@ private slots:
     }
 
     void startEmbeddedNvimFailureResets() {
-        // A bogus executable makes waitForStarted fail; the RPC must emit error and
-        // drop the half-built QProcess so a later start can be retried.
+        QProcess probe;
         MsgpackRpc rpc;
         QSignalSpy errorSpy(&rpc, &MsgpackRpc::error);
-        QVERIFY(!rpc.startEmbeddedNvim(QStringLiteral("dot_nonexistent_nvim_binary")));
+        const QString missing =
+            QDir::temp().absoluteFilePath(QStringLiteral("dot_missing_%1.exe").arg(
+                QUuid::createUuid().toString(QUuid::WithoutBraces)));
+
+        QVERIFY(!QFileInfo::exists(missing));
+        probe.start(missing, QStringList{ QStringLiteral("--embed") });
+        QVERIFY(!probe.waitForStarted(5000));
+        const QString expectedError = probe.errorString();
+
+        QVERIFY(!rpc.startEmbeddedNvim(missing));
         QVERIFY(errorSpy.count() >= 1);
+        QCOMPARE(rpc.startError(), expectedError);
         QVERIFY(!rpc.isRunning());
+
+        const QString helper = QStandardPaths::findExecutable(QStringLiteral("cmd.exe"));
+        QVERIFY2(!helper.isEmpty(), "cmd.exe is required to verify a successful retry");
+        QVERIFY(rpc.startEmbeddedNvim(helper));
+        QCOMPARE(rpc.startError(), QString{});
     }
 
     void switchingTransportsRetiresSockets() {

@@ -46,6 +46,7 @@ class NvimConnector : public QObject {
     Q_PROPERTY(QString guifontFamily READ guifontFamily NOTIFY guifontChanged)
     Q_PROPERTY(qreal guifontSize READ guifontSize NOTIFY guifontChanged)
     Q_PROPERTY(bool attached READ attached NOTIFY attachedChanged)
+    Q_PROPERTY(QString startupError READ startupError NOTIFY startupErrorChanged)
     // ui-options propagated live from nvim via option_set redraw events.
     Q_PROPERTY(bool arabicshape READ arabicshape NOTIFY arabicshapeChanged)
     Q_PROPERTY(QString ambiwidth READ ambiwidth NOTIFY ambiwidthChanged)
@@ -87,6 +88,7 @@ public:
     QString guifontFamily() const;
     qreal guifontSize() const;
     bool attached() const { return m_attached; }
+    QString startupError() const { return m_startupError; }
 
     bool arabicshape() const { return m_arabicshape; }
     QString ambiwidth() const { return m_ambiwidth; }
@@ -128,6 +130,7 @@ signals:
     void titleChanged();
     void guifontChanged();
     void attachedChanged();
+    void startupErrorChanged();
     void attachComplete();
     void flush(); // emitted after each redraw batch — UI should repaint here
     // grid 1 resized by nvim itself (e.g. :set columns/lines), not by a GUI
@@ -181,7 +184,9 @@ private:
 
     QString m_title;
     QString m_guifont;
+    QString m_startupError;
     bool m_attached = false;
+    bool m_startAttempted = false;
 
     // :restart reconnect state. m_restartPending is set by the `restart` redraw
     // event; m_restartInProgress spans the socket-connect handshake; the two size
