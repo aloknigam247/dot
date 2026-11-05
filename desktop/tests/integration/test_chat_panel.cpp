@@ -95,6 +95,7 @@ private slots:
             QStringLiteral("set guifont=Cascadia\\ Code:h12 linespace=0");
         QFETCH(bool, restart);
         NvimConnector conn;
+        QSignalSpy flushSpy(&conn, &NvimConnector::flush);
         QVERIFY(startTestNvim(conn));
 
         QQmlApplicationEngine engine;
@@ -102,7 +103,7 @@ private slots:
         QVERIFY2(window, "Main.qml failed to load");
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(waitUntil([&] { return !flushSpy.isEmpty(); }, 5000));
 
         auto *toggle = window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
         auto *panel = window->findChild<QQuickItem *>(QStringLiteral("chatPanel"));
