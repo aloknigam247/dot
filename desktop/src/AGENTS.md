@@ -7,6 +7,7 @@ Root rules in `AGENTS.md` still apply. This file adds C++-only specifics.
 - `main.cpp` — app entry, QQmlApplicationEngine wiring, context properties.
 - `AppIcon.{h,cpp}` — `setupApplicationIcon(QGuiApplication&)`; loads `:/dot.ico` via static-lib QRC init.
 - `ArgvParser.{h,cpp}` — normalizes dot's argv and consumes help/version/stdin flags. `ConfigCliReader` consumes `--dot-*` before `editorArgs` reaches `nvim --embed`. Unmangles pwsh-7's native-arg quoting.
+- `ColorPalette.{h,cpp}` — cached semantic colors; see the [color-binding contract](../../docs/design/implementation.md#color-bindings).
 - `Config.{h,cpp}` — typed config registry (Bool/Int/Float/String/StringList). CLI > g: > default precedence; `changed(name)` signal on resolved-value change.
 - `ConfigCliReader.{h,cpp}` — extracts `--dot-<name>=<value>` from argv into Config.
 - `ConfigGGlobalReader.{h,cpp}` — populates Config from `g:dot_<name>` once after attachComplete.

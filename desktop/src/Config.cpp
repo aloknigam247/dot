@@ -73,4 +73,21 @@ void Config::setFromCli(const QString &name, QVariant value) {
     applyAndNotify(name, *it, before);
 }
 
+void Config::replaceGGlobals(const QHash<QString, QVariant> &snapshot) {
+    QStringList changedNames;
+    const QStringList names = registeredNames();
+    // Direct replacements must also invalidate any outstanding asynchronous snapshot.
+    ++m_gGlobalReadGeneration;
+    changedNames.reserve(names.size());
+    for(const QString &name: names) {
+        auto &entry = m_entries[name];
+        const QVariant before = resolve(entry);
+        const auto value = snapshot.constFind(name);
+        if(value == snapshot.cend()) entry.gGlobal.reset();
+        else entry.gGlobal = *value;
+        if(resolve(entry) != before) changedNames.append(name);
+    }
+    for(const QString &name: changedNames) emit changed(name);
+}
+
 } // namespace dot

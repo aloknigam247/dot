@@ -49,10 +49,14 @@ public:
     void setFromGGlobal(const QString &name, QVariant value);
     void setFromCli(const QString &name, QVariant value);
 
+    void replaceGGlobals(const QHash<QString, QVariant> &snapshot);
+
 signals:
     void changed(QString name);
 
 private:
+    friend class ConfigGGlobalReader;
+
     struct Entry {
         ConfigType type{};
         QVariant defaultValue;
@@ -64,6 +68,7 @@ private:
     void applyAndNotify(const QString &name, Entry &e, const QVariant &before);
 
     QHash<QString, Entry> m_entries;
+    quint64 m_gGlobalReadGeneration = 0;
 };
 
 } // namespace dot

@@ -20,6 +20,7 @@
 
 #include "AppIcon.h"
 #include "ArgvParser.h"
+#include "ColorPalette.h"
 #include "Config.h"
 #include "ConfigCliReader.h"
 #include "ConfigGGlobalReader.h"

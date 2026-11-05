@@ -18,6 +18,7 @@
 #include "IntegrationHelpers.h"
 #include "ModeInfo.h"
 #include "NvimConnector.h"
+#include "support/ColorHelpers.h"
 #include "support/QuickRasterizer.h"
 
 using namespace dot;
@@ -130,7 +131,7 @@ struct CursorFixture {
 
     CursorFixture() {
         raster->window()->setColor(Qt::transparent);
-        conn.highlights()->setDefaultColors(0xff00ff, 0x000000, 0xff00ff);
+        seedColorState(conn, 0xff00ff, 0x000000);
         conn.grid()->resize(12, 4);
         cursor.setConnector(&conn);
         cursor.setCellHeight(20);
@@ -144,11 +145,13 @@ struct CursorFixture {
     }
 
     QImage paint(std::optional<qreal> dpr = {}) {
+        conn.colorPalette()->publishContent();
         cursor.update();
         return raster->render(&cursor, dpr).copy();
     }
 
     QImage paintLayers() {
+        conn.colorPalette()->publishContent();
         textGrid.setFontName(cursor.fontName());
         textGrid.setFontSize(cursor.fontSize());
         textGrid.setConnector(&conn);
@@ -231,7 +234,7 @@ private slots:
         ObservedCursor cursor;
         std::array<qint64, samples> renderTimes{};
         std::array<qint64, samples> updateTimes{};
-        conn.highlights()->setDefaultColors(0xffffff, 0x000000, 0xffffff);
+        seedColorState(conn);
         conn.grid()->resize(12, 4);
         cursor.setConnector(&conn);
         cursor.setCellHeight(20);
@@ -271,6 +274,7 @@ private slots:
         NvimConnector conn;
         QuickRasterizer raster;
         ObservedCursor cursor;
+        seedColorState(conn);
         conn.grid()->resize(12, 4);
         cursor.setConnector(&conn);
         cursor.setCellHeight(20);
@@ -702,7 +706,9 @@ vim.o.guicursor = 'a:ver80-DotTestCursor-blinkwait0-blinkon0-blinkoff0'
         QCOMPARE(fixture.cursor.frame.backgroundRect.width(), 8.0);
         fixture.conn.modeInfo()->reset();
         QVERIFY(!fixture.paint().isNull());
-        QCOMPARE(fixture.cursor.frame.backgroundRect.size(), QSizeF(10, 20));
+        QVERIFY(fixture.cursor.frame.backgroundRect.isEmpty());
+        QCOMPARE(fixture.cursor.frame.glyphNodes, 0);
+        QCOMPARE(fixture.cursor.frame.underlineNodes, 0);
         fixture.conn.grid()->reset();
         QVERIFY(!fixture.paint().isNull());
         QVERIFY(fixture.cursor.frame.backgroundRect.isEmpty());
@@ -713,11 +719,95 @@ vim.o.guicursor = 'a:ver80-DotTestCursor-blinkwait0-blinkon0-blinkoff0'
         fixture.raster.reset();
         fixture.raster = std::make_unique<QuickRasterizer>();
         fixture.raster->window()->setColor(Qt::transparent);
+        const auto modes = cursorModes({ 0 });
+        fixture.conn.modeInfo()->setModes(modes.get(), true);
+        fixture.conn.modeInfo()->setCurrentMode(QStringLiteral("normal"), 0);
 
         QVERIFY(!fixture.paint().isNull());
 
         QCOMPARE(fixture.cursor.frame.backgroundRect, QRectF(20, 20, 10, 20));
         QVERIFY(fixture.cursor.frame.textureIdentity != 0);
+    }
+
+    void publishedCursorColorsReachShapeGlyphAndUnderline() {
+        QFETCH(int, background);
+        QFETCH(int, foreground);
+        CursorFixture fixture;
+        QVERIFY(fixture.start(true));
+        fixture.cursor.setCornerRadius(0);
+        fixture.conn.command(QStringLiteral("highlight DotTestCursor guifg=#%1 guibg=#%2")
+                                 .arg(foreground, 6, 16, QLatin1Char('0'))
+                                 .arg(background, 6, 16, QLatin1Char('0')));
+        auto *colors = fixture.conn.colorPalette();
+        QTRY_COMPARE(colors->cursorBackground(), QColor::fromRgb(static_cast<QRgb>(background)));
+        QTRY_COMPARE(colors->cursorForeground(), QColor::fromRgb(static_cast<QRgb>(foreground)));
+        const QImage image = fixture.paint();
+        QVERIFY(!image.isNull());
+        QCOMPARE(image.pixelColor(25, 19), colors->cursorForeground());
+        QVERIFY(
+            !colorBounds(image.copy(QRect(20, 0, 10, 16)), colors->cursorForeground()).isEmpty());
+        QVERIFY(fixture.cursor.frame.glyphNodes > 0);
+        QVERIFY(fixture.cursor.frame.underlineNodes > 0);
+        // A full-width bar isolates the background from minimal QPA's placeholder glyphs.
+        fixture.conn.command(
+            QStringLiteral("set guicursor=a:ver100-DotTestCursor-blinkwait0-blinkon0-blinkoff0"));
+        QTRY_COMPARE(fixture.conn.modeInfo()->cursorShapeInt(),
+                     static_cast<int>(CursorShape::Vertical));
+        const QImage backgroundOnly = fixture.paint();
+        const QRect bounds = fixture.cursor.frame.backgroundRect.toAlignedRect();
+        QCOMPARE(bounds.size(), QSize(10, 20));
+        for(int y = bounds.top(); y <= bounds.bottom(); ++y) {
+            for(int x = bounds.left(); x <= bounds.right(); ++x)
+                QCOMPARE(backgroundOnly.pixelColor(x, y), colors->cursorBackground());
+        }
+        QCOMPARE(fixture.cursor.frame.glyphNodes, 0);
+        QCOMPARE(fixture.cursor.frame.underlineNodes, 0);
+    }
+
+    void publishedCursorColorsReachShapeGlyphAndUnderline_data() {
+        QTest::addColumn<int>("background");
+        QTest::addColumn<int>("foreground");
+        QTest::newRow("black-background") << 0x000000 << 0x00ffff;
+        QTest::newRow("colored") << 0xff00ff << 0x00ff00;
+        QTest::newRow("equal-colors") << 0x445566 << 0x445566;
+    }
+
+    void incompleteCursorPairHidesEveryLayer() {
+        QFETCH(bool, foregroundMissing);
+        CursorFixture fixture;
+        QVERIFY(fixture.start(true));
+        QVERIFY(!fixture.paint().isNull());
+        const auto root = fixture.cursor.frame.rootIdentity;
+        const auto id = fixture.conn.modeInfo()->attrId();
+        const auto attrs = colorAttrs(foregroundMissing ? -1 : 0x00ffff,
+                                      foregroundMissing ? 0xff00ff : -1, false, true);
+        fixture.conn.highlights()->setDefaultColors(-1, -1, -1);
+        fixture.conn.highlights()->defineAttr(id, attrs.get());
+
+        const QImage missing = fixture.paint();
+
+        QVERIFY(!missing.isNull());
+        QVERIFY(!fixture.conn.colorPalette()->cursorValid());
+        QVERIFY(fixture.cursor.frame.backgroundRect.isEmpty());
+        QCOMPARE(fixture.cursor.frame.glyphNodes, 0);
+        QCOMPARE(fixture.cursor.frame.underlineNodes, 0);
+        QCOMPARE(fixture.cursor.frame.rootIdentity, root);
+        for(int y = 0; y < missing.height(); ++y) {
+            for(int x = 0; x < missing.width(); ++x) QCOMPARE(missing.pixelColor(x, y).alpha(), 0);
+        }
+        const auto complete = colorAttrs(0x00ffff, 0xff00ff, false, true);
+        fixture.conn.highlights()->setDefaultColors(0xffffff, 0, 0xffffff);
+        fixture.conn.highlights()->defineAttr(id, complete.get());
+        const QImage repaired = fixture.paint();
+        QVERIFY(!colorBounds(repaired, Qt::magenta).isEmpty());
+        QVERIFY(!colorBounds(repaired, Qt::cyan).isEmpty());
+        QCOMPARE(fixture.cursor.frame.rootIdentity, root);
+    }
+
+    void incompleteCursorPairHidesEveryLayer_data() {
+        QTest::addColumn<bool>("foregroundMissing");
+        QTest::newRow("background") << false;
+        QTest::newRow("foreground") << true;
     }
 
     void roundedCornersAndActualDprChangesReachPixels() {

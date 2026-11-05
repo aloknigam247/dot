@@ -75,13 +75,21 @@ Neovim exposes `g:dot` when running in this GUI. Set `g:dot_rounded_highlights` 
 
 ```lua
 vim.g.dot_rounded_highlights = { "FloatBorder", "NormalFloat" }
+vim.api.nvim_set_hl(0, "DotAccent", { link = "Function" })
 ```
 
-Only the `g:dot_*` and `--dot-*` application prefixes are supported. The session cache uses dot's Qt application-data
+Desktop colors come from Neovim. The default [`Dot*` highlights](docs/design/implementation.md#dot-owned-chrome-roles)
+link to standard highlight groups after startup; muted text and selection prefer the matching MiniStatusline groups when
+available. Override or relink any public `Dot*` group in your Neovim configuration or colorscheme.
+Globals are read atomically on attach and restart; missing values return to defaults without overriding CLI values.
+
+Dot-specific settings use the `g:dot_*` and `--dot-*` application prefixes. The session cache uses dot's Qt application-data
 location; caches from other application identities are not imported.
 
 Neovim's `guicursor` controls cursor shape, bar/underline percentage, and blink timing, including live changes.
 The cursor uses the shared [design corners](docs/design/DESIGN.md#4-metrics), clamped to its actual shape.
+Its foreground and background come from the active Neovim mode highlight; valid attribute ID `0` reverses Neovim's
+default foreground/background pair.
 
 ## Images
 
@@ -123,7 +131,7 @@ nvim --embed
 MsgpackRpc          transport: frames msgpack-rpc over the nvim process pipes
     ▼
 NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll,
-    │               mode_change, hl_attr_define, default_colors_set, flush, …)
+    │               mode_change, hl_attr_define, hl_group_set, default_colors_set, flush, …)
     ├──────────────► GridModel        row-major cell grid (text + hl_id per cell)
     ├──────────────► HighlightTable   hl_attr cache (colours + attrs per hl_id)
     └──────────────► ModeInfo         cursor shape / current mode index
@@ -138,6 +146,13 @@ NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll
 
 `NvimConnector` exposes redraw notifications as `Q_SIGNAL`s that the QML shell connects to
 directly — there is no imperative pull from QML back into RPC state.
+
+[`ColorPalette`](desktop/include/ColorPalette.h) resolves `HighlightTable` and `ModeInfo` into complete content-color
+pairs before each redraw `flush`, alongside a complete Neovim-owned chrome snapshot. QML and `CursorItem` read these
+cached properties.
+Missing required values invalidate the affected pair and appear in `resolutionErrors`; restart invalidates content
+immediately. See the [color-binding contract](docs/design/implementation.md#color-bindings) and its documented contrast
+limitations.
 
 The cursor snaps to Neovim's position with no movement-animation option. Blink timing follows `guicursor`.
 

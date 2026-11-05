@@ -2,6 +2,7 @@
 #define NVIMCONNECTOR_H
 
 #include <QColor>
+#include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <qqmlregistration.h>
@@ -11,10 +12,12 @@
 #include <QVariant>
 
 #include <deque>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <utility>
 
+#include "ColorPalette.h"
 #include "GridModel.h"
 #include "HighlightTable.h"
 #include "ImageModel.h"
@@ -43,7 +46,6 @@ class NvimConnector : public QObject {
     Q_PROPERTY(QString guifontFamily READ guifontFamily NOTIFY guifontChanged)
     Q_PROPERTY(qreal guifontSize READ guifontSize NOTIFY guifontChanged)
     Q_PROPERTY(bool attached READ attached NOTIFY attachedChanged)
-    Q_PROPERTY(QColor defaultBackground READ defaultBackground NOTIFY defaultBackgroundChanged)
     // ui-options propagated live from nvim via option_set redraw events.
     Q_PROPERTY(bool arabicshape READ arabicshape NOTIFY arabicshapeChanged)
     Q_PROPERTY(QString ambiwidth READ ambiwidth NOTIFY ambiwidthChanged)
@@ -58,6 +60,7 @@ class NvimConnector : public QObject {
     Q_PROPERTY(bool termguicolors READ termguicolors NOTIFY termguicolorsChanged)
     Q_PROPERTY(dot::ImageModel *images READ images CONSTANT)
     Q_PROPERTY(bool imagesAvailable READ imagesAvailable NOTIFY imagesAvailableChanged)
+    Q_PROPERTY(dot::ColorPalette *colorPalette READ colorPalette CONSTANT)
 
 public:
     explicit NvimConnector(QObject *parent = nullptr);
@@ -69,9 +72,12 @@ public:
 
     // Issues `nvim_get_var(name)` and invokes `cb` with the unpacked value on
     // success, or with an empty optional if the variable is unset / errored.
-    // Used by ConfigGGlobalReader to populate Config from g:dot_* globals.
     using GetVarCallback = std::function<void(std::optional<QVariant>)>;
     void getVar(const QString &name, GetVarCallback cb);
+
+    using GGlobalSnapshotResult = std::expected<QHash<QString, QVariant>, RpcError>;
+    using ReadGGlobalsCallback = std::function<void(GGlobalSnapshotResult)>;
+    void readGGlobals(const QStringList &names, ReadGGlobalsCallback cb);
 
     GridModel *grid() const { return m_grid; }
     HighlightTable *highlights() const { return m_hl; }
@@ -81,7 +87,6 @@ public:
     QString guifontFamily() const;
     qreal guifontSize() const;
     bool attached() const { return m_attached; }
-    QColor defaultBackground() const { return m_hl->defaultBg(); }
 
     bool arabicshape() const { return m_arabicshape; }
     QString ambiwidth() const { return m_ambiwidth; }
@@ -96,6 +101,7 @@ public:
     bool termguicolors() const { return m_termguicolors; }
     ImageModel *images() const { return m_images; }
     bool imagesAvailable() const { return m_imagesAvailable; }
+    ColorPalette *colorPalette() const { return m_colorPalette; }
 
     Q_INVOKABLE void input(const QString &keys);
     Q_INVOKABLE void inputMouse(const QString &button, const QString &action,
@@ -123,7 +129,6 @@ signals:
     void guifontChanged();
     void attachedChanged();
     void attachComplete();
-    void defaultBackgroundChanged();
     void flush(); // emitted after each redraw batch — UI should repaint here
     // grid 1 resized by nvim itself (e.g. :set columns/lines), not by a GUI
     // request — QML resizes the window client area to match.
@@ -154,6 +159,8 @@ private:
     Q_SLOT void onRequest(const dot::RpcRequest &request);
 
     void installDotBackend();
+    void requestColorSnapshot();
+    void resetColorRequests();
     void setImagesAvailable(bool available);
     void showImageError(const QString &message);
     void handleRedraw(const msgpack::object &events);
@@ -210,6 +217,12 @@ private:
     QString m_backendClientId;
     ImageModel *m_images = nullptr;
     bool m_imagesAvailable = false;
+    ColorPalette *m_colorPalette = nullptr;
+    quint64 m_colorGeneration = 0;
+    bool m_colorRefreshInFlight = false;
+    bool m_colorRefreshPending = false;
+    bool m_colorSnapshotBoundaryPending = false;
+    bool m_colorSnapshotReceived = false;
 };
 
 } // namespace dot

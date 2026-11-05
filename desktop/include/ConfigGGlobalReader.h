@@ -10,15 +10,8 @@ namespace dot {
 class Config;
 class NvimConnector;
 
-// Reads `g:dot_<name>` global variables from a running nvim and applies
-// them to `cfg` via Config::setFromGGlobal.
-//
-// Variables that are unset (nvim_get_var returns an error) are silently
-// skipped — there is no requirement that any g: be present.
-//
-// `readFromMap` exists as a testability seam: it applies the same type
-// coercion + filtering rules but reads from a pre-built map of QVariants
-// instead of a live nvim connection.
+// Replaces the g-global source only after a complete successful snapshot.
+// Missing globals clear their source; stale or failed reads leave Config unchanged.
 class ConfigGGlobalReader {
 public:
     static void read(NvimConnector &connector, Config &cfg);

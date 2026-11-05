@@ -84,7 +84,9 @@ private slots:
         // Enable mouse and put some content on line 1 to drag across.
         conn.command(QStringLiteral("set mouse=a"));
         conn.command(QStringLiteral("call setline(1, 'abcdefghij')"));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(waitUntil([&] {
+            return conn.grid()->dumpAscii().startsWith(QStringLiteral("abcdefghij"));
+        }, 5000));
 
         // Locate GridItem and derive cell-to-pixel mapping from its metrics.
         GridItem *gridItem = findGridItem(window->contentItem());
@@ -103,20 +105,23 @@ private slots:
         // QTest::mousePress targets the QWindow and routes via Qt's focus chain
         // — exactly like a real user gesture.
         QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, cellPixel(2, 0));
+        QVERIFY2(waitUntil(
+                     [&] { return conn.grid()->cursorRow() == 0 && conn.grid()->cursorCol() == 2; },
+                     3000),
+                 "Neovim did not acknowledge the initial mouse press");
 
         // BEFORE release: drag the mouse and wait for nvim to enter visual mode.
         // Synthesised MouseMove events from QTest only fire when a button is
         // held *and* mouseMove(window, point) is invoked.
         QTest::mouseMove(window, cellPixel(7, 0));
 
-        QVERIFY2(waitUntil(
-                     [&] {
+        const bool enteredVisual = waitUntil([&] {
             return conn.modeInfo()->currentName().contains(QStringLiteral("visual"),
                                                            Qt::CaseInsensitive);
-        }, 3000),
-                 qPrintable(QStringLiteral("nvim did not enter visual mode on "
-                                           "drag (current mode = '%1')")
-                                .arg(conn.modeInfo()->currentName())));
+        }, 3000);
+        QVERIFY2(enteredVisual, qPrintable(QStringLiteral("nvim did not enter visual mode on "
+                                                          "drag (current mode = '%1')")
+                                               .arg(conn.modeInfo()->currentName())));
 
         // Release should keep us in visual mode (mouse=a drag → linewise/charwise
         // visual stays active until <Esc> or another command).

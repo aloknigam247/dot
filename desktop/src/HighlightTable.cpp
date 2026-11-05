@@ -1,8 +1,12 @@
 #include "HighlightTable.h"
 
 #include <algorithm>
+#include <string_view>
+#include <QDebug>
 
 namespace dot {
+
+static constexpr std::array<std::string_view, 3> kRequiredNames{ "NormalFloat", "Pmenu", "Visual" };
 
 static QColor fromRgb24(int rgb) {
     if(rgb < 0) return {};
@@ -71,9 +75,9 @@ static QStringList namesFromInfo(const msgpack::object &info) {
 HighlightTable::HighlightTable(QObject *parent) : QObject(parent) {}
 
 void HighlightTable::setDefaultColors(int rgbFg, int rgbBg, int rgbSp) {
-    if(rgbFg >= 0) m_defaultFg = fromRgb24(rgbFg);
-    if(rgbBg >= 0) m_defaultBg = fromRgb24(rgbBg);
-    if(rgbSp >= 0) m_defaultSp = fromRgb24(rgbSp);
+    m_defaultFg = fromRgb24(rgbFg);
+    m_defaultBg = fromRgb24(rgbBg);
+    m_defaultSp = fromRgb24(rgbSp);
     emit changed();
 }
 
@@ -97,12 +101,53 @@ void HighlightTable::defineAttr(int id, const msgpack::object &rgbAttr,
     a.isRounded = std::ranges::any_of(
         a.names, [this](const QString &n) { return m_roundedHighlights.contains(n); });
     m_attrs[id] = a;
+    if(info && info->type == msgpack::type::ARRAY) {
+        const auto &entries = info->via.array;
+        for(uint32_t i = 0; i < entries.size; ++i) {
+            for(const char *key: { "hi_name", "ui_name" }) {
+                const int keyIndex = findKey(entries.ptr[i], key);
+                if(keyIndex < 0) continue;
+                const auto &value = entries.ptr[i].via.map.ptr[keyIndex].val;
+                if(value.type != msgpack::type::STR) continue;
+                const std::string_view name(value.via.str.ptr, value.via.str.size);
+                for(size_t role = 0; role < kRequiredNames.size(); ++role) {
+                    if(name == kRequiredNames.at(role)) m_requiredAttrIds.at(role) = id;
+                }
+            }
+        }
+    }
     emit changed();
 }
 
 void HighlightTable::clear() {
     m_attrs.clear();
+    m_defaultBg = QColor();
+    m_defaultFg = QColor();
+    m_defaultSp = QColor();
+    m_requiredAttrIds.fill(std::nullopt);
     emit changed();
+}
+
+bool HighlightTable::contains(int id) const { return id == 0 || m_attrs.contains(id); }
+
+std::optional<int> HighlightTable::requiredAttrId(RequiredHighlight role) const {
+    return m_requiredAttrIds.at(static_cast<size_t>(role));
+}
+
+void HighlightTable::setHighlightGroup(const QString &name, int id) {
+    if(id < 0) {
+        qWarning("Invalid hl_group_set: highlight id must be non-negative");
+        return;
+    }
+    for(size_t role = 0; role < kRequiredNames.size(); ++role) {
+        const auto expected = kRequiredNames.at(role);
+        if(name != QLatin1StringView(expected.data(), static_cast<qsizetype>(expected.size())))
+            continue;
+        if(m_requiredAttrIds.at(role) == id) return;
+        m_requiredAttrIds.at(role) = id;
+        emit changed();
+        return;
+    }
 }
 
 void HighlightTable::setRoundedHighlights(const QStringList &names) {

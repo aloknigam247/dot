@@ -8,6 +8,32 @@ using namespace dot;
 class TestConfigRegistry : public QObject {
     Q_OBJECT
 private slots:
+    void replacementClearsAbsentGlobalsAndPreservesCli() {
+        Config cfg;
+        cfg.registerOption(QStringLiteral("alpha"), ConfigType::Int, 1);
+        cfg.registerOption(QStringLiteral("beta"), ConfigType::Int, 2);
+        cfg.registerOption(QStringLiteral("gamma"), ConfigType::Int, 3);
+        cfg.setFromGGlobal(QStringLiteral("alpha"), 11);
+        cfg.setFromGGlobal(QStringLiteral("beta"), 12);
+        cfg.setFromGGlobal(QStringLiteral("gamma"), 13);
+        cfg.setFromCli(QStringLiteral("beta"), 22);
+        QSignalSpy changed(&cfg, &Config::changed);
+        connect(&cfg, &Config::changed, &cfg, [&] {
+            QCOMPARE(cfg.value(QStringLiteral("alpha")).toInt(), 1);
+            QCOMPARE(cfg.value(QStringLiteral("beta")).toInt(), 22);
+            QCOMPARE(cfg.value(QStringLiteral("gamma")).toInt(), 23);
+        });
+
+        cfg.replaceGGlobals({ { QStringLiteral("gamma"), 23 } });
+
+        QCOMPARE(changed.count(), 2);
+        QCOMPARE(changed.at(0).at(0).toString(), QStringLiteral("alpha"));
+        QCOMPARE(changed.at(1).at(0).toString(), QStringLiteral("gamma"));
+        changed.clear();
+        cfg.replaceGGlobals({ { QStringLiteral("gamma"), 23 } });
+        QCOMPARE(changed.count(), 0);
+    }
+
     void defaultsAndHas() {
         Config cfg;
         cfg.registerOption(QStringLiteral("opacity"), ConfigType::Float, 1.0);

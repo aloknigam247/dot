@@ -13,13 +13,14 @@ Window {
     // window pop up at 80x24 and visibly jump to 1200x780 a moment later.
     visible: false
     title: $connector.title || "dot"
-    color: "#1e1e1e"
+    color: $connector.colorPalette.frame
 
     // Target grid size requested by Component.onCompleted. Set once; the
     // flush-listener below compares against this to decide when to show.
     property int _requestedCols: 0
     property int _requestedRows: 0
     property bool _shown: false
+    property bool _showSafetyExpired: false
 
     Component.onCompleted: {
         _recomputeTarget()
@@ -58,17 +59,18 @@ Window {
 
     function _showIfReady() {
         if (_shown) return
+        if (!$connector.colorPalette.chromeValid || !$connector.colorPalette.paneValid) return
         if (_requestedCols === 0 || _requestedRows === 0) return
         const g = $connector.grid
         const gc = g.gridCols(1)
         const gr = g.gridRows(1)
-        if (gc === _requestedCols && gr === _requestedRows) {
+        if (gc > 0 && gr > 0 && (_showSafetyExpired || (gc === _requestedCols && gr === _requestedRows))) {
             _shown = true
             const cw = shell.cellWidth
             const ch = shell.cellHeight
             if (cw > 0 && ch > 0) {
-                window.width  = _requestedCols * cw
-                window.height = _requestedRows * ch
+                window.width  = gc * cw
+                window.height = gr * ch
             }
             window.visible = true
         }
@@ -124,37 +126,29 @@ Window {
         interval: 1000
         repeat: false
         onTriggered: {
-            if (!_shown) {
-                _shown = true
-                const g = $connector.grid
-                const gc = g.gridCols(1)
-                const gr = g.gridRows(1)
-                const cw = shell.cellWidth
-                const ch = shell.cellHeight
-                if (gc > 0 && gr > 0 && cw > 0 && ch > 0) {
-                    window.width  = gc * cw
-                    window.height = gr * ch
-                }
-                window.visible = true
-            }
+            _showSafetyExpired = true
+            _showIfReady()
         }
     }
 
     function _syncTitleBar() {
         if (typeof $windowChrome === "undefined") return
-        const bg = $connector.defaultBackground
-        if (!bg || !bg.valid) return
-        $windowChrome.applyToWindow(window, bg)
+        if (!$connector.colorPalette.chromeValid) return
+        $windowChrome.applyToWindow(window, $connector.colorPalette.frame)
     }
 
     Connections {
-        target: $connector
-        function onDefaultBackgroundChanged() { _syncTitleBar() }
+        target: $connector.colorPalette
+        function onPaletteChanged() {
+            _syncTitleBar()
+            _showIfReady()
+        }
     }
 
     Shell {
         id: shell
         objectName: "shell"
+        opacity: $connector.colorPalette.paneValid ? 1 : 0
         anchors.left: parent.left
         anchors.right: chatPanel.visible ? chatPanel.left : parent.right
         anchors.top: parent.top
@@ -209,8 +203,9 @@ Window {
             id: chatIcon
             objectName: "chatIcon"
             anchors.fill: parent
-            property color tint: chatPanel.visible ? "#5a9fd4"
-                               : (toggleArea.containsMouse ? "#e0e0e0" : "#9d9d9d")
+            property color tint: chatPanel.visible ? $connector.colorPalette.accent
+                               : (toggleArea.containsMouse ? $connector.colorPalette.text
+                                                          : $connector.colorPalette.mutedText)
             readonly property real cornerRadius: chatToggle.cornerRadius
             readonly property real padding: chatToggle.padding
             readonly property real strokeWidth: Math.min(1.5, symbolSize)

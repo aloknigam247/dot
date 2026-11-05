@@ -248,6 +248,7 @@ private slots:
         f.conn.modeInfo()->setModes(modes.get(), true);
         f.conn.modeInfo()->setCurrentMode(QStringLiteral("normal"), 0);
         f.conn.grid()->setCursor(4, 4);
+        f.conn.colorPalette()->publishContent();
 
         CursorItem cursor;
         cursor.setParentItem(f.raster->window()->contentItem());
