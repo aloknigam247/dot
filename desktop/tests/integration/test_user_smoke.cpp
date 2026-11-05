@@ -111,6 +111,7 @@ private slots:
     // variable never gets set — a hard failure here, not a soft focus check.
     void keypressAfterColonReachesNvim() {
         NvimConnector conn;
+        QSignalSpy flushSpy(&conn, &NvimConnector::flush);
         QVERIFY(startTestNvim(conn));
 
         QQmlApplicationEngine engine;
@@ -118,7 +119,7 @@ private slots:
         QVERIFY2(window, "Main.qml failed to load");
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(waitUntil([&] { return !flushSpy.isEmpty(); }, 5000));
 
         QVERIFY2(window->activeFocusItem() != nullptr,
                  "No active focus item after attach — Shell didn't force focus");
