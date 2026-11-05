@@ -1,3 +1,13 @@
+## [1.3.0](https://github.com/aloknigam247/dot/compare/dot-v1.2.1...dot-v1.3.0) (2026-11-05)
+
+### Added
+
+* **ui:** resolve semantic desktop colors ([#235](https://github.com/aloknigam247/dot/issues/235)) ([3f22589](https://github.com/aloknigam247/dot/commit/3f22589142f95cfa0720e80d815b7eebf8419e2b)), closes [#102](https://github.com/aloknigam247/dot/issues/102)
+
+### Fixed
+
+* **ui:** show Neovim launch errors ([#238](https://github.com/aloknigam247/dot/issues/238)) ([da29d25](https://github.com/aloknigam247/dot/commit/da29d25cc39e1251614cc3bab8c3ee80845b8851)), closes [#95](https://github.com/aloknigam247/dot/issues/95)
+
 ## [1.2.1](https://github.com/aloknigam247/dot/compare/dot-v1.2.0...dot-v1.2.1) (2026-11-01)
 
 ### Fixed

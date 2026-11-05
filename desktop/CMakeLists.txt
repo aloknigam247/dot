@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.2)
-project(dot LANGUAGES CXX VERSION 1.2.1)
+project(dot LANGUAGES CXX VERSION 1.3.0)
 
 # vcpkg reads vcpkg.json's version before CMake runs, so it is a second persisted copy
 # of the canonical project() version rather than a generated one.
