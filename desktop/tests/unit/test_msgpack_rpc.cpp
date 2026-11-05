@@ -12,8 +12,8 @@
 #include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
-#include <QUuid>
 #include <QtTest>
+#include <QUuid>
 
 #include "MsgpackRpc.h"
 #include "support/RpcHelpers.h"
@@ -95,9 +95,9 @@ private slots:
         QProcess probe;
         MsgpackRpc rpc;
         QSignalSpy errorSpy(&rpc, &MsgpackRpc::error);
-        const QString missing =
-            QDir::temp().absoluteFilePath(QStringLiteral("dot_missing_%1.exe").arg(
-                QUuid::createUuid().toString(QUuid::WithoutBraces)));
+        const QString missing = QDir::temp().absoluteFilePath(
+            QStringLiteral("dot_missing_%1.exe")
+                .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
 
         QVERIFY(!QFileInfo::exists(missing));
         probe.start(missing, QStringList{ QStringLiteral("--embed") });
@@ -113,6 +113,8 @@ private slots:
         QVERIFY2(!helper.isEmpty(), "cmd.exe is required to verify a successful retry");
         QVERIFY(rpc.startEmbeddedNvim(helper));
         QCOMPARE(rpc.startError(), QString{});
+        QVERIFY(!rpc.startEmbeddedNvim(helper));
+        QCOMPARE(rpc.startError(), QStringLiteral("Neovim process already exists"));
     }
 
     void switchingTransportsRetiresSockets() {

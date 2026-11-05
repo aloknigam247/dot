@@ -6,8 +6,8 @@
 #include <QScopeGuard>
 #include <QStandardPaths>
 #include <QTemporaryDir>
-#include <QUuid>
 #include <QtTest>
+#include <QUuid>
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -98,8 +98,9 @@ QProcessEnvironment productEnvironment(const QString &scratchPath, bool isolateP
 QString nativeStartError(const QProcessEnvironment &environment, const QString &workingDirectory) {
     QProcess probe;
     const QString missing =
-        QDir(workingDirectory).filePath(QStringLiteral("dot_missing_%1.exe").arg(
-            QUuid::createUuid().toString(QUuid::WithoutBraces)));
+        QDir(workingDirectory)
+            .filePath(QStringLiteral("dot_missing_%1.exe")
+                          .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
     probe.setProcessEnvironment(environment);
     probe.setWorkingDirectory(workingDirectory);
     probe.start(missing, {});
@@ -140,14 +141,13 @@ bool accessibilityTreeContains(HWND window, const QString &expectedName) {
     if(FAILED(automation->ElementFromHandle(window, root.GetAddressOf()))) return false;
 
     value.vt = VT_BSTR;
-    value.bstrVal = SysAllocStringLen(
-        reinterpret_cast<const OLECHAR *>(expectedName.utf16()),
-        static_cast<UINT>(expectedName.size()));
+    value.bstrVal = SysAllocStringLen(reinterpret_cast<const OLECHAR *>(expectedName.utf16()),
+                                      static_cast<UINT>(expectedName.size()));
     if(!value.bstrVal) return false;
     const auto clearValue = qScopeGuard([&value] { VariantClear(&value); });
 
-    if(FAILED(automation->CreatePropertyCondition(
-           UIA_NamePropertyId, value, condition.GetAddressOf()))) {
+    if(FAILED(automation->CreatePropertyCondition(UIA_NamePropertyId, value,
+                                                  condition.GetAddressOf()))) {
         return false;
     }
 
@@ -182,8 +182,7 @@ bool renderedWindowHasMultipleColors(HWND window) {
     bitmapInfo.bmiHeader.biBitCount = 32;
     bitmapInfo.bmiHeader.biCompression = BI_RGB;
 
-    HBITMAP bitmap =
-        CreateDIBSection(windowDc, &bitmapInfo, DIB_RGB_COLORS, &bits, nullptr, 0);
+    HBITMAP bitmap = CreateDIBSection(windowDc, &bitmapInfo, DIB_RGB_COLORS, &bits, nullptr, 0);
     if(!bitmap || !bits) {
         if(bitmap) DeleteObject(bitmap);
         DeleteDC(memoryDc);
@@ -201,8 +200,7 @@ bool renderedWindowHasMultipleColors(HWND window) {
     if(!PrintWindow(window, memoryDc, kPrintWindowRenderFullContent)) return false;
 
     const auto *pixels = static_cast<const quint32 *>(bits);
-    const qsizetype pixelCount =
-        static_cast<qsizetype>(width) * static_cast<qsizetype>(height);
+    const qsizetype pixelCount = static_cast<qsizetype>(width) * static_cast<qsizetype>(height);
     const quint32 first = pixels[0];
     for(qsizetype i = 1; i < pixelCount; ++i) {
         if(pixels[i] != first) return true;
@@ -252,17 +250,16 @@ private slots:
             QStringLiteral("qa!"),
         };
         QProcess process;
-        const QString templatePath =
-            QDir::temp().absoluteFilePath(QStringLiteral("dot_startup_success_%1_XXXXXX").arg(
-                QUuid::createUuid().toString(QUuid::WithoutBraces)));
+        const QString templatePath = QDir::temp().absoluteFilePath(
+            QStringLiteral("dot_startup_success_%1_XXXXXX")
+                .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
         QTemporaryDir scratch(templatePath);
 
         QVERIFY(scratch.isValid());
         QProcessEnvironment environment = productEnvironment(scratch.path(), false);
-        const QStringList searchPaths = environment.value(QStringLiteral("PATH")).split(
-            QDir::listSeparator(), Qt::SkipEmptyParts);
-        const QString nvim =
-            QStandardPaths::findExecutable(QStringLiteral("nvim"), searchPaths);
+        const QStringList searchPaths = environment.value(QStringLiteral("PATH"))
+                                            .split(QDir::listSeparator(), Qt::SkipEmptyParts);
+        const QString nvim = QStandardPaths::findExecutable(QStringLiteral("nvim"), searchPaths);
         QVERIFY2(!nvim.isEmpty(), "A working nvim is required for the success control");
 
         process.setArguments(arguments);
@@ -278,7 +275,8 @@ private slots:
 
         process.start();
         QVERIFY2(process.waitForStarted(5000), qPrintable(processDiagnostics(process)));
-        QVERIFY2(process.waitForFinished(kProcessTimeoutMs), qPrintable(processDiagnostics(process)));
+        QVERIFY2(process.waitForFinished(kProcessTimeoutMs),
+                 qPrintable(processDiagnostics(process)));
         QCOMPARE(process.exitStatus(), QProcess::NormalExit);
         QCOMPARE(process.exitCode(), 0);
 #else
@@ -294,8 +292,8 @@ void TestStartupFailureProduct::verifyMissingExecutable(bool keepStdinOpen) {
     QProcess process;
     HWND window = nullptr;
     const QString templatePath =
-        QDir::temp().absoluteFilePath(QStringLiteral("dot_startup_failure_%1_XXXXXX").arg(
-            QUuid::createUuid().toString(QUuid::WithoutBraces)));
+        QDir::temp().absoluteFilePath(QStringLiteral("dot_startup_failure_%1_XXXXXX")
+                                          .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
     QTemporaryDir scratch(templatePath);
 
     QVERIFY(scratch.isValid());
@@ -312,9 +310,8 @@ void TestStartupFailureProduct::verifyMissingExecutable(bool keepStdinOpen) {
     QVERIFY(!QFileInfo(QDir(appDirectory).filePath(QStringLiteral("nvim.exe"))).exists());
     QVERIFY(!QFileInfo(QDir(scratch.path()).filePath(QStringLiteral("nvim.exe"))).exists());
     QVERIFY(!QFileInfo(QDir(windowsDirectory).filePath(QStringLiteral("nvim.exe"))).exists());
-    QVERIFY(!QFileInfo(
-                 QDir(windowsDirectory).filePath(QStringLiteral("System32/nvim.exe")))
-                 .exists());
+    QVERIFY(
+        !QFileInfo(QDir(windowsDirectory).filePath(QStringLiteral("System32/nvim.exe"))).exists());
 
     process.setArguments(arguments);
     process.setProcessEnvironment(environment);

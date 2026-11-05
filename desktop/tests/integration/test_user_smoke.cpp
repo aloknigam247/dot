@@ -12,17 +12,17 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QProcess>
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSharedPointer>
 #include <QSignalSpy>
-#include <QUuid>
 #include <QtTest>
+#include <QUuid>
 
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
@@ -56,8 +56,8 @@ QQuickWindow *loadMainQml(QQmlApplicationEngine &engine, NvimConnector *conn,
 }
 
 QString missingExecutable() {
-    const QString fileName = QStringLiteral("dot_missing_%1.exe").arg(
-        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString fileName = QStringLiteral("dot_missing_%1.exe")
+                                 .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     return QDir::toNativeSeparators(QDir::temp().absoluteFilePath(fileName));
 }
 
@@ -145,6 +145,7 @@ private slots:
         QSignalSpy activationSpy(&chrome, &WindowChrome::activated);
         QSignalSpy attachedSpy(&conn, &NvimConnector::attachComplete);
         QSignalSpy resizeSpy(conn.resizeCoalescer(), &ResizeCoalescer::resizeRequested);
+        QSignalSpy startupErrorSpy(&conn, &NvimConnector::startupErrorChanged);
         const QString missing = missingExecutable();
         const QString nativeError = nativeStartError(missing);
         const QString expected =
@@ -161,6 +162,7 @@ private slots:
 
         QVERIFY(!conn.start(missing, { QStringLiteral("--clean") }));
         QCOMPARE(conn.startupError(), expected);
+        QCOMPARE(startupErrorSpy.count(), 1);
         QVERIFY(waitUntil([&] { return window->isVisible(); }, 5000));
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QCOMPARE(activationSpy.count(), 1);
@@ -168,8 +170,7 @@ private slots:
         QVERIFY(waitUntil([&] {
             return window->findChild<QQuickItem *>(QStringLiteral("startupErrorText")) != nullptr;
         }, 5000));
-        auto *details =
-            window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
+        auto *details = window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
         auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
         QVERIFY(details);
         QVERIFY(shell);
@@ -182,6 +183,10 @@ private slots:
 
         QVERIFY(window->close());
         QVERIFY(!window->isVisible());
+
+        QVERIFY(startTestNvim(conn));
+        QCOMPARE(conn.startupError(), QString{});
+        QCOMPARE(startupErrorSpy.count(), 2);
     }
 
     void launchFailureBeforeQmlShowsInlineDetails() {
@@ -214,8 +219,7 @@ private slots:
             return window->findChild<QQuickItem *>(QStringLiteral("startupErrorText")) != nullptr;
         }, 5000));
         auto *chatToggle = window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
-        auto *details =
-            window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
+        auto *details = window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
         auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
         QVERIFY(chatToggle);
         QVERIFY(details);
