@@ -24,7 +24,6 @@ using namespace dot::test;
 namespace {
 
 struct DefaultLink {
-    const char *channel;
     const char *fallback;
     QRgb fixtureColor;
     const char *property;
@@ -33,19 +32,19 @@ struct DefaultLink {
 };
 
 static constexpr auto defaultLinks = std::to_array<DefaultLink>({
-    { "fg", "", 0x010101, "accent", "Accent", "Statement" },
-    { "fg", "", 0x020202, "changed", "Changed", "Changed" },
-    { "fg", "", 0x030303, "error", "Error", "ErrorMsg" },
-    { "bg", "", 0x040404, "frame", "Frame", "TabLine" },
-    { "fg", "", 0x050505, "information", "Information", "DiagnosticHint" },
-    { "fg", "Comment", 0x060606, "mutedText", "MutedText", "MiniStatuslineFileinfo" },
-    { "bg", "", 0x070707, "raised", "Raised", "Substitute" },
-    { "bg", "", 0x080808, "resting", "Resting", "PmenuSbar" },
-    { "fg", "", 0x090909, "selectedText", "SelectedText", "Cursor" },
-    { "bg", "Visual", 0x0a0a0a, "selection", "Selection", "MiniStatuslineModeVisual" },
-    { "fg", "", 0x0b0b0b, "success", "Success", "Added" },
-    { "fg", "", 0x0c0c0c, "text", "Text", "Normal" },
-    { "fg", "", 0x0d0d0d, "warning", "Warning", "WarningMsg" },
+    { "", 0x010101, "accent", "Accent", "Statement" },
+    { "", 0x020202, "changed", "Changed", "Changed" },
+    { "", 0x030303, "error", "Error", "ErrorMsg" },
+    { "", 0x040404, "frame", "Frame", "TabLine" },
+    { "", 0x050505, "information", "Information", "DiagnosticHint" },
+    { "Comment", 0x060606, "mutedText", "MutedText", "MiniStatuslineFileinfo" },
+    { "", 0x070707, "raised", "Raised", "Substitute" },
+    { "", 0x080808, "resting", "Resting", "PmenuSbar" },
+    { "", 0x090909, "selectedText", "SelectedText", "Cursor" },
+    { "Visual", 0x0a0a0a, "selection", "Selection", "MiniStatuslineModeVisual" },
+    { "", 0x0b0b0b, "success", "Success", "Added" },
+    { "", 0x0c0c0c, "text", "Text", "Normal" },
+    { "", 0x0d0d0d, "warning", "Warning", "WarningMsg" },
 });
 
 template <typename Predicate>
