@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Use when the user wants to triage a task/bug/idea into a well-formed GitHub issue for a future agent to implement. Discusses the task, investigates what needs doing and where, checks existing issues for duplicates (and warns) and related issues (and links them), classifies it — labelling investigation-only work `spike` — and creates a GitHub issue only after the user accepts. Trigger phrases include "triage", "triage this", "create an issue", "file an issue", "turn this into a task", "raise a ticket".
+description: Use when the user wants to triage a task/bug/idea into a well-formed GitHub issue for a future agent to implement. Discusses the task, investigates what needs doing and where, checks existing issues for duplicates (and warns) and for parents or blockers (and links them natively), classifies it — labelling investigation-only work `spike` — and creates a GitHub issue only after the user accepts. Also rewrites existing issues into the same format. Trigger phrases include "triage", "triage this", "create an issue", "file an issue", "turn this into a task", "raise a ticket", "rewrite this issue".
 ---
 
 # Triage
@@ -10,7 +10,9 @@ Turn a rough task, bug, or idea into a **well-formed GitHub issue** that a *diff
 ## Principles
 
 - **Discuss first, create last.** Never create issues before explicit user acceptance of the complete draft plan, including every parent, child, label, relationship, and dependency.
-- **Check for duplicates and related issues first.** Before drafting, search the repo's existing issues (open *and* closed). If the task duplicates an existing issue, say so and steer the user away from filing a redundant one. If related-but-distinct issues exist, link them via GitHub's native issue relationships.
+- **Check for duplicates, parents, and blockers first.** Before drafting, search the repo's existing issues (open *and*
+  closed). If the task duplicates an existing issue, say so and steer the user away from filing a redundant one. Link
+  parents and blockers natively (see **Relations**).
 - **Always rubber-duck the draft.** Every triage runs the rubber-duck agent over the drafted issue to catch flawed root causes, invariant violations, and weak tests *before* the user sees it.
 - **The issue is for another agent, at another time.** Write it as a self-contained task: enough context, file references, and acceptance criteria that an agent with zero conversation history can pick it up and implement it.
 - **Anchor to stable identifiers, not coordinates.** An issue is implemented at an unknown later time against a changed tree. Reference symbols, string literals, config keys, and search patterns — never line numbers, occurrence counts, or verbatim multi-line snapshots that the codebase will invalidate. A frozen inventory goes stale *and* misleads: the implementing agent trusts it as exhaustive and skips rediscovering occurrences added after the issue was filed. The issue points the way; the implementing agent re-discovers the exact scope.
@@ -59,7 +61,32 @@ Search duplicates and related issues for each proposed child; reuse suitable exi
 
 Every issue attached as a child, including under an existing parent or a nested tracking parent, needs the exact
 `sub-issue` label in addition to category and complexity labels **and** a native GitHub parent/sub-issue relationship.
-A parent gets `sub-issue` only if it is itself a child. Body references alone do not establish containment.
+A parent gets `sub-issue` only if it is itself a child.
+
+## Relations
+
+Express relations only through GitHub native links, never in an issue body:
+
+- Parent / sub-issue → GitHub sub-issues.
+- Blocked by / blocking (prerequisites, "start after #N", "depends on #N") → GitHub issue dependencies.
+- Every other relation (related to, see also, follow-up to) is dropped: no heading, footer, or comment.
+
+Bodies carry no relation headings (Related, Dependencies, Links), no footer meta line, and no "Prerequisite #N" or
+"Sub-issue #N" text. Keep an inline `#N` only where a sentence needs it to be understood, such as an out-of-scope
+boundary or behavior another issue owns; delete any sentence whose only purpose is to declare a relation.
+
+The helper's `-Parent` links a new child at creation (step 6); add every other link through the REST API, where `<id>`
+is the issue database id from `gh api repos/<owner>/<repo>/issues/<number> --jq .id`.
+
+```ps1
+gh api -X POST repos/<owner>/<repo>/issues/<parent-number>/sub_issues -F sub_issue_id=<child-id>
+gh api -X POST repos/<owner>/<repo>/issues/<dependent-number>/dependencies/blocked_by -F issue_id=<blocker-id>
+gh api repos/<owner>/<repo>/issues/<parent-number>/sub_issues --jq ".[].number"
+gh api repos/<owner>/<repo>/issues/<dependent-number>/dependencies/blocked_by --jq ".[].number"
+```
+
+A 422 is not success. After any failed add, re-read the matching list and continue only if it contains the exact edge;
+otherwise stop with an explicit failure and leave every issue body untouched.
 
 ## Input
 
@@ -127,7 +154,8 @@ Resolve `mergeProposals` under **Source complexity and decomposition** before ad
 
 ### 3. Check for duplicate and related issues
 
-Before classifying and drafting, search the repo's existing issues so the new issue isn't redundant and gets linked to anything relevant. Search **both open and closed** issues.
+Before classifying and drafting, search the repo's existing issues so the new issue isn't redundant and gets its native
+relations. Search **both open and closed** issues.
 Repeat this check for every proposed child, including recursively nested slices; carry suitable existing issues into the
 plan rather than drafting duplicate work.
 
@@ -141,11 +169,13 @@ plan rather than drafting duplicate work.
 
 2. Read the candidate issues (`gh issue view <n>`) closely enough to judge each one. Classify every genuine match as either:
    - **Duplicate** — same root cause / same requested change. The new issue would be redundant.
-   - **Related** — distinct task, but overlapping area, dependency, blocker, or follow-up. Worth linking, not merging.
+   - **Relation** — a distinct task that is the new issue's parent, blocks it, or is blocked by it. Any other overlap
+     (same area, see also, follow-up) is dropped (see **Relations**).
 
 3. **Handle duplicates.** If one or more open duplicates exist, **stop and inform the user** (via `ask_user`) with the issue number(s), title(s), and URL(s), and recommend *not* filing a new one — instead point them at the existing issue (add a comment/upvote there if they want). Only continue to draft a new issue if the user explicitly confirms it is meaningfully different. A closed issue covering the same thing is worth surfacing too (it may need reopening rather than a fresh issue).
 
-4. **Record related issues** for linking. Keep a list of `{number, title, url, relationship}` where `relationship` is a short reason (e.g. "blocked by", "follow-up to", "same subsystem"). These get linked from the drafted issue in step 5 using GitHub's native cross-reference relationships (`Related to #N`, `Blocked by #N`, `Part of #N`, `Follow-up to #N`), which surface in both issues' timelines.
+4. **Record relations** as `{number, title, relation}`, where `relation` is `parent`, `blocked by`, or `blocking`, for
+   native linking in step 6.
 
 ### 4. Classify the task
 
@@ -163,41 +193,82 @@ Assign **one or more categories** from the fixed set below (these map 1:1 to Git
 | `tech-debt`   | Paying down accumulated shortcuts               |
 | `spike`       | Investigation/exploration only — no code or docs changes (research, feasibility, root-cause analysis) |
 
-Pick the categories that genuinely apply (usually one primary, occasionally a secondary such as `bug` + `tech-debt`).
+Pick the categories that genuinely apply (one to three). The title prefix (step 5) sets the primary label: `ci`→`chore`,
+`feat`→`feature`, `fix`→`bug`, `perf`→`performance`, and any other prefix its same-named label. Never apply a `fix`
+label; it duplicates `bug`.
 
 **Complexity metadata.** Every issue needs exactly one of `complexity: low`, `complexity: medium`,
 or `complexity: high`, matching its rating under **Source complexity and decomposition**.
 These labels supplement categories and the optional `sub-issue` label.
 
-**Spike issues.** Apply `spike` when the task is purely investigation, exploration, or research whose deliverable is *findings* (a decision, root-cause analysis, feasibility answer, or proposed design) and that **does not itself change source code or documentation**. A spike has no other category label; if code/doc changes are expected, use the matching category instead. Replace **Testing requirements** with **Investigation deliverables**: the concrete questions to answer and the artifact/output to produce, such as a written findings summary or a follow-up issue. Its **Acceptance criteria** are about producing findings, not tests passing. Category exclusivity permits complexity and `sub-issue` labels.
+**Spike issues.** Apply `spike` when the task is purely investigation, exploration, or research whose deliverable is
+*findings* (a decision, root-cause analysis, feasibility answer, or proposed design) and that **does not itself change
+source code or documentation**. A spike has no other category label; if code/doc changes are expected, use the matching
+category instead. It has no testing requirements: its Deliverables and decision criteria name the artifact to produce
+(a written findings summary, a decision, or a follow-up issue) and are met by findings, not by tests passing. Category
+exclusivity permits complexity and `sub-issue` labels.
 
 ### 5. Draft the complete plan and present it for acceptance
 
 Apply the following draft/review/viewer workflow to **every** proposed parent and child, using separate drafts.
-For a tracking parent, state "Tracking only — not an implementation assignment", its scope/completion criteria, and the
-planned or reused children. Keep implementation approaches and their tests in the leaves.
+Keep implementation approaches and their tests in the leaves, not in tracking parents.
 Show provisional child names and dependencies before numbers exist; show numbers for reused issues and existing parents.
 
 1. Compose the issue **title** in Conventional Commit style: `<type>(scope): <short description>` (e.g., `fix(GridItem): cursor blink phase resets on nvim window event`). Use the component as the scope where it helps. For a spike, use `spike(scope): <question to answer>`.
-2. Compose the issue **body** with these sections (omit a section only if truly not applicable):
-   - **Summary** — one or two sentences.
-   - **Deliverable** — the leaf's outcome, named consumer/use, and completion demonstration from `deliverables`.
-   - **Source complexity** — actual rating, matching complexity label, and source-based rationale under
-     **Source complexity and decomposition**; include any approved merged scope and its recorded approval.
-   - **Context / Background** — why this matters; the reported symptom or motivation; the affected layer(s). **For a narrow bug**, embed the offending code as a fenced snippet (from the subagent's `codeSnippet`) with a `file:line` caption so the future agent sees exactly what code the task refers to. **For a feature/refactor/rename**, describe the *pattern* and the surfaces involved — do not paste a frozen multi-line snapshot or an occurrence count that the tree will invalidate.
-   - **Related issues** — if step 3 found related-but-distinct issues, list each one using a GitHub cross-reference keyword so the relationship is recorded natively in both issues' timelines: `Related to #N`, `Blocked by #N`, `Part of #N`, or `Follow-up to #N` (one per line, with the short reason). Omit this section if there are none. Do **not** list duplicates here — duplicates are resolved with the user in step 3, not linked from a new redundant issue.
-   - **Affected surfaces & components** — for a narrow bug, the specific `file` -> `symbol` -> reason sites. For a feature/refactor/rename, the **surfaces/categories** (from the subagent's `surfaces`) with **one representative entry point each** plus the **discovery command** that finds the rest (from `searchStrategy`). Prefix this section with a standing note to the implementing agent: *"This is a starting map, not an exhaustive inventory — re-run the discovery searches below and treat their output as authoritative; occurrences may have been added since this issue was filed."* Reference the "Layout" / "Where to extend" guidance in `AGENTS.md` where relevant.
-   - **Proposed approach** — the subagent's `approach`, plus root cause for bugs. Call out any invariant that must **not** break (paint-path purity, per-frame cost, no `msgpack::object` copies, render-thread affinity, well-bracketed nvim keycodes).
-   - **Acceptance criteria** — a checklist of concrete, verifiable outcomes. For a spike, these are about the findings being produced (questions answered, decision recorded, follow-up filed), not tests passing.
-   - **Testing requirements** — **required for any issue that changes code or docs.** Spell out the concrete test changes needed to add and/or validate the fix, so a future agent (or the user) can verify the change is done. Triaged issues are expected to include their tests as part of the fix — do **not** add a "tests only when explicitly requested" caveat here. **For a `spike` issue, replace this section with an _Investigation deliverables_ section** — a spike changes no code or docs, so it has no tests; instead list the concrete questions to answer and the artifact the spike must produce (a written findings summary, a decision, a follow-up implementation issue). For non-spike issues:
+   The prefix picks the body's heading set and its primary label (step 4).
+2. Compose the issue **body** as a short intro paragraph stating what changes and why (never a Summary heading), then
+   the title prefix's heading set as `##` headings, in order. Relations stay out of the body (see **Relations**).
+
+   | Type (title prefixes) | Headings, in order |
+   | --- | --- |
+   | Bug (`bug`, `fix`) | Current behavior · Root cause · Proposed fix · Acceptance and validation |
+   | Docs (`docs`) | Documentation gap · Proposed update · Review criteria |
+   | Feature (`feat`, `feature`) | Problem · Proposed solution · Acceptance and validation |
+   | Maintenance (`chore`, `ci`, `refactor`, `tech-debt`, `test`) | Current problem · Proposed change · Behavior to preserve (only when something must not change) · Validation |
+   | Performance (`perf`, `performance`) | Current performance · Proposed improvement · Measurement and success criteria |
+   | Spike (`spike`) | Questions to answer · Investigation scope · Deliverables and decision criteria |
+   | Tracking parent (has sub-issues, any prefix) | Outcome (first line: "Tracking only — not an implementation assignment.") · Done when · Decisions (optional; only rules that bind several children) |
+
+   Add Alternatives considered, Out of scope (what this task must not touch), or Risks to any type only when they carry
+   real content. A tracking parent never lists its children: they exist only as native sub-issues, ordered only by
+   blocked-by links between them.
+
+   Fill a leaf's headings from the investigation report:
+   - **First heading** (except spikes) — why this matters: the reported symptom or motivation and the affected
+     layer(s). For a feature/refactor/rename, describe the *pattern* and the surfaces involved — do not paste a frozen
+     multi-line snapshot or an occurrence count that the tree will invalidate.
+   - **Root cause** — the confirmed `rootCause`, with the offending code as a fenced snippet (from the subagent's
+     `codeSnippet`) under a `file:line` caption so the future agent sees exactly what code the task refers to.
+   - **Proposed section** — the subagent's `approach`; the leaf's outcome, named consumer/use, and completion
+     demonstration from `deliverables`; the source rating's rationale under **Source complexity and decomposition**,
+     including any approved merged scope and its recorded approval; and any invariant that must **not** break
+     (paint-path purity, per-frame cost, no `msgpack::object` copies, render-thread affinity, well-bracketed nvim
+     keycodes), under Behavior to preserve for maintenance. Then the affected surfaces: for a narrow bug, the specific
+     `file` -> `symbol` -> reason sites; for a feature/refactor/rename, the **surfaces/categories** (from the
+     subagent's `surfaces`) with **one representative entry point each** plus the **discovery command** that finds the
+     rest (from `searchStrategy`), prefixed with this standing note to the implementing agent: *"This is a starting
+     map, not an exhaustive inventory — re-run the discovery searches below and treat their output as authoritative;
+     occurrences may have been added since this issue was filed."* Reference the "Layout" / "Where to extend" guidance
+     in `AGENTS.md` where relevant.
+   - **Last heading** — a `- [ ]` checklist of concrete, verifiable outcomes, followed by the testing requirements.
+   - **Testing requirements** — **required for any issue that changes code or docs.** Spell out the concrete test
+     changes needed to add and/or validate the fix, so a future agent (or the user) can verify the change is done.
+     Triaged issues are expected to include their tests as part of the fix — do **not** add a "tests only when
+     explicitly requested" caveat here. Cover:
      - The exact test tier/target that maps to the changed source (Tier 1 `desktop/tests/unit/`, Tier 2 `desktop/tests/integration/`, or Tier 3 `desktop/tests/qml/`), and the test binary name where known (e.g., `test_input_handler`, `test_qml`).
      - **Existing tests that will break** and must be updated — name the test target and function, and say how. Reference test functions by name, not line number.
      - **New test cases** that add/validate the fix — proposed test function/method names and the specific behavior/assertion each covers. Include a concrete **regression test code snippet** (fenced) that the future agent can drop in. Use `QSignalSpy` for redraw assertions and `dumpAscii()` for grid snapshots per repo convention.
      - **Pin the fix, not incidental state.** Each new test's assertions must fail today (before the fix) and pass only once *this specific* change is made, and must target the fixed behavior narrowly — assert the exact grid/highlight/cursor/keycode value that changes, not a broad snapshot or unrelated surrounding state — via a **hard `QVERIFY`/`QCOMPARE`**, never a `qWarning` or soft pixel-band heuristic (which respond to kerning/sub-pixel changes and produce false positives).
      - The exact command to run from `desktop/` for validation, e.g. `ctest --preset release -R 'attach_and_render|resize|insert_and_quit'` for paint-path/redraw changes, `ctest --preset release -R test_input_handler` for `InputHandler`, `ctest --preset release -R test_qml` for QML. Note that the build must pass under `/W4 /permissive-` with warnings treated as bugs.
      - **Visual gate.** For paint-path / font / cursor / selection / highlight changes, require capturing the rendered window via `desktop/scripts/screenshot_dot.ps1` (or the `visual-validate-dot` skill) and inspecting it — a green ctest run alone is not proof.
-   - **Out of scope** — what this task must not touch.
-   - Add a footer line: `Categories: <comma-separated categories>`.
+
+   Write each fact once, with no filler, history, or narrative. Hard-wrap prose at 120 characters; leave tables and URLs
+   unwrapped. Prefer tables for comparisons (Today / After) and `- [ ]` checklists for acceptance and validation. Tag
+   every code fence with a language; PowerShell fences use `ps1`.
+
+   Add a Mermaid diagram only when it makes the change clearer than prose (data flow, before/after structure, state).
+   Use `flowchart LR`; explicit `classDef` with fill, stroke, and color; label lines of at most 24 characters, split
+   with `<br/>`; no `#` or `{}` inside labels; short subgraph titles; pipe edge labels.
 3. Create the git-ignored `tmp\` directory if needed. Write each title/body draft to its own `tmp\triage_issue_<guid>.md` for user editing.
    Keep the path for each issue; use that draft's path wherever `<draft-path>` appears below.
 4. **Validate every draft with the rubber-duck agent — always, no exceptions.** Before presenting the plan, launch the **rubber-duck** agent (via the Task tool) to review all draft paths. The prompt must include:
@@ -243,28 +314,44 @@ It splits and trims comma-separated label entries before validation. Conflicts f
 same-rating duplicates collapse to the canonical label.
 It creates native links using `gh issue create --parent`, for existing parents and nested children alike.
 For accepted reuse of an existing issue, ensure the label exists and apply
-`gh issue edit <child-number> --add-label sub-issue`. Read its native parent first; if it has none, attach it with
-`gh issue edit <parent-number> --add-sub-issue <child-number>`. Preserve existing parents; reuse work elsewhere
-by reference or a real dependency, rather than duplicating or reparenting it.
+`gh issue edit <child-number> --add-label sub-issue`. Read its native parent first
+(`gh api repos/<owner>/<repo>/issues/<child-number>/parent`); if it has none, attach it with the sub-issue call in
+**Relations**. Preserve existing parents; reuse work elsewhere through a real dependency, rather than duplicating or
+reparenting it.
 
 For accepted reuse/backfill, read current labels and ensure the accepted complexity label exists with `gh label create`
 only if missing. Add it with `gh issue edit <number> --add-label "<complexity-label>"` if absent.
 Remove only conflicting complexity labels with `--remove-label`. Preserve all other labels and relationships;
 never replace the full label list.
 
-Replace provisional references with the created issue numbers. Keep related-issue cross-references and actual blocked-by
-dependencies distinct from containment; body text alone is not a native parent or dependency link. For each accepted
-dependency, run `gh issue edit <dependent-number> --add-blocked-by <prerequisite-number>`.
+Replace provisional references with the created issue numbers. For each accepted dependency, including order between
+children, add the blocked-by link in **Relations**.
 If creation/linking fails, stop and inspect the resulting issue/relationship before retrying;
 never blindly rerun creation after a partial success.
 
 Read back labels with `gh issue view <number> --json labels`: require exactly one complexity label matching the
 accepted rating, alongside planned categories and, for children, `sub-issue`. Verify each child's native parent with
-`gh api repos/<owner>/<repo>/issues/<child-number>/parent` and accepted dependencies with
-`gh issue view <dependent-number> --json blockedBy`. Apply the same readback to reused/backfilled issues.
+`gh api repos/<owner>/<repo>/issues/<child-number>/parent` and accepted dependencies with the blocked-by list in
+**Relations**. Apply the same readback to reused/backfilled issues.
 Confirm the accepted hierarchy, coverage and dependencies; report all issue URLs and unresolved failures.
 
 ### 7. Cleanup
 
 1. Delete the draft files and any leftover body file.
 2. Show a short summary of all issue URLs, titles, assigned categories/labels, and verified relationships.
+
+## Rewriting an existing issue
+
+Rewrite the body into the step 5 shape for the issue's type; when the title has no prefix, infer the type from its
+labels and content and keep the title unchanged. Never lose information: every fact, decision, constraint, acceptance
+item, code block, path, command, and number must survive. Dropping relations other than parent/sub-issue and
+blocked-by is user-approved and is not a loss.
+
+1. Write the candidate body (no title line) to its own `tmp\triage_rewrite_<guid>.md`.
+2. Before publishing, launch a fresh agent with no prior context as an independent judge. Give it the original body, the
+   candidate, and the approved relation drops, and have it report every substantive fact, constraint, decision, or
+   criterion that is lost or changed. On any finding, revise the candidate and judge again; never publish over a
+   finding.
+3. After a clean judgment, open the candidate with mdview and get the user's acceptance.
+4. Make sure every parent or blocked-by relation in the original text has its native link, creating missing ones (see
+   **Relations**). Then publish with `gh issue edit <number> --body-file <candidate-path>` and delete the candidate.
