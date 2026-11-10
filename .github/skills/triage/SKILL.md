@@ -81,12 +81,13 @@ is the issue database id from `gh api repos/<owner>/<repo>/issues/<number> --jq 
 ```ps1
 gh api -X POST repos/<owner>/<repo>/issues/<parent-number>/sub_issues -F sub_issue_id=<child-id>
 gh api -X POST repos/<owner>/<repo>/issues/<dependent-number>/dependencies/blocked_by -F issue_id=<blocker-id>
-gh api repos/<owner>/<repo>/issues/<parent-number>/sub_issues --jq ".[].number"
-gh api repos/<owner>/<repo>/issues/<dependent-number>/dependencies/blocked_by --jq ".[].number"
+gh api --paginate repos/<owner>/<repo>/issues/<parent-number>/sub_issues --jq ".[].id"
+gh api --paginate repos/<owner>/<repo>/issues/<dependent-number>/dependencies/blocked_by --jq ".[].id"
 ```
 
-A 422 is not success. After any failed add, re-read the matching list and continue only if it contains the exact edge;
-otherwise stop with an explicit failure and leave every issue body untouched.
+A 422 is not success. After any failed add, re-read the full paginated list and continue only if it contains the exact
+edge, matched by database id, never by bare issue number; otherwise stop with an explicit failure and leave every issue
+body untouched.
 
 ## Input
 
@@ -331,8 +332,8 @@ never blindly rerun creation after a partial success.
 
 Read back labels with `gh issue view <number> --json labels`: require exactly one complexity label matching the
 accepted rating, alongside planned categories and, for children, `sub-issue`. Verify each child's native parent with
-`gh api repos/<owner>/<repo>/issues/<child-number>/parent` and accepted dependencies with the blocked-by list in
-**Relations**. Apply the same readback to reused/backfilled issues.
+`gh api repos/<owner>/<repo>/issues/<child-number>/parent --jq .id` (matching the parent's database id) and accepted
+dependencies with the blocked-by list in **Relations**. Apply the same readback to reused/backfilled issues.
 Confirm the accepted hierarchy, coverage and dependencies; report all issue URLs and unresolved failures.
 
 ### 7. Cleanup
