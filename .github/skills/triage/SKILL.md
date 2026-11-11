@@ -267,9 +267,21 @@ Show provisional child names and dependencies before numbers exist; show numbers
    unwrapped. Prefer tables for comparisons (Today / After) and `- [ ]` checklists for acceptance and validation. Tag
    every code fence with a language; PowerShell fences use `ps1`.
 
-   Add a Mermaid diagram only when it makes the change clearer than prose (data flow, before/after structure, state).
-   Use `flowchart LR`; explicit `classDef` with fill, stroke, and color; label lines of at most 24 characters, split
-   with `<br/>`; no `#` or `{}` inside labels; short subgraph titles; pipe edge labels.
+   Add a Mermaid diagram only when it makes the change clearer than prose. Choose the type by what the change alters:
+
+   | Change | Diagram |
+   |---|---|
+   | A local fix in one function | None; use a table or snippet |
+   | Several branches or decisions | `flowchart LR` |
+   | Order of calls across components | `sequenceDiagram` |
+   | States and transitions | `stateDiagram-v2` |
+   | Classes, interfaces, inheritance, or ownership | `classDiagram` |
+   | Data schema | `erDiagram` |
+   | Dependencies across modules | `flowchart LR` with one subgraph per module |
+
+   Label it Current or Proposed and highlight what changes; use one diagram unless the two differ in shape.
+   Use explicit `classDef` with fill, stroke, and color where supported. Keep labels short; no `#` or `{}` inside labels.
+   For flowcharts, limit label lines to 24 characters, split with `<br/>`; use short subgraph titles and pipe edge labels.
 3. Create the git-ignored `tmp\` directory if needed. Write each title/body draft to its own `tmp\triage_issue_<guid>.md` for user editing.
    Keep the path for each issue; use that draft's path wherever `<draft-path>` appears below.
 4. **Validate every draft with the rubber-duck agent — always, no exceptions.** Before presenting the plan, launch the **rubber-duck** agent (via the Task tool) to review all draft paths. The prompt must include:
