@@ -2,6 +2,7 @@ const path = require("node:path");
 
 const androidPaths = [
   ".github/workflows/android-ci.yml",
+  ".github/workflows/android-release.yml",
   "android",
   "common/icons/android",
   "common/icons/owl*",

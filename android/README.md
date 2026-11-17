@@ -144,9 +144,10 @@ Use GitHub's masked secret entry for the remaining credentials. Keep the origina
 
 ### Protected tag verification
 
-The [Android workflow](../.github/workflows/android-ci.yml) verifies stable Android release tags against `versionName`
-and requires their commit to be reachable from `main` before the signing job can request environment access.
-PRs and ordinary branch builds never receive signing secrets and build an unsigned release APK.
+The tag-only [Android release workflow](../.github/workflows/android-release.yml) reruns the Android CI checks,
+verifies stable Android release tags against `versionName`, and requires their commit to be reachable from `main`
+before the signing job can request environment access. PRs and ordinary branch builds never run it; they build an
+unsigned release APK without signing secrets.
 
 After approval, the job builds an optimized APK, runs the serializer check, and uses `apksigner` to require one signer
 with the configured fingerprint. It removes the temporary keystore and retains only `app-release.apk` in the workflow's
