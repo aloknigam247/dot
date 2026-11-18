@@ -51,7 +51,6 @@ android/
       MainActivity.kt
     src/test/java/com/dot/companion/AhpTranscriptTest.kt   # reducer fold + projection (pure JVM)
     src/debug/                        # debug-only cleartext network-security config
-  buildSrc/                           # signing inputs and release tag validation
 ```
 
 ## Prerequisites (headless — no Android Studio)
@@ -80,7 +79,6 @@ From `android/`:
 
 ```ps1
 .\gradlew.bat test           # JVM unit tests (reducer fold + transcript projection)
-.\gradlew.bat buildSrc:test buildSrc:ktlintCheck
 .\gradlew.bat assembleDebug  # -> app/build/outputs/apk/debug/app-debug.apk
 .\gradlew.bat assembleRelease
 ```
@@ -135,12 +133,10 @@ without printing it or writing an encoded copy:
 
 Use GitHub's masked secret entry for the remaining credentials. Keep the original offline; remove any provisioning copy.
 
-### Protected tag verification
+### Protected tag builds
 
-The tag-only [Android release workflow](../.github/workflows/android-release.yml) reruns the Android CI checks,
-verifies stable Android release tags against `versionName`, and requires their commit to be reachable from `main`
-before the signing job can request environment access. PRs and ordinary branch builds never run it; they build an
-unsigned release APK without signing secrets.
+The [Android release workflow](../.github/workflows/android-release.yml) signs only stable tags matching `versionName`
+on commits reachable from `main`. Tests run in ordinary Android CI, not on release tags.
 
 After approval, the job builds and signs the optimized APK, removes the temporary keystore, and retains only
 `app-release.apk` as a workflow artifact for **one day**. It does not publish a GitHub Release asset or App Bundle.

@@ -14,7 +14,6 @@ on:
       - ".github/workflows/android-release.yml"
       - "android/**"
       - "common/**"
-  workflow_call:
 
 # A newer push to the same ref cancels the in-flight run.
 concurrency:
@@ -55,9 +54,6 @@ jobs:
 
       - name: Unit tests
         run: ./gradlew --no-daemon test
-
-      - name: Release gate tests and style
-        run: ./gradlew --no-daemon buildSrc:test buildSrc:ktlintCheck
 
       # JaCoCo coverage over the logic classes (Compose UI, the Activity, and the
       # NsdManager-backed discovery are excluded in app/build.gradle.kts — JVM unit

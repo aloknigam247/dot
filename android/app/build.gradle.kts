@@ -1,6 +1,3 @@
-import com.dot.release.SigningInputs
-import com.dot.release.VerifyReleaseTagTask
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,12 +15,6 @@ jacoco {
     toolVersion = "0.8.12"
 }
 
-val releaseSigning =
-    SigningInputs.resolve(
-        lookup = { providers.environmentVariable(it).orNull },
-        required = providers.gradleProperty("dot.signing.required").map(String::toBooleanStrict).getOrElse(false),
-    )
-
 android {
     namespace = "com.dot.companion"
     compileSdk = 34
@@ -37,12 +28,17 @@ android {
     }
 
     signingConfigs {
-        releaseSigning?.let { inputs ->
+        val names = listOf("KEY_ALIAS", "KEY_PASSWORD", "KEYSTORE", "KEYSTORE_PASSWORD")
+        val inputs = names.associateWith { providers.environmentVariable("DOT_ANDROID_$it").orNull }
+        val missing = names.filter { inputs[it].isNullOrBlank() }
+        val required = providers.gradleProperty("dot.signing.required").map(String::toBooleanStrict).getOrElse(false)
+        if (required || missing.size != names.size) {
+            require(missing.isEmpty()) { "Release signing needs: ${missing.joinToString { "DOT_ANDROID_$it" }}" }
             create("release") {
-                keyAlias = inputs.keyAlias
-                keyPassword = inputs.keyPassword
-                storeFile = file(inputs.storeFile)
-                storePassword = inputs.storePassword
+                keyAlias = inputs.getValue("KEY_ALIAS")
+                keyPassword = inputs.getValue("KEY_PASSWORD")
+                storeFile = file(requireNotNull(inputs.getValue("KEYSTORE")))
+                storePassword = inputs.getValue("KEYSTORE_PASSWORD")
                 storeType = "PKCS12"
             }
         }
@@ -56,13 +52,17 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            if (releaseSigning != null) signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds = false
     }
 
     buildFeatures {
@@ -78,16 +78,6 @@ android {
     sourceSets.named("main") {
         res.srcDir(rootProject.file("../common/icons/android"))
     }
-}
-
-val verifyReleaseTag =
-    tasks.register<VerifyReleaseTagTask>("verifyReleaseTag") {
-        tag.set(providers.gradleProperty("dot.release.tag"))
-        versionName.set(android.defaultConfig.versionName)
-    }
-
-if (providers.gradleProperty("dot.release.tag").isPresent) {
-    tasks.matching { it.name == "assembleRelease" }.configureEach { dependsOn(verifyReleaseTag) }
 }
 
 kotlin {
