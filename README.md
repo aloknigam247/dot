@@ -49,6 +49,8 @@ Non-breaking documentation, chore, and refactor commits alone do not trigger a v
 Android's `versionName` follows its semantic version; `versionCode` increases once per new Android version. Desktop
 versions stay synchronized, and C++/Windows executable metadata is generated from CMake's project version.
 The version workflow pushes version commits and tags only; it does not publish binaries.
+See [Android release signing](android/README.md#release-signing) for optimized APK builds and protected-tag
+verification.
 
 Set the repository Actions secret `RELEASE_TOKEN` to a repository-scoped PAT with **Contents: read/write**. Its identity
 must be allowed to push directly to `main` and create tags. Checkout uses a read-only workflow token without persisting

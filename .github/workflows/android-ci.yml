@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-release.yml"
       - "android/**"
       - "common/**"
   push:
     branches: [main]
     paths:
       - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-release.yml"
       - "android/**"
       - "common/**"
 
@@ -78,3 +80,6 @@ jobs:
       # packaging failures that the JVM unit tests can't. This step does not publish the APK.
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug
+
+      - name: Assemble unsigned optimized APK
+        run: ./gradlew --no-daemon assembleRelease

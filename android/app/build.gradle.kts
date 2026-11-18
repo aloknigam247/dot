@@ -1,3 +1,5 @@
+import com.android.build.gradle.api.ApkVariantOutput
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -27,18 +29,42 @@ android {
         versionName = "1.2.0"
     }
 
+    signingConfigs {
+        val names = listOf("KEY_ALIAS", "KEY_PASSWORD", "KEYSTORE", "KEYSTORE_PASSWORD")
+        val inputs = names.associateWith { providers.environmentVariable("DOT_ANDROID_$it").orNull }
+        val missing = names.filter { inputs[it].isNullOrBlank() }
+        val required = providers.gradleProperty("dot.signing.required").map(String::toBooleanStrict).getOrElse(false)
+        if (required || missing.size != names.size) {
+            require(missing.isEmpty()) { "Release signing needs: ${missing.joinToString { "DOT_ANDROID_$it" }}" }
+            create("release") {
+                keyAlias = inputs.getValue("KEY_ALIAS")
+                keyPassword = inputs.getValue("KEY_PASSWORD")
+                storeFile = file(requireNotNull(inputs.getValue("KEYSTORE")))
+                storePassword = inputs.getValue("KEYSTORE_PASSWORD")
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         debug {
             enableUnitTestCoverage = true
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds = false
     }
 
     buildFeatures {
@@ -53,6 +79,12 @@ android {
 
     sourceSets.named("main") {
         res.srcDir(rootProject.file("../common/icons/android"))
+    }
+
+    applicationVariants.all {
+        outputs.withType<ApkVariantOutput>().all {
+            if (outputFileName == "app-release.apk") outputFileName = "dot.apk"
+        }
     }
 }
 
