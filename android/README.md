@@ -139,7 +139,7 @@ The [Android release workflow](../.github/workflows/android-release.yml) signs o
 on commits reachable from `main`. Tests run in ordinary Android CI, not on release tags.
 
 After approval, the job builds and signs the optimized APK, removes the temporary keystore, and retains only
-`app-release.apk` as a workflow artifact for **one day**. It does not publish a GitHub Release asset or App Bundle.
+`dot.apk` as a workflow artifact for **one day**. It does not publish a GitHub Release asset or App Bundle.
 
 ### Local signing
 
@@ -157,7 +157,7 @@ production key for routine development; use a disposable test key to exercise th
 .\gradlew.bat --no-daemon --no-configuration-cache assembleRelease -Pdot.signing.required=true
 ```
 
-The signed output is `app\build\outputs\apk\release\app-release.apk`. Missing or partial signing inputs fail when
+The signed output is `app\build\outputs\apk\release\dot.apk`. Missing or partial signing inputs fail when
 signing is required; partial inputs also fail ordinary builds. Clear the signing variables to return to unsigned builds.
 Do not enable Gradle configuration caching or verbose/debug logging for builds using a private signing key.
 

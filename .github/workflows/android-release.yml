@@ -95,6 +95,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ github.ref_name }}-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/release/dot.apk
           if-no-files-found: error
           retention-days: 1

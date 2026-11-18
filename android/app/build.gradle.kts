@@ -1,3 +1,5 @@
+import com.android.build.gradle.api.ApkVariantOutput
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -77,6 +79,12 @@ android {
 
     sourceSets.named("main") {
         res.srcDir(rootProject.file("../common/icons/android"))
+    }
+
+    applicationVariants.all {
+        outputs.withType<ApkVariantOutput>().all {
+            if (outputFileName == "app-release.apk") outputFileName = "dot.apk"
+        }
     }
 }
 
