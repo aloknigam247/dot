@@ -57,7 +57,7 @@ android/
 ## Prerequisites (headless — no Android Studio)
 
 - **JDK 17** — set `JAVA_HOME` to it.
-- **Android SDK** (cmdline-tools + `platforms;android-34` + `build-tools;35.0.0` + `platform-tools`)
+- **Android SDK** (`cmdline-tools;latest` + `platforms;android-34` + `build-tools;35.0.0` + `platform-tools`)
   — set `ANDROID_HOME`, or write `android/local.properties` with `sdk.dir=<path>`.
 - **Gradle** — not needed globally; use the committed `./gradlew` wrapper.
 
@@ -87,8 +87,8 @@ From `android/`:
 
 Without signing inputs, `assembleRelease` produces `app\build\outputs\apk\release\app-release-unsigned.apk`.
 Release builds use R8 and resource shrinking. Packaging also runs `verifyReleaseDexSerializers`: it resolves the
-required serializer inventory through R8's mapping, rejects removed classes from its usage report, and verifies
-those classes are defined in the APK's DEX files.
+required serializer inventory through R8's mapping, rejects removed classes from its usage report, and uses the SDK's
+`apkanalyzer` to verify those classes are defined in the APK's DEX files.
 The report is `app\build\reports\release\serializers.txt`; R8's reports are under `app\build\outputs\mapping\release`.
 This structural check does not replace the device/protocol smoke below.
 

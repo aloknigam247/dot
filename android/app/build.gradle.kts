@@ -114,6 +114,8 @@ androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
         val verifyDex =
             tasks.register<VerifyApkClassesTask>("verifyReleaseDexSerializers") {
+                val tool = if (System.getProperty("os.name").startsWith("Windows")) "apkanalyzer.bat" else "apkanalyzer"
+                apkAnalyzer.set(sdkComponents.sdkDirectory.map { it.file("cmdline-tools/latest/bin/$tool") })
                 apkDirectory.set(variant.artifacts.get(SingleArtifact.APK))
                 mappingFile.set(variant.artifacts.get(SingleArtifact.OBFUSCATION_MAPPING_FILE))
                 report.set(layout.buildDirectory.file("reports/release/serializers.txt"))

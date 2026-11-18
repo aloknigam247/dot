@@ -26,6 +26,13 @@ private fun singleApk(directory: File): File {
 
 /** Fails the build when R8 removed a required class or the packaged DEX does not define its mapped name. */
 abstract class VerifyApkClassesTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val apkAnalyzer: RegularFileProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val apkDirectory: DirectoryProperty
@@ -50,7 +57,20 @@ abstract class VerifyApkClassesTask : DefaultTask() {
         val mapping = r8ClassMapping(mappingFile.get().asFile.readText())
         val removed = r8RemovedClasses(usageFile.get().asFile.readText())
         val required = requiredClasses.get()
-        val missing = missingClasses(required, mapping, apkDexClassNames(apk), removed)
+        val output = ByteArrayOutputStream()
+        execOperations.exec {
+            commandLine(apkAnalyzer.get().asFile.absolutePath, "dex", "packages", "--defined-only", apk.absolutePath)
+            standardOutput = output
+        }
+        val classRow = Regex("""^C\s+d\s+\d+\s+\d+\s+\d+\s+(\S+)$""")
+        val defined =
+            output
+                .toString(Charsets.UTF_8)
+                .lineSequence()
+                .mapNotNull { classRow.matchEntire(it) }
+                .map { it.groupValues[1] }
+                .toSet()
+        val missing = missingClasses(required, mapping, defined, removed)
         if (missing.isNotEmpty()) {
             throw GradleException("${apk.name} is missing required classes:\n  ${missing.joinToString("\n  ")}")
         }
