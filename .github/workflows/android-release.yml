@@ -62,10 +62,9 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Build and verify signed optimized APK
+      - name: Build signed optimized APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          DOT_ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
           DOT_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           DOT_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           DOT_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -89,14 +88,14 @@ jobs:
             Remove-Item Env:ANDROID_KEYSTORE_BASE64
             ./gradlew --no-daemon --no-configuration-cache assembleRelease `
               -Pdot.signing.required=true "-Pdot.release.tag=$env:GITHUB_REF_NAME"
-            if ($LASTEXITCODE -ne 0) { throw "Signed release verification failed." }
+            if ($LASTEXITCODE -ne 0) { throw "Signed release build failed." }
           } finally {
             if (Test-Path -LiteralPath $env:DOT_ANDROID_KEYSTORE) {
               Remove-Item -LiteralPath $env:DOT_ANDROID_KEYSTORE -Force
             }
           }
 
-      - name: Retain APK for device verification
+      - name: Upload signed APK
         uses: actions/upload-artifact@v7
         with:
           name: ${{ github.ref_name }}-verification

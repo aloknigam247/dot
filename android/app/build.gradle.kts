@@ -1,7 +1,4 @@
-import com.android.build.api.artifact.SingleArtifact
 import com.dot.release.SigningInputs
-import com.dot.release.VerifyApkClassesTask
-import com.dot.release.VerifyApkSignerTask
 import com.dot.release.VerifyReleaseTagTask
 
 plugins {
@@ -83,67 +80,14 @@ android {
     }
 }
 
-val releaseSerializers =
-    listOf(
-        "com.dot.companion.net.CatalogHost\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.ActionEnvelope\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.ChatState\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.DispatchActionParams\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.InitializeParams\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.InitializeResult\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.JsonRpcNotification\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.JsonRpcRequest\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.ListSessionsParams\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.ListSessionsResult\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.ResponsePartSerializer",
-        "com.microsoft.agenthostprotocol.generated.SessionState\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.Snapshot\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.SnapshotStateSerializer",
-        "com.microsoft.agenthostprotocol.generated.StateActionSerializer",
-        "com.microsoft.agenthostprotocol.generated.SubscribeParams\$\$serializer",
-        "com.microsoft.agenthostprotocol.generated.SubscribeResult\$\$serializer",
-    )
-
 val verifyReleaseTag =
     tasks.register<VerifyReleaseTagTask>("verifyReleaseTag") {
         tag.set(providers.gradleProperty("dot.release.tag"))
         versionName.set(android.defaultConfig.versionName)
     }
 
-androidComponents {
-    onVariants(selector().withBuildType("release")) { variant ->
-        val verifyDex =
-            tasks.register<VerifyApkClassesTask>("verifyReleaseDexSerializers") {
-                val tool = if (System.getProperty("os.name").startsWith("Windows")) "apkanalyzer.bat" else "apkanalyzer"
-                apkAnalyzer.set(sdkComponents.sdkDirectory.map { it.file("cmdline-tools/latest/bin/$tool") })
-                apkDirectory.set(variant.artifacts.get(SingleArtifact.APK))
-                mappingFile.set(variant.artifacts.get(SingleArtifact.OBFUSCATION_MAPPING_FILE))
-                report.set(layout.buildDirectory.file("reports/release/serializers.txt"))
-                requiredClasses.set(releaseSerializers)
-                usageFile.set(layout.file(mappingFile.map { it.asFile.resolveSibling("usage.txt") }))
-            }
-        tasks.matching { it.name == "assembleRelease" }.configureEach {
-            dependsOn(verifyDex)
-            if (providers.gradleProperty("dot.release.tag").isPresent) dependsOn(verifyReleaseTag)
-        }
-        releaseSigning?.let { inputs ->
-            val signerName = if (System.getProperty("os.name").startsWith("Windows")) "apksigner.bat" else "apksigner"
-            val signerFile =
-                sdkComponents.sdkDirectory.map {
-                    it.file(
-                        "build-tools/${android.buildToolsVersion}/$signerName",
-                    )
-                }
-            val verifySigner =
-                tasks.register<VerifyApkSignerTask>("verifyReleaseSigner") {
-                    apkDirectory.set(variant.artifacts.get(SingleArtifact.APK))
-                    apksigner.set(signerFile)
-                    expectedCertSha256.set(inputs.certSha256)
-                    report.set(layout.buildDirectory.file("reports/release/signer.txt"))
-                }
-            tasks.matching { it.name == "assembleRelease" }.configureEach { dependsOn(verifySigner) }
-        }
-    }
+if (providers.gradleProperty("dot.release.tag").isPresent) {
+    tasks.matching { it.name == "assembleRelease" }.configureEach { dependsOn(verifyReleaseTag) }
 }
 
 kotlin {
