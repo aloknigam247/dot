@@ -1,6 +1,5 @@
 package com.dot.companion.net
 
-import android.util.Log
 import com.dot.companion.AhpTranscript
 import com.dot.companion.model.SessionInfo
 import com.dot.companion.model.UiMessage
@@ -71,8 +70,11 @@ import java.util.concurrent.atomic.AtomicLong
  * There is deliberately no automatic reconnect — the owner reconnects by discarding
  * this instance and creating a new one.
  */
-class AhpConnection(private val endpoint: String, private val client: OkHttpClient = defaultClient()) :
-    HostConnection {
+class AhpConnection(
+    private val endpoint: String,
+    private val logger: ChatLogger,
+    private val client: OkHttpClient = defaultClient(),
+) : HostConnection {
     private val _state = MutableStateFlow(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
@@ -180,7 +182,7 @@ class AhpConnection(private val endpoint: String, private val client: OkHttpClie
         try {
             dispatchFrame(text)
         } catch (e: Exception) {
-            Log.e(TAG, "dropped malformed frame: ${e.message}", e)
+            logger.error("dropped malformed frame: ${e.message}", e)
         }
     }
 
@@ -198,7 +200,7 @@ class AhpConnection(private val endpoint: String, private val client: OkHttpClie
         if (id != null && (obj.containsKey("result") || obj.containsKey("error"))) {
             val pending = synchronized(ioLock) { pending.remove(id) } ?: return
             if (obj.containsKey("error")) {
-                Log.e(TAG, "rpc error id=$id kind=${pending.kind} err=${obj["error"]}")
+                logger.error("rpc error id=$id kind=${pending.kind} err=${obj["error"]}", null)
                 onRpcError(pending)
                 return
             }
@@ -226,7 +228,7 @@ class AhpConnection(private val endpoint: String, private val client: OkHttpClie
                     try {
                         applyAction(Ahp.json.decodeFromJsonElement(ActionEnvelope.serializer(), params))
                     } catch (e: Exception) {
-                        Log.e(TAG, "dropped malformed action: ${e.message}", e)
+                        logger.error("dropped malformed action: ${e.message}", e)
                     }
                 }
             "root/sessionAdded" -> {
@@ -377,7 +379,6 @@ class AhpConnection(private val endpoint: String, private val client: OkHttpClie
         const val NORMAL_CLOSURE = 1000
         const val PING_INTERVAL_SECONDS = 15L
         const val ROOT_CHANNEL = "ahp-root://"
-        const val TAG = "AhpConn"
 
         /**
          * OkHttp keeps a WebSocket that lost its peer (host restart, sleep, NAT drop)

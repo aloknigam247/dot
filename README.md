@@ -23,7 +23,7 @@ The design is not a claim of native implementation parity.
 | Directory | Contents |
 | --- | --- |
 | `.github\` | GitHub workflows and agent integrations |
-| `android\` | Android application and Gradle build |
+| `android\` | Android application, shared JVM chat client, and Gradle build |
 | `common\` | Shared artwork, release tooling, and patch-coverage checker |
 | `desktop\` | C++/QML client, build configuration, tests, and desktop tooling |
 | `docs\` | Repository-wide design documentation |

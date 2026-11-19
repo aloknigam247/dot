@@ -55,9 +55,8 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon test
 
-      # JaCoCo coverage over the logic classes (Compose UI, the Activity, and the
-      # NsdManager-backed discovery are excluded in app/build.gradle.kts — JVM unit
-      # tests can't reach them without an emulator). jacocoCoverageFloor fails below
+      # JaCoCo coverage over the logic classes of app and chat_client (exclusions
+      # live in each module's build.gradle.kts). jacocoCoverageFloor fails below
       # the 98% line floor.
       - name: Coverage report + floor
         run: ./gradlew --no-daemon jacocoTestReport jacocoCoverageFloor
@@ -72,9 +71,13 @@ jobs:
         run: |
           $base = "${{ github.event.pull_request.base.sha }}"
           if (-not $base) { $base = "origin/main" }
-          $report = "android/app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"
-          & common/scripts/coverage_patch.ps1 -ReportPath $report -BaseRef $base `
-            -Format jacoco -DiffPath android/app/src/main
+          $diffPaths = @("android/app/src/main", "android/chat_client/src/main")
+          foreach ($module in "app", "chat_client") {
+            $report = "android/$module/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"
+            & common/scripts/coverage_patch.ps1 -ReportPath $report -BaseRef $base `
+              -Format jacoco -DiffPath $diffPaths -SourceRoot "android/$module/src/main/java"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       # assembleDebug is build verification: it catches manifest/resource/AAPT
       # packaging failures that the JVM unit tests can't. This step does not publish the APK.
