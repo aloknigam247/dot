@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/aloknigam247/dot/compare/android-v1.2.0...android-v1.3.0) (2026-11-19)
+
+### Added
+
+* **release:** build optimized signed android apk ([#242](https://github.com/aloknigam247/dot/issues/242)) ([10c3a0a](https://github.com/aloknigam247/dot/commit/10c3a0a42cb06c41e8636771ded122681a228dba)), closes [#208](https://github.com/aloknigam247/dot/issues/208)
+
 ## [1.2.0](https://github.com/aloknigam247/dot/compare/android-v1.1.1...android-v1.2.0) (2026-11-05)
 
 ### Added
