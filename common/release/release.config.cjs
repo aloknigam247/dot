@@ -34,16 +34,19 @@ const sharedPaths = [
   "scripts/set_version.cjs",
 ];
 const componentName = process.env.RELEASE_COMPONENT;
+const desktopPaths = [".", ...[...androidPaths, ...sharedPaths].map((entry) => `:(exclude)${entry}`)];
 const components = {
   android: {
     assets: ["android/CHANGELOG.md", "android/app/build.gradle.kts"],
     changelog: "android/CHANGELOG.md",
-    paths: [...androidPaths, ...sharedPaths],
+    otherPaths: desktopPaths,
+    paths: androidPaths,
   },
   dot: {
     assets: ["desktop/CHANGELOG.md", "desktop/CMakeLists.txt", "desktop/vcpkg.json"],
     changelog: "desktop/CHANGELOG.md",
-    paths: [".", ...androidPaths.map((entry) => `:(exclude)${entry}`)],
+    otherPaths: androidPaths,
+    paths: desktopPaths,
   },
 };
 
@@ -57,6 +60,7 @@ module.exports = {
   branches: ["main"],
   plugins: [
     [require.resolve("./component_commits.cjs"), {
+      otherPaths: component.otherPaths,
       paths: component.paths,
       preset: "conventionalcommits",
       presetConfig: {
@@ -67,6 +71,7 @@ module.exports = {
           { section: "Reverted", type: "revert" },
         ],
       },
+      sharedPaths,
     }],
     [require.resolve("@semantic-release/changelog"), {
       changelogFile: component.changelog,

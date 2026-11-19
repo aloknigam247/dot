@@ -138,8 +138,8 @@ Use GitHub's masked secret entry for the remaining credentials. Keep the origina
 The [Android release workflow](../.github/workflows/android-release.yml) signs only stable tags matching `versionName`
 on commits reachable from `main`. Tests run in ordinary Android CI, not on release tags.
 
-After approval, the job builds and signs the optimized APK, removes the temporary keystore, and retains only
-`dot.apk` as a workflow artifact for **one day**. It does not publish a GitHub Release asset or App Bundle.
+The workflow publishes the signed `dot.apk` on the matching `android-v*`
+[GitHub Release](https://github.com/aloknigam247/dot/releases).
 
 ### Local signing
 
@@ -163,7 +163,7 @@ Do not enable Gradle configuration caching or verbose/debug logging for builds u
 
 ### Install on a device
 
-Download and extract the protected-tag artifact before it expires. Set `$apk` to the APK's absolute path:
+Download `dot.apk` from the Android release and set `$apk` to its absolute path:
 
 ```ps1
 & "$env:ANDROID_HOME\platform-tools\adb.exe" install -r $apk
