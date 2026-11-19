@@ -38,9 +38,8 @@ The [version workflow](.github/workflows/semantic-release.yml) runs on its confi
 | Android | `android-vX.Y.Z` | `android/app/build.gradle.kts` | `android/CHANGELOG.md` |
 | Desktop dot | `dot-vX.Y.Z` | `desktop/CMakeLists.txt`, `desktop/vcpkg.json` | `desktop/CHANGELOG.md` |
 
-[Component ownership and shared inputs](common/release/release.config.cjs) determine which commits enter each component's
-version calculation and changelog. Only commits changing that component's files count; qualifying mixed or shared-input
-changes can release both. Commit scopes do not select the component.
+[Release path filters](common/release/release.config.cjs) count `android/` for Android, `desktop/` for dot, and
+`common/` for both. Files outside those directories, including this README, do not affect either version or changelog.
 
 semantic-release uses conventional commits: `feat:` bumps minor, `fix:` and `perf:` bump patch, and breaking changes
 (`!` or a `BREAKING CHANGE:` footer) bump major. Without an existing component tag, its first version is `1.0.0`.
