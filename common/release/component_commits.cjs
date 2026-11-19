@@ -1,13 +1,10 @@
 const { execFileSync } = require("node:child_process");
 
-function componentContext({ otherPaths, paths, sharedPaths }, context) {
-  const commits = context.commits.filter(({ hash }) => {
-    const touches = (pathspec) => execFileSync("git", [
-      "diff-tree", "--root", "--no-commit-id", "--name-only", "--no-renames", "-r", "-m", "-z",
-      hash, "--", ...pathspec,
-    ], { cwd: context.cwd, env: context.env }).length > 0;
-    return touches(paths) || (touches(sharedPaths) && !touches(otherPaths));
-  });
+function componentContext({ paths }, context) {
+  const commits = context.commits.filter(({ hash }) => execFileSync("git", [
+    "diff-tree", "--root", "--no-commit-id", "--name-only", "--no-renames", "-r", "-m", "-z",
+    hash, "--", ...paths,
+  ], { cwd: context.cwd, encoding: "utf8", env: context.env }).length > 0);
 
   return { ...context, commits };
 }

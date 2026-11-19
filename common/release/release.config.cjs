@@ -1,52 +1,16 @@
 const path = require("node:path");
 
-const androidPaths = [
-  ".github/workflows/android-ci.yml",
-  ".github/workflows/android-release.yml",
-  "android",
-  "common/icons/android",
-  "common/icons/owl*",
-  "common/icons/png/owl*",
-  "design/icons/android",
-  "design/icons/owl*",
-  "design/icons/png/owl*",
-];
-const sharedPaths = [
-  ".github/release",
-  ".github/workflows/semantic-release.yml",
-  ".gitignore",
-  "AGENTS.md",
-  "LICENSE",
-  "README.md",
-  "common/icons/.gitattributes",
-  "common/icons/README.md",
-  "common/icons/export_icons.py",
-  "common/icons/requirements.txt",
-  "common/release",
-  "common/scripts/coverage_patch.ps1",
-  "design/icons/.gitattributes",
-  "design/icons/README.md",
-  "design/icons/export_icons.py",
-  "design/icons/requirements.txt",
-  "docs/design/DESIGN.md",
-  "docs/design/implementation.md",
-  "scripts/coverage_patch.ps1",
-  "scripts/set_version.cjs",
-];
 const componentName = process.env.RELEASE_COMPONENT;
-const desktopPaths = [".", ...[...androidPaths, ...sharedPaths].map((entry) => `:(exclude)${entry}`)];
 const components = {
   android: {
     assets: ["android/CHANGELOG.md", "android/app/build.gradle.kts"],
     changelog: "android/CHANGELOG.md",
-    otherPaths: desktopPaths,
-    paths: androidPaths,
+    paths: ["android", "common"],
   },
   dot: {
     assets: ["desktop/CHANGELOG.md", "desktop/CMakeLists.txt", "desktop/vcpkg.json"],
     changelog: "desktop/CHANGELOG.md",
-    otherPaths: androidPaths,
-    paths: desktopPaths,
+    paths: ["common", "desktop"],
   },
 };
 
@@ -60,7 +24,6 @@ module.exports = {
   branches: ["main"],
   plugins: [
     [require.resolve("./component_commits.cjs"), {
-      otherPaths: component.otherPaths,
       paths: component.paths,
       preset: "conventionalcommits",
       presetConfig: {
@@ -71,7 +34,6 @@ module.exports = {
           { section: "Reverted", type: "revert" },
         ],
       },
-      sharedPaths,
     }],
     [require.resolve("@semantic-release/changelog"), {
       changelogFile: component.changelog,
