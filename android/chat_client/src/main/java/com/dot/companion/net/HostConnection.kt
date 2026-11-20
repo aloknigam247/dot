@@ -6,13 +6,14 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The surface [com.dot.companion.ChatClient] drives on a single host connection:
- * observable connection state, the folded transcript, and the discovered sessions,
- * plus the lifecycle and session-selection commands. [AhpConnection] is the live
- * implementation; the seam lets the coordinator be unit-tested against a fake without
- * a real socket.
+ * observable connection state, diagnostic progress, the folded transcript, and the
+ * discovered sessions, plus the lifecycle and session-selection commands. [AhpConnection]
+ * is the live implementation; the seam lets the coordinator be unit-tested against a fake
+ * without a real socket.
  */
 interface HostConnection {
     val state: StateFlow<ConnectionState>
+    val progress: StateFlow<HostProgress>
     val transcript: StateFlow<List<UiMessage>>
     val availableSessions: StateFlow<List<SessionInfo>>
 

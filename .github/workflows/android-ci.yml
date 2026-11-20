@@ -55,9 +55,9 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon test
 
-      # JaCoCo coverage over the logic classes of app and chat_client (exclusions
-      # live in each module's build.gradle.kts). jacocoCoverageFloor fails below
-      # the 98% line floor.
+      # JaCoCo coverage over the logic classes of app, chat_client, and chat_cli
+      # (exclusions live in each module's build.gradle.kts). jacocoCoverageFloor
+      # fails below the 98% line floor.
       - name: Coverage report + floor
         run: ./gradlew --no-daemon jacocoTestReport jacocoCoverageFloor
 
@@ -71,11 +71,16 @@ jobs:
         run: |
           $base = "${{ github.event.pull_request.base.sha }}"
           if (-not $base) { $base = "origin/main" }
-          $diffPaths = @("android/app/src/main", "android/chat_client/src/main")
-          foreach ($module in "app", "chat_client") {
+          $diffPaths = @("android/app/src/main", "android/chat_cli/src/main", "android/chat_client/src/main")
+          $sourceRoots = [ordered]@{
+            app = "android/app/src/main/java"
+            chat_cli = "android/chat_cli/src/main/kotlin"
+            chat_client = "android/chat_client/src/main/java"
+          }
+          foreach ($module in $sourceRoots.Keys) {
             $report = "android/$module/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"
             & common/scripts/coverage_patch.ps1 -ReportPath $report -BaseRef $base `
-              -Format jacoco -DiffPath $diffPaths -SourceRoot "android/$module/src/main/java"
+              -Format jacoco -DiffPath $diffPaths -SourceRoot $sourceRoots[$module]
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
@@ -86,3 +91,41 @@ jobs:
 
       - name: Assemble unsigned optimized APK
         run: ./gradlew --no-daemon assembleRelease
+
+  chat-cli-native:
+    name: chat-cli-native
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # graalvm.properties pins the archive URL and SHA-256; ensure_graalvm.ps1
+      # re-verifies the cached archive before use.
+      - name: Cache GraalVM
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\dot\graalvm
+          key: graalvm-${{ runner.os }}-${{ hashFiles('android/graalvm.properties') }}
+
+      - name: Native build + smoke
+        run: ./scripts/build_chat_cli.ps1
+
+      - name: Upload native reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-cli-native-reports
+          path: |
+            android/chat_cli/build/reports/native
+            android/chat_cli/build/reports/tests/nativeSmokeTest
+          if-no-files-found: ignore

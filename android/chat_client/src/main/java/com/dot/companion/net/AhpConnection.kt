@@ -37,7 +37,10 @@ import com.microsoft.agenthostprotocol.sessionReducer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -69,14 +72,20 @@ import java.util.concurrent.atomic.AtomicLong
  * and the [StateFlow]s are read off-thread; those are `@Volatile` / thread-safe.
  * There is deliberately no automatic reconnect — the owner reconnects by discarding
  * this instance and creating a new one.
+ *
+ * [progress] reports diagnostic stages without changing [state]'s socket-level meaning.
+ * A connection created without a [client] owns its default client and releases it on [close].
  */
-class AhpConnection(
-    private val endpoint: String,
-    private val logger: ChatLogger,
-    private val client: OkHttpClient = defaultClient(),
-) : HostConnection {
+class AhpConnection(private val endpoint: String, private val logger: ChatLogger, client: OkHttpClient? = null) :
+    HostConnection {
+    private val httpClient = client ?: defaultClient()
+    private val ownsClient = client == null
+
     private val _state = MutableStateFlow(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
+
+    private val _progress = MutableStateFlow(HostProgress())
+    override val progress: StateFlow<HostProgress> = _progress.asStateFlow()
 
     private val _transcript = MutableStateFlow<List<UiMessage>>(emptyList())
     override val transcript: StateFlow<List<UiMessage>> = _transcript.asStateFlow()
@@ -93,6 +102,13 @@ class AhpConnection(
     private val pending = HashMap<Long, Pending>()
     private val ioLock = Any()
 
+    // Subscriptions issued since selection that must answer before the chat is ready; guarded by ioLock.
+    private val awaitingReady = HashSet<String>()
+    private var readyTracking = false
+
+    @Volatile
+    private var closed = false
+
     private val nextId = AtomicLong(1)
     private val clientSeq = AtomicLong(1)
     private val clientId = UUID.randomUUID().toString()
@@ -103,21 +119,32 @@ class AhpConnection(
     @Volatile
     private var webSocket: WebSocket? = null
 
-    private enum class PendingKind { Initialize, ListSessions, Subscribe }
+    private enum class PendingKind(val operation: String) {
+        Initialize("initialize"),
+        ListSessions("listSessions"),
+        Subscribe("subscribe"),
+    }
 
     private data class Pending(val kind: PendingKind, val channel: String? = null)
 
     /** Opens the socket. Callbacks drive the rest of the lifecycle. */
     override fun start() {
         _state.value = ConnectionState.Connecting
-        webSocket = client.newWebSocket(requestFor(endpoint), Listener())
+        _progress.value = HostProgress(ProgressStage.Connecting)
+        webSocket = httpClient.newWebSocket(requestFor(endpoint), Listener())
     }
 
-    /** Releases the socket; the mirror is discarded with this instance. */
+    /** Releases the socket and any owned client; the mirror is discarded with this instance. */
     override fun close() {
+        closed = true
         webSocket?.cancel()
         webSocket = null
         _state.value = ConnectionState.Disconnected
+        _progress.update { if (it.stage == ProgressStage.Failed) it else it.copy(stage = ProgressStage.Closed) }
+        if (ownsClient) {
+            httpClient.dispatcher.executorService.shutdown()
+            httpClient.connectionPool.evictAll()
+        }
     }
 
     /**
@@ -155,26 +182,64 @@ class AhpConnection(
     override fun selectSession(resource: String) {
         if (_selectedSession.value == resource) return
         _selectedSession.value = resource
-        subscribeChannel(resource)
+        synchronized(ioLock) {
+            readyTracking = true
+            pending.values.filter { it.kind == PendingKind.Subscribe }.mapNotNullTo(awaitingReady) { it.channel }
+            _progress.update { if (it.stage in SELECTABLE) it.copy(stage = ProgressStage.Subscribing) else it }
+            subscribeChannel(resource)
+        }
     }
 
     private inner class Listener : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (closed) {
+                webSocket.cancel()
+                return
+            }
             _state.value = ConnectionState.Connected
+            advance(ProgressStage.Initializing, ProgressStage.Connecting)
             sendInitialize()
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            handleFrame(text)
+            if (!closed) handleFrame(text)
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
             webSocket.close(NORMAL_CLOSURE, null)
             _state.value = ConnectionState.Disconnected
+            if (!closed) fail("websocket", "closed by peer (code $code)")
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             _state.value = ConnectionState.Disconnected
+            if (!closed) fail("websocket", Redaction.failure(t) + (response?.let { " (HTTP ${it.code})" } ?: ""))
+        }
+    }
+
+    private fun advance(to: ProgressStage, from: ProgressStage) {
+        _progress.update { if (it.stage == from) it.copy(stage = to) else it }
+    }
+
+    /** Records a terminal failure; the first failure wins and a closed connection stays closed. */
+    private fun fail(operation: String, summary: String) {
+        _progress.update {
+            if (it.stage == ProgressStage.Failed || it.stage == ProgressStage.Closed) {
+                it
+            } else {
+                HostProgress(ProgressStage.Failed, it.stage, Diagnostic(operation, summary))
+            }
+        }
+    }
+
+    /** Attaches a non-fatal diagnostic without changing the stage. */
+    private fun note(operation: String, summary: String) {
+        _progress.update {
+            if (it.stage == ProgressStage.Failed || it.stage == ProgressStage.Closed) {
+                it
+            } else {
+                it.copy(diagnostic = Diagnostic(operation, summary))
+            }
         }
     }
 
@@ -183,14 +248,41 @@ class AhpConnection(
             dispatchFrame(text)
         } catch (e: Exception) {
             logger.error("dropped malformed frame: ${e.message}", e)
+            note("frame", "dropped malformed frame (${Redaction.failure(e)})")
         }
     }
 
     /** Fails initialize/listSessions permanently; frees a subscribe channel so it can be retried. */
-    private fun onRpcError(pending: Pending) {
+    private fun onRpcError(pending: Pending, code: Long?) {
+        val summary = "rpc error ${code ?: "without code"}"
         when (pending.kind) {
-            PendingKind.Initialize, PendingKind.ListSessions -> close()
-            PendingKind.Subscribe -> pending.channel?.let { synchronized(ioLock) { subscribedChannels.remove(it) } }
+            PendingKind.Initialize, PendingKind.ListSessions -> {
+                fail(pending.kind.operation, summary)
+                close()
+            }
+            PendingKind.Subscribe ->
+                pending.channel?.let { channel ->
+                    val required =
+                        synchronized(ioLock) {
+                            subscribedChannels.remove(channel)
+                            awaitingReady.remove(channel)
+                        }
+                    if (required) fail(pending.kind.operation, summary)
+                }
+        }
+    }
+
+    /** Marks the chat ready once every subscription required by the selection answered with a target chat. */
+    private fun subscriptionSettled(channel: String?) {
+        val hasTarget = outboundChatUri != null
+        synchronized(ioLock) {
+            if (channel == null || !awaitingReady.remove(channel) || awaitingReady.isNotEmpty()) return
+            if (hasTarget) readyTracking = false
+        }
+        if (hasTarget) {
+            advance(ProgressStage.ChatReady, ProgressStage.Subscribing)
+        } else {
+            note("subscribe", "selected session has no chat")
         }
     }
 
@@ -201,7 +293,7 @@ class AhpConnection(
             val pending = synchronized(ioLock) { pending.remove(id) } ?: return
             if (obj.containsKey("error")) {
                 logger.error("rpc error id=$id kind=${pending.kind} err=${obj["error"]}", null)
-                onRpcError(pending)
+                onRpcError(pending, ((obj["error"] as? JsonObject)?.get("code") as? JsonPrimitive)?.longOrNull)
                 return
             }
             val result = obj["result"] ?: return
@@ -209,15 +301,18 @@ class AhpConnection(
                 PendingKind.Initialize -> {
                     val init = Ahp.json.decodeFromJsonElement(InitializeResult.serializer(), result)
                     init.snapshots.forEach(::applySnapshot)
+                    advance(ProgressStage.Listing, ProgressStage.Initializing)
                     sendListSessions()
                 }
                 PendingKind.ListSessions -> {
                     val list = Ahp.json.decodeFromJsonElement(ListSessionsResult.serializer(), result)
                     publishSessions(list.items.map { SessionInfo(it.resource, it.title) })
+                    advance(ProgressStage.CatalogReady, ProgressStage.Listing)
                 }
                 PendingKind.Subscribe -> {
                     val sub = Ahp.json.decodeFromJsonElement(SubscribeResult.serializer(), result)
                     sub.snapshot?.let(::applySnapshot)
+                    subscriptionSettled(pending.channel)
                 }
             }
             return
@@ -229,6 +324,7 @@ class AhpConnection(
                         applyAction(Ahp.json.decodeFromJsonElement(ActionEnvelope.serializer(), params))
                     } catch (e: Exception) {
                         logger.error("dropped malformed action: ${e.message}", e)
+                        note("action", "dropped malformed action (${Redaction.failure(e)})")
                     }
                 }
             "root/sessionAdded" -> {
@@ -349,6 +445,7 @@ class AhpConnection(
         val id: Long
         synchronized(ioLock) {
             if (!subscribedChannels.add(channel)) return
+            if (readyTracking) awaitingReady.add(channel)
             id = nextId.getAndIncrement()
             pending[id] = Pending(PendingKind.Subscribe, channel)
         }
@@ -375,10 +472,18 @@ class AhpConnection(
         return Request.Builder().url(url).build()
     }
 
-    private companion object {
-        const val NORMAL_CLOSURE = 1000
-        const val PING_INTERVAL_SECONDS = 15L
-        const val ROOT_CHANNEL = "ahp-root://"
+    companion object {
+        private const val NORMAL_CLOSURE = 1000
+        private const val PING_INTERVAL_SECONDS = 15L
+        private const val ROOT_CHANNEL = "ahp-root://"
+        private val SELECTABLE =
+            setOf(
+                ProgressStage.Connecting,
+                ProgressStage.Initializing,
+                ProgressStage.Listing,
+                ProgressStage.CatalogReady,
+                ProgressStage.ChatReady,
+            )
 
         /**
          * OkHttp keeps a WebSocket that lost its peer (host restart, sleep, NAT drop)

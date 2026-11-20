@@ -3,9 +3,16 @@ package com.dot.companion
 import com.dot.companion.model.SessionInfo
 import com.dot.companion.model.UiMessage
 import com.dot.companion.net.AhpConnection
+import com.dot.companion.net.CatalogException
 import com.dot.companion.net.CatalogHost
 import com.dot.companion.net.ConnectionState
+import com.dot.companion.net.Diagnostic
+import com.dot.companion.net.DiscoveryProgress
+import com.dot.companion.net.DiscoveryStage
 import com.dot.companion.net.HostConnection
+import com.dot.companion.net.HostProgress
+import com.dot.companion.net.HostStatus
+import com.dot.companion.net.Redaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -27,7 +34,8 @@ import kotlinx.coroutines.launch
  * duplicate history. Only the selected session's connection feeds the transcript.
  *
  * Public methods and [scope] must share a single serial dispatcher. [close] cancels
- * this client's jobs without cancelling the caller-owned scope.
+ * this client's jobs without cancelling the caller-owned scope. [discovery] and
+ * [hostProgress] expose diagnostics without changing [connectionState]'s meaning.
  */
 class ChatClient(
     private val scope: CoroutineScope,
@@ -49,7 +57,15 @@ class ChatClient(
     private val _selectedSession = MutableStateFlow<String?>(null)
     val selectedSession: StateFlow<String?> = _selectedSession.asStateFlow()
 
+    private val _discovery = MutableStateFlow(DiscoveryProgress())
+    val discovery: StateFlow<DiscoveryProgress> = _discovery.asStateFlow()
+
+    private val _hostProgress = MutableStateFlow<List<HostStatus>>(emptyList())
+    val hostProgress: StateFlow<List<HostStatus>> = _hostProgress.asStateFlow()
+
     private val connections = LinkedHashMap<String, HostConnection>()
+    private val hostLabels = LinkedHashMap<String, String>()
+    private val hostProgressById = LinkedHashMap<String, HostProgress>()
     private val hostSessions = LinkedHashMap<String, List<SessionInfo>>()
     private val hostStates = LinkedHashMap<String, ConnectionState>()
     private val jobs = mutableListOf<Job>()
@@ -73,6 +89,8 @@ class ChatClient(
         _sessions.value = emptyList()
         _selectedSession.value = null
         _connectionState.value = ConnectionState.Connecting
+        _discovery.value = DiscoveryProgress(DiscoveryStage.Fetching)
+        _hostProgress.value = emptyList()
         val gen = ++generation
 
         connectJob =
@@ -83,13 +101,22 @@ class ChatClient(
                     } catch (cancel: CancellationException) {
                         throw cancel
                     } catch (failure: Exception) {
-                        if (gen == generation) openConnection(id = target, label = "", endpoint = target)
+                        if (gen == generation) {
+                            _discovery.value =
+                                DiscoveryProgress(
+                                    DiscoveryStage.DirectFallback,
+                                    diagnostic = catalogDiagnostic(failure),
+                                )
+                            openConnection(id = target, label = "", endpoint = target)
+                        }
                         return@launch
                     }
                 if (gen != generation) return@launch
                 if (hosts.isEmpty()) {
+                    _discovery.value = DiscoveryProgress(DiscoveryStage.Empty)
                     _connectionState.value = ConnectionState.Disconnected
                 } else {
+                    _discovery.value = DiscoveryProgress(DiscoveryStage.Catalogue, hostCount = hosts.size)
                     hosts.forEach { host ->
                         openConnection(
                             id = host.id,
@@ -122,8 +149,27 @@ class ChatClient(
     }
 
     fun send(text: String) {
-        if (text.isBlank()) return
-        active?.send(text.trim())
+        enqueue(text)
+    }
+
+    /**
+     * Queues [text] as a new turn on the selected session's default chat. Returns true only when the
+     * socket accepted the frame for sending; it does not mean the host received or accepted the turn.
+     */
+    fun enqueue(text: String): Boolean {
+        if (text.isBlank()) return false
+        return active?.send(text.trim()) ?: false
+    }
+
+    /** Drops every connection and resets the published state; the endpoint is kept for a later [connect]. */
+    fun disconnect() {
+        teardown()
+        _messages.value = emptyList()
+        _sessions.value = emptyList()
+        _selectedSession.value = null
+        _connectionState.value = ConnectionState.Disconnected
+        _discovery.value = DiscoveryProgress()
+        _hostProgress.value = emptyList()
     }
 
     fun close() {
@@ -133,6 +179,8 @@ class ChatClient(
     private fun openConnection(id: String, label: String, endpoint: String) {
         val conn = connectionFactory(endpoint)
         connections[id] = conn
+        hostLabels[id] = label
+        hostProgressById[id] = conn.progress.value
         hostStates[id] = ConnectionState.Connecting
         jobs +=
             scope.launch {
@@ -146,6 +194,13 @@ class ChatClient(
                 conn.state.collect { state ->
                     hostStates[id] = state
                     recomputeState()
+                }
+            }
+        jobs +=
+            scope.launch {
+                conn.progress.collect { progress ->
+                    hostProgressById[id] = progress
+                    recomputeHostProgress()
                 }
             }
         conn.start()
@@ -166,7 +221,21 @@ class ChatClient(
         _sessions.value = connections.keys.flatMap { hostSessions[it].orEmpty() }
     }
 
+    private fun recomputeHostProgress() {
+        _hostProgress.value =
+            connections.keys.map { HostStatus(it, hostLabels[it].orEmpty(), hostProgressById[it] ?: HostProgress()) }
+    }
+
+    private fun catalogDiagnostic(failure: Exception): Diagnostic =
+        if (failure is CatalogException) {
+            Diagnostic(failure.operation, failure.summary)
+        } else {
+            Diagnostic("GET /hosts", Redaction.failure(failure))
+        }
+
+    /** Cancels owned work and closes every connection; the generation bump makes in-flight discovery stale. */
     private fun teardown() {
+        generation++
         connectJob?.cancel()
         connectJob = null
         transcriptJob?.cancel()
@@ -175,6 +244,8 @@ class ChatClient(
         jobs.clear()
         connections.values.forEach { it.close() }
         connections.clear()
+        hostLabels.clear()
+        hostProgressById.clear()
         hostSessions.clear()
         hostStates.clear()
         active = null

@@ -1,6 +1,7 @@
 // Top-level build file. Plugin versions are pinned here and applied per-module.
 plugins {
     id("com.android.application") version "8.13.2" apply false
+    id("org.graalvm.buildtools.native") version "1.1.19" apply false
     id("org.jetbrains.kotlin.android") version "2.3.21" apply false
     id("org.jetbrains.kotlin.jvm") version "2.3.21" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.3.21" apply false

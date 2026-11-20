@@ -55,6 +55,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -165,26 +166,93 @@ class AhpConnectionTest {
         val rpc = nextLog()
         assertTrue(rpc.first, rpc.first.startsWith("rpc error id=${subscribe.id()} kind=Subscribe"))
         assertNull(rpc.second)
+        val failed = await(conn.progress) { it.stage == ProgressStage.Failed }
+        assertEquals(ProgressStage.Subscribing, failed.failedDuring)
+        assertEquals(Diagnostic("subscribe", "rpc error -32000"), failed.diagnostic)
+    }
+
+    @Test
+    fun `empty session list is ready only after its reply`() {
+        conn.start()
+        val initialize = nextFrame()
+        await(conn.progress) { it.stage == ProgressStage.Initializing }
+        assertEquals(ConnectionState.Connected, conn.state.value)
+        assertNull(frames.poll(100, TimeUnit.MILLISECONDS))
+        respond(initialize, InitializeResult.serializer(), initialized())
+        val list = nextFrame()
+        assertEquals(ProgressStage.Listing, conn.progress.value.stage)
+        respond(list, ListSessionsResult.serializer(), ListSessionsResult(items = emptyList()))
+        await(conn.progress) { it.stage == ProgressStage.CatalogReady }
+        assertTrue(conn.availableSessions.value.isEmpty())
+        assertNull(frames.poll(100, TimeUnit.MILLISECONDS))
+    }
+
+    @Test
+    fun `initialize error retains operation and interrupted stage after close`() {
+        conn.start()
+        val request = nextFrame()
+        peer().send(
+            buildJsonObject {
+                put("id", request.id())
+                put(
+                    "error",
+                    buildJsonObject {
+                        put("code", -32001)
+                        put("message", "secret-token")
+                    },
+                )
+            }.toString(),
+        )
+        val failed = await(conn.progress) { it.stage == ProgressStage.Failed }
+        assertEquals(ProgressStage.Initializing, failed.failedDuring)
+        assertEquals(Diagnostic("initialize", "rpc error -32001"), failed.diagnostic)
+        await(conn.state) { it == ConnectionState.Disconnected }
+        conn.close()
+        assertEquals(failed, conn.progress.value)
+        assertNull(frames.poll(100, TimeUnit.MILLISECONDS))
+    }
+
+    @Test
+    fun `peer close and malformed payload diagnostics do not expose secrets`() {
+        handshake()
+        peer().send("secret-token not JSON")
+        val malformed = await(conn.progress) { it.diagnostic?.operation == "frame" }
+        assertEquals(ProgressStage.ChatReady, malformed.stage)
+        assertFalse(malformed.toString().contains("secret-token"))
+        peer().send(notification("action", buildJsonObject { put("secret", "token") }))
+        val action = await(conn.progress) { it.diagnostic?.operation == "action" }
+        assertEquals(ProgressStage.ChatReady, action.stage)
+        assertFalse(action.toString().contains("token"))
+        peer().close(1000, "secret-token")
+        val closed = await(conn.progress) { it.stage == ProgressStage.Failed }
+        assertEquals(ProgressStage.ChatReady, closed.failedDuring)
+        assertEquals(Diagnostic("websocket", "closed by peer (code 1000)"), closed.diagnostic)
+        assertEquals("IOException", Redaction.failure(IOException("Authorization: secret-token")))
+        assertEquals("wss://host/chat?token=***", Redaction.endpoint("wss://user:secret@host/chat?token=value#secret"))
+    }
+
+    @Test
+    fun `session with no outbound chat never becomes chat ready`() {
+        handshake(emptyChats = true)
+        val progress = await(conn.progress) { it.diagnostic?.summary == "selected session has no chat" }
+        assertEquals(ProgressStage.Subscribing, progress.stage)
+        assertFalse(conn.send("not ready"))
     }
 
     /** Runs initialize, listSessions, session selection, and the session's chat subscriptions. */
-    private fun handshake() {
+    private fun handshake(emptyChats: Boolean = false) {
         conn.start()
 
         val initialize = nextFrame()
         assertEquals("initialize", initialize.method())
         await(conn.state) { it == ConnectionState.Connected }
-        val init =
-            InitializeResult(
-                protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.first(),
-                serverSeq = 0,
-                serverInfo = Implementation(name = "peer", version = "1"),
-                snapshots = emptyList(),
-            )
-        respond(initialize, InitializeResult.serializer(), init)
+        await(conn.progress) { it.stage == ProgressStage.Initializing }
+        assertNull(frames.poll(100, TimeUnit.MILLISECONDS))
+        respond(initialize, InitializeResult.serializer(), initialized())
 
         val list = nextFrame()
         assertEquals("listSessions", list.method())
+        assertEquals(ProgressStage.Listing, conn.progress.value.stage)
         val summary =
             SessionSummary(
                 resource = SESSION,
@@ -196,11 +264,13 @@ class AhpConnectionTest {
             )
         respond(list, ListSessionsResult.serializer(), ListSessionsResult(items = listOf(summary)))
         await(conn.availableSessions) { it == listOf(SessionInfo(SESSION, "S1")) }
+        await(conn.progress) { it.stage == ProgressStage.CatalogReady }
         assertFalse(conn.send("early"))
 
         conn.selectSession(SESSION)
         val session = nextFrame()
         assertSubscribe(session, SESSION)
+        assertEquals(ProgressStage.Subscribing, conn.progress.value.stage)
         val state =
             SessionState(
                 provider = "copilot",
@@ -208,8 +278,8 @@ class AhpConnectionTest {
                 status = SessionStatus.IDLE,
                 lifecycle = SessionLifecycle.READY,
                 activeClients = emptyList(),
-                chats = listOf(CHAT_1, CHAT_2).map(::chatSummary),
-                defaultChat = CHAT_2,
+                chats = if (emptyChats) emptyList() else listOf(CHAT_1, CHAT_2).map(::chatSummary),
+                defaultChat = if (emptyChats) null else CHAT_2,
             )
         respond(
             session,
@@ -217,13 +287,24 @@ class AhpConnectionTest {
             SubscribeResult(Snapshot(SESSION, SnapshotState.Session(state), 0)),
         )
 
+        if (emptyChats) return
         for (chat in listOf(CHAT_1, CHAT_2)) {
             val subscribe = nextFrame()
             assertSubscribe(subscribe, chat)
+            assertEquals(ProgressStage.Subscribing, conn.progress.value.stage)
             val snapshot = Snapshot(chat, SnapshotState.Chat(chatState(chat)), 0)
             respond(subscribe, SubscribeResult.serializer(), SubscribeResult(snapshot))
         }
+        await(conn.progress) { it.stage == ProgressStage.ChatReady }
     }
+
+    private fun initialized(): InitializeResult =
+        InitializeResult(
+            protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.first(),
+            serverSeq = 0,
+            serverInfo = Implementation(name = "peer", version = "1"),
+            snapshots = emptyList(),
+        )
 
     private fun action(action: StateAction) {
         val envelope = ActionEnvelope(channel = CHAT_2, action = action, serverSeq = ++serverSeq)
