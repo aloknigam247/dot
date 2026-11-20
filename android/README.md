@@ -31,13 +31,24 @@ merges all of their sessions into one picker.
 The wire types, reducers, and JSON-RPC helpers come from the official Kotlin client
 (`com.microsoft.agenthostprotocol:agent-host-protocol`). The Android-free `chat_client` JVM module supplies the
 OkHttp WebSocket transport, the reactive handshake/subscription driver (`ChatClient`), and the transcript projection;
-the `app` module adapts it to Android (`ChatViewModel`, logging) and renders it with Compose.
+the `app` module adapts it to Android (`ChatViewModel`, logging) and renders it with Compose. The `chat_cli` module
+drives the same `chat_client` from a Windows console executable, `dot_chat.exe`
+(see [Windows console client](#windows-console-client)).
 
 ## Layout
 
 ```
 android/
   settings.gradle.kts, build.gradle.kts, gradle.properties
+  graalvm.properties                  # pinned GraalVM archive URL, SHA-256, and native-image version
+  chat_cli/                           # Windows console client (dot_chat.exe) over chat_client
+    build.gradle.kts                  # application, nativeCompile, nativeSmokeTest
+    src/main/kotlin/com/dot/companion/cli/
+      ChatCli.kt                      # commands, live transcript rendering, shared cleanup
+      Main.kt
+    src/test/kotlin/com/dot/companion/cli/
+      ChatCliTest.kt                  # command and lifecycle tests on the JVM
+      NativeSmokeTest.kt              # native executable against controlled HTTP/WebSocket/TLS peers
   chat_client/                        # pure JVM library, no Android dependencies
     build.gradle.kts
     src/main/java/com/dot/companion/
@@ -48,6 +59,7 @@ android/
             ChatLogger.kt             # error-logging seam supplied by the host platform
             HostCatalog.kt            # fetches cptower's GET /hosts catalog
             HostConnection.kt         # one host's connection surface consumed by ChatClient
+            HostProgress.kt           # discovery / per-host progress stages and redacted diagnostics
       AhpTranscript.kt                # pure ChatState -> transcript projection
       ChatClient.kt                   # owns one connection per host, merges sessions + transcript
     src/test/java/com/dot/companion/  # client, transcript, and WebSocket protocol tests
@@ -60,6 +72,10 @@ android/
       MainActivity.kt
     src/test/java/com/dot/companion/ChatViewModelTest.kt   # adapter forwarding + lifecycle
     src/debug/                        # debug-only cleartext network-security config
+  scripts/
+    build_chat_cli.ps1                # Windows native build wrapper (MSVC + pinned GraalVM)
+    ensure_graalvm.ps1                # downloads, verifies, and caches the pinned GraalVM
+    native_process_smoke.ps1          # isolated-console Ctrl+C helper for NativeSmokeTest
 ```
 
 ## Prerequisites (headless — no Android Studio)
@@ -87,7 +103,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 From `android/`:
 
 ```ps1
-.\gradlew.bat test           # JVM unit tests for chat_client and app
+.\gradlew.bat test           # JVM unit tests for chat_client, chat_cli, and app
 .\gradlew.bat assembleDebug  # -> app/build/outputs/apk/debug/app-debug.apk
 .\gradlew.bat assembleRelease
 ```
@@ -199,6 +215,45 @@ In the app, set the endpoint to `<HOST-LAN-IP>:8770` and Connect. The session pi
 session across all discovered hosts; pick one and its transcript appears and updates live. Typing a
 message and Send starts a new turn. Pointing the endpoint straight at a single AHP host (no cptower)
 also works via the direct-connection fallback.
+
+## Windows console client
+
+`dot_chat.exe` is a GraalVM native executable that runs the same discovery, handshake, selection, send, and streaming
+path as the app from a console.
+
+### Build
+
+Prerequisites, in addition to the JDK 17 and Android SDK [prerequisites](#prerequisites-headless--no-android-studio):
+Visual Studio (or Build Tools) with the MSVC x64 toolset and a Windows SDK.
+
+From `android/`:
+
+```ps1
+pwsh -NoProfile -File .\scripts\build_chat_cli.ps1
+```
+
+This downloads the GraalVM pinned in `graalvm.properties` to `%LOCALAPPDATA%\dot\graalvm` (override with
+`DOT_GRAALVM_CACHE`), verifies its checksum and `native-image` version, and builds and smoke-tests the executable with
+MSVC and GraalVM set only for that child build; `JAVA_HOME` and `PATH` are unchanged. `-NativeHeap` (default `6g`)
+and `-NativeThreads` (default `2`) bound the native compiler; a build is stopped after 30 minutes. Output:
+`chat_cli\build\native\nativeCompile\dot_chat.exe`. Build and smoke reports (wall time, peak RSS, sizes, logs) go to
+`chat_cli\build\reports\native\`.
+
+### Run
+
+```ps1
+.\chat_cli\build\native\nativeCompile\dot_chat.exe
+```
+
+Type `help` for the command list. A typical session: `connect <HOST-LAN-IP>:8770`, `status` until hosts are
+`CatalogReady`, `select <n>`, then `send <text>`; replies stream in while the prompt waits. `quit`, EOF, or Ctrl+C
+closes every connection and exits. Endpoints take the same forms as the app.
+
+`wss://` endpoints are verified against the CA bundle embedded at build time. For a private CA, pass a truststore:
+
+```ps1
+.\dot_chat.exe "-Djavax.net.ssl.trustStore=<path>.p12" "-Djavax.net.ssl.trustStorePassword=<password>"
+```
 
 ## Cleartext note
 

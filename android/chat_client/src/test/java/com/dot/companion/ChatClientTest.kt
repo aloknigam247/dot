@@ -2,9 +2,16 @@ package com.dot.companion
 
 import com.dot.companion.model.SessionInfo
 import com.dot.companion.model.UiMessage
+import com.dot.companion.net.CatalogException
 import com.dot.companion.net.CatalogHost
 import com.dot.companion.net.ConnectionState
+import com.dot.companion.net.Diagnostic
+import com.dot.companion.net.DiscoveryProgress
+import com.dot.companion.net.DiscoveryStage
 import com.dot.companion.net.HostConnection
+import com.dot.companion.net.HostProgress
+import com.dot.companion.net.HostStatus
+import com.dot.companion.net.ProgressStage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -72,6 +79,7 @@ class ChatClientTest {
         assertEquals(listOf("r1", "r2"), merged.map { it.resource })
         assertEquals(SessionInfo("r1", "T1", hostId = "h1", hostLabel = "L1"), merged[0])
         assertEquals(SessionInfo("r2", "T2", hostId = "h2", hostLabel = "L2"), merged[1])
+        assertEquals(DiscoveryProgress(DiscoveryStage.Catalogue, hostCount = 2), vm.discovery.value)
     }
 
     @Test
@@ -98,18 +106,48 @@ class ChatClientTest {
         vm.connect()
 
         assertEquals(ConnectionState.Disconnected, vm.connectionState.value)
+        assertEquals(DiscoveryProgress(DiscoveryStage.Empty), vm.discovery.value)
         assertTrue(created.isEmpty())
     }
 
     @Test
     fun `catalog failure falls back to a single direct connection`() {
-        val vm = client { throw IllegalStateException("no /hosts here") }
+        val vm = client { throw IllegalStateException("no /hosts here at user:secret@host") }
         vm.setEndpoint("direct:9000")
         vm.connect()
 
         assertEquals(1, created.size)
         assertEquals("direct:9000", created[0].first)
         assertTrue(created[0].second.started)
+        val fallback = Diagnostic("GET /hosts", "IllegalStateException")
+        assertEquals(DiscoveryProgress(DiscoveryStage.DirectFallback, diagnostic = fallback), vm.discovery.value)
+    }
+
+    @Test
+    fun `catalogue exception diagnostic is kept for the direct fallback`() {
+        val vm = client { throw CatalogException("GET /hosts", "HTTP 404") }
+        vm.setEndpoint("direct:9000")
+        vm.connect()
+
+        assertEquals(listOf("direct:9000"), created.map { it.first })
+        assertEquals(Diagnostic("GET /hosts", "HTTP 404"), vm.discovery.value.diagnostic)
+    }
+
+    @Test
+    fun `partial host failure remains visible`() {
+        val vm = client { listOf(CatalogHost("h1", 1001, "L1"), CatalogHost("h2", 1002, "L2")) }
+        vm.setEndpoint("host:8770")
+        vm.connect()
+
+        val ready = HostProgress(ProgressStage.CatalogReady)
+        val failed =
+            HostProgress(ProgressStage.Failed, ProgressStage.Connecting, Diagnostic("websocket", "ConnectException"))
+        created[0].second.progressFlow.value = ready
+        created[0].second.sessionsFlow.value = listOf(SessionInfo("r1", "T1"))
+        created[1].second.progressFlow.value = failed
+
+        assertEquals(listOf(HostStatus("h1", "L1", ready), HostStatus("h2", "L2", failed)), vm.hostProgress.value)
+        assertEquals(listOf("r1"), vm.sessions.value.map { it.resource })
     }
 
     @Test
@@ -163,6 +201,64 @@ class ChatClientTest {
         val vm = client { emptyList() }
         vm.send("hello")
         assertTrue(created.isEmpty())
+    }
+
+    @Test
+    fun `enqueue reports only the connection queue result`() {
+        val vm = client { listOf(CatalogHost("h1", 1001, "L1")) }
+        assertFalse(vm.enqueue("hello"))
+        vm.setEndpoint("host:8770")
+        vm.connect()
+        vm.selectSession(SessionInfo("r1", "T1", hostId = "h1"))
+        val conn = created.single().second
+
+        assertFalse(vm.enqueue("  "))
+        assertTrue(vm.enqueue("  hello  "))
+        conn.accepts = false
+        assertFalse(vm.enqueue("rejected"))
+        assertEquals(listOf("hello"), conn.sent)
+    }
+
+    @Test
+    fun `disconnect cancels pending discovery and resets published state`() {
+        val gate = CompletableDeferred<List<CatalogHost>>()
+        var call = 0
+        val vm =
+            client {
+                if (call++ == 0) withContext(NonCancellable) { gate.await() } else listOf(CatalogHost("h1", 1001, "L1"))
+            }
+        vm.setEndpoint("host:8770")
+        vm.connect()
+        assertEquals(DiscoveryStage.Fetching, vm.discovery.value.stage)
+
+        vm.disconnect()
+        gate.complete(listOf(CatalogHost("h0", 1000, "L0")))
+        assertTrue(created.isEmpty())
+        assertEquals(DiscoveryProgress(), vm.discovery.value)
+        assertEquals(ConnectionState.Disconnected, vm.connectionState.value)
+
+        vm.connect()
+        vm.selectSession(SessionInfo("r1", "T1", hostId = "h1"))
+        val conn = created.single().second
+        conn.stateFlow.value = ConnectionState.Connected
+        conn.sessionsFlow.value = listOf(SessionInfo("r1", "T1"))
+        conn.transcriptFlow.value = listOf(UiMessage("m1", "assistant", "hi", streaming = false))
+
+        vm.disconnect()
+        conn.sessionsFlow.value = listOf(SessionInfo("stale", "Stale"))
+        conn.progressFlow.value = HostProgress(ProgressStage.ChatReady)
+        conn.transcriptFlow.value = listOf(UiMessage("stale", "assistant", "stale", streaming = true))
+
+        assertTrue(conn.closed)
+        assertEquals("host:8770", vm.endpoint.value)
+        assertEquals(ConnectionState.Disconnected, vm.connectionState.value)
+        assertEquals(DiscoveryProgress(), vm.discovery.value)
+        assertTrue(vm.hostProgress.value.isEmpty())
+        assertTrue(vm.messages.value.isEmpty())
+        assertTrue(vm.sessions.value.isEmpty())
+        assertNull(vm.selectedSession.value)
+        assertFalse(vm.enqueue("late"))
+        assertTrue(scope.isActive)
     }
 
     @Test
@@ -296,11 +392,14 @@ class ChatClientTest {
 
     private class FakeConnection : HostConnection {
         val stateFlow = MutableStateFlow(ConnectionState.Disconnected)
+        val progressFlow = MutableStateFlow(HostProgress())
         val transcriptFlow = MutableStateFlow<List<UiMessage>>(emptyList())
         val sessionsFlow = MutableStateFlow<List<SessionInfo>>(emptyList())
         override val state: StateFlow<ConnectionState> = stateFlow
+        override val progress: StateFlow<HostProgress> = progressFlow
         override val transcript: StateFlow<List<UiMessage>> = transcriptFlow
         override val availableSessions: StateFlow<List<SessionInfo>> = sessionsFlow
+        var accepts = true
         var started = false
         var closed = false
         var selected: String? = null
@@ -315,8 +414,8 @@ class ChatClientTest {
         }
 
         override fun send(text: String): Boolean {
-            sent.add(text)
-            return true
+            if (accepts) sent.add(text)
+            return accepts
         }
 
         override fun selectSession(resource: String) {

@@ -6,6 +6,7 @@ import com.dot.companion.model.SessionInfo
 import com.dot.companion.model.UiMessage
 import com.dot.companion.net.ConnectionState
 import com.dot.companion.net.HostConnection
+import com.dot.companion.net.HostProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,6 +98,7 @@ class ChatViewModelTest {
         val sent = mutableListOf<String>()
         var started = false
         override val availableSessions = MutableStateFlow<List<SessionInfo>>(emptyList())
+        override val progress = MutableStateFlow(HostProgress())
         override val state = MutableStateFlow(ConnectionState.Disconnected)
         override val transcript = MutableStateFlow<List<UiMessage>>(emptyList())
 
