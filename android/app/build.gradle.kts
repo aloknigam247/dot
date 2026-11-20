@@ -4,7 +4,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jlleitschuh.gradle.ktlint")
     jacoco
 }
@@ -108,9 +107,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("com.microsoft.agenthostprotocol:agent-host-protocol:0.9.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation(project(":chat_client"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
@@ -124,17 +121,13 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// Classes that JVM unit tests (no emulator in CI) structurally cannot reach: the
-// Compose UI, the Activity bootstrap, the OkHttp WebSocket transport, and
-// compiler-generated serializers. Excluded from both the report and the floor
-// so the measured number reflects only the logic that tests can actually exercise.
+// Platform calls and Compose require an Android runtime.
 val coverageExcludes =
     listOf(
         "**/MainActivity*",
         "**/ui/**",
-        "**/net/**",
-        "**/*\$\$serializer*",
         "**/ComposableSingletons*",
+        "**/AndroidChatLogger*",
     )
 
 val coverageClassDirs =

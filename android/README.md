@@ -29,27 +29,36 @@ merges all of their sessions into one picker.
 - Sends what you type as a new turn (`chat/turnStarted` dispatched to the default chat).
 
 The wire types, reducers, and JSON-RPC helpers come from the official Kotlin client
-(`com.microsoft.agenthostprotocol:agent-host-protocol`); this app supplies only the OkHttp WebSocket
-transport, the reactive handshake/subscription driver, and the transcript projection.
+(`com.microsoft.agenthostprotocol:agent-host-protocol`). The Android-free `chat_client` JVM module supplies the
+OkHttp WebSocket transport, the reactive handshake/subscription driver (`ChatClient`), and the transcript projection;
+the `app` module adapts it to Android (`ChatViewModel`, logging) and renders it with Compose.
 
 ## Layout
 
 ```
 android/
   settings.gradle.kts, build.gradle.kts, gradle.properties
-  app/
+  chat_client/                        # pure JVM library, no Android dependencies
     build.gradle.kts
     src/main/java/com/dot/companion/
       model/SessionInfo.kt            # a selectable session, tagged with its cptower host
       model/UiMessage.kt              # one rendered transcript row
       net/  ConnectionState.kt        # Disconnected / Connecting / Connected
             AhpConnection.kt          # OkHttp WebSocket + JSON-RPC driver + AHP state mirror
+            ChatLogger.kt             # error-logging seam supplied by the host platform
             HostCatalog.kt            # fetches cptower's GET /hosts catalog
-      AhpTranscript.kt                # pure ChatState -> transcript projection (JVM-unit-testable)
-      ChatViewModel.kt                # owns one connection per host, merges sessions + transcript
+            HostConnection.kt         # one host's connection surface consumed by ChatClient
+      AhpTranscript.kt                # pure ChatState -> transcript projection
+      ChatClient.kt                   # owns one connection per host, merges sessions + transcript
+    src/test/java/com/dot/companion/  # client, transcript, and WebSocket protocol tests
+  app/
+    build.gradle.kts
+    src/main/java/com/dot/companion/
+      AndroidChatLogger.kt            # ChatLogger backed by android.util.Log
+      ChatViewModel.kt                # ViewModel adapter over ChatClient
       ui/ChatScreen.kt                # Compose transcript + input + endpoint bar + session picker
       MainActivity.kt
-    src/test/java/com/dot/companion/AhpTranscriptTest.kt   # reducer fold + projection (pure JVM)
+    src/test/java/com/dot/companion/ChatViewModelTest.kt   # adapter forwarding + lifecycle
     src/debug/                        # debug-only cleartext network-security config
 ```
 
@@ -78,7 +87,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 From `android/`:
 
 ```ps1
-.\gradlew.bat test           # JVM unit tests (reducer fold + transcript projection)
+.\gradlew.bat test           # JVM unit tests for chat_client and app
 .\gradlew.bat assembleDebug  # -> app/build/outputs/apk/debug/app-debug.apk
 .\gradlew.bat assembleRelease
 ```

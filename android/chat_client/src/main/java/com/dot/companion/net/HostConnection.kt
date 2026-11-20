@@ -5,10 +5,10 @@ import com.dot.companion.model.UiMessage
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * The surface [com.dot.companion.ChatViewModel] drives on a single host connection:
+ * The surface [com.dot.companion.ChatClient] drives on a single host connection:
  * observable connection state, the folded transcript, and the discovered sessions,
  * plus the lifecycle and session-selection commands. [AhpConnection] is the live
- * implementation; the seam lets the view-model be unit-tested against a fake without
+ * implementation; the seam lets the coordinator be unit-tested against a fake without
  * a real socket.
  */
 interface HostConnection {

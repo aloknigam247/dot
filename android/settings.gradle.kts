@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "dot-companion"
 include(":app")
+include(":chat_client")
