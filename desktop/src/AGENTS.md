@@ -1,100 +1,77 @@
-# src/ — agent guide (delta)
+# Desktop C++
 
-Root rules in `AGENTS.md` still apply. This file adds C++-only specifics.
+## Change entrypoints
 
-## File-to-responsibility map
+Public headers live in `..\include`; CMake generates `Version.h` in the build tree.
+[CMakeLists.txt](../CMakeLists.txt) pairs headers with implementations in `DOT_LIB_SOURCES`.
+Add source/header pairs there, not to a separate handwritten inventory.
 
-- `main.cpp` — app entry, QQmlApplicationEngine wiring, context properties.
-- `AppIcon.{h,cpp}` — `setupApplicationIcon(QGuiApplication&)`; loads `:/dot.ico` via static-lib QRC init.
-- `ArgvParser.{h,cpp}` — normalizes dot's argv and consumes help/version/stdin flags. `ConfigCliReader` consumes `--dot-*` before `editorArgs` reaches `nvim --embed`. Unmangles pwsh-7's native-arg quoting.
-- `ColorPalette.{h,cpp}` — cached semantic colors; see the [color-binding contract](../../docs/design/implementation.md#color-bindings).
-- `Config.{h,cpp}` — typed config registry (Bool/Int/Float/String/StringList). CLI > g: > default precedence; `changed(name)` signal on resolved-value change.
-- `ConfigCliReader.{h,cpp}` — extracts `--dot-<name>=<value>` from argv into Config.
-- `ConfigGGlobalReader.{h,cpp}` — populates Config from `g:dot_<name>` once after attachComplete.
-- `MsgpackRpc.{h,cpp}` — nvim transport. Owns the unpacker arena. `msgpack::object` views into this arena.
-- `NvimConnector.{h,cpp}` — redraw event dispatch. Hot-path switch over event names.
-- `GridModel.{h,cpp}` — cell grid; single source of truth for what `paint()` reads. Storage is `QVector<QVector<Cell>>` (row-of-rows, NOT flat `QVector<Cell>`) so `scroll(...)` rotates row handles in O(rows) instead of cell-copying in O(rows × cols). Holding `j`/`k` on a 200×60 grid relies on this — flat storage measured ~1000µs/scroll vs ~5µs for the row-handle rotation. Don't regress. Also owns a per-surface `dirty` flag set by content-changing ops (applyLine/scroll/clear/resize) and exposed as `takeDirty(gridId)` (consume + clear) for `GridItem::onFlush`.
-- `HighlightTable.{h,cpp}` — `hl_attr_define` cache, hashed lookup by id.
-- `ModeInfo.{h,cpp}` — cursor shape + mode index from `mode_info_set` / `mode_change`.
-- `GridItem.{h,cpp}` — `QQuickPaintedItem` renderer for **cell content only**. Cursor lives on `CursorItem`. `paint()` must stay pure. `onFlush()` short-circuits via `GridModel::takeDirty(gridId)` — pure cursor moves (grid_cursor_goto + flush, no grid_line) leave the grid clean and `update()` is skipped entirely. This is what keeps held j/k cheap at fullscreen.
-- `CursorItem.{h,cpp}` — cursor overlay; see the [redraw pipeline](../../README.md#redraw-pipeline-nvim--screen).
-- `InputHandler.{h,cpp}` — `QKeyEvent` → nvim keycodes. Bracket-balanced strings only.
-- `ResizeCoalescer.{h,cpp}` — debounces window-resize → `nvim_ui_try_resize` RPCs (~24ms). Owned by `NvimConnector`; GridItem letterboxes between RPCs.
-- `WindowChrome.{h,cpp}` — Windows-only `DwmSetWindowAttribute` wrapper. `applyToWindow(QQuickWindow*, QColor)` repaints the OS caption to match nvim's editor bg.
+- **CLI and startup:** [ArgvParser.cpp](ArgvParser.cpp), [main.cpp](main.cpp), and
+  [ArgvParser.h](../include/ArgvParser.h).
+- **Configuration:** [Config.cpp](Config.cpp), [ConfigCliReader.cpp](ConfigCliReader.cpp), and
+  [ConfigGGlobalReader.cpp](ConfigGGlobalReader.cpp).
+- **Cursor:** [CursorBlinkState.cpp](CursorBlinkState.cpp), [CursorItem.cpp](CursorItem.cpp), and
+  [ModeInfo.cpp](ModeInfo.cpp).
+- **Grid and transport:** follow the [desktop data flow](../AGENTS.md#data-flow).
+- **Images:** [ImageItem.cpp](ImageItem.cpp), [ImageModel.cpp](ImageModel.cpp), and
+  [dot_backend.lua](../lua/dot_backend.lua).
+- **Rendering:** [CellMetrics.cpp](CellMetrics.cpp) for cell geometry; [GridRuns.cpp](GridRuns.cpp) for draw-ready runs;
+  [RectNodePool.cpp](RectNodePool.cpp) and [TextNodePool.cpp](TextNodePool.cpp) for scene-graph reuse.
+- **Theme:** [ColorPalette.cpp](ColorPalette.cpp) and [HighlightTable.cpp](HighlightTable.cpp); follow the
+  [color-binding contract](../../docs/design/implementation.md#color-bindings).
+- **Window integration:** [AppIcon.cpp](AppIcon.cpp), [SessionCache.cpp](SessionCache.cpp),
+  [VersionString.cpp](VersionString.cpp), and [WindowChrome.cpp](WindowChrome.cpp).
 
-## Conventions
+Build through the [desktop guide](../AGENTS.md#build-and-deployment); apply the
+[test evidence gates](../tests/AGENTS.md#required-evidence) to changed behavior.
 
-- All public types live in `namespace Dot`.
-- Anything QML touches uses `QML_ELEMENT` (creatable) or `QML_UNCREATABLE("Owned by ...")`.
-- `Q_PROPERTY` with NOTIFY for every field QML binds to. Never `setContextProperty` a QML_ELEMENT type.
-- Pass `msgpack::object` by `const&`. Copying breaks the arena lifetime contract.
-- Hot buffers: `QVarLengthArray`, `QString::reserve`, `resize` — not `QList::append` in loops.
+## Behavior and performance
 
-## Bug patterns to avoid
+- **Allocation:** batch text by highlight/font state. Reuse hot buffers with `QVarLengthArray`, `QString::reserve`,
+  or explicit sizing; avoid per-cell allocation and append loops. Justify increased redraw complexity with profiling
+  at a representative large grid rather than weakening the frame budget.
+- **Grid storage:** `GridSurface::cellRows` is `QVector<QVector<Cell>>`. `GridModel::scroll` rotates row handles only
+  for full-width scrolls; partial-width scrolls copy the affected column band. Preserve the full-width fast path.
+- **Invalidation:** content-changing model operations set per-surface dirty state; cursor movement does not.
+  `GridItem::onFlush` consumes `takeDirty(gridId)`. Preserve cursor-only flushes without a cell-render update;
+  font, size, and highlight changes still invalidate rendering separately. Do not manually throttle Qt's coalesced
+  `update()` without profiling evidence.
+- **Msgpack lifetime:** pass `msgpack::object` views by const reference; copying a view does not extend its lifetime.
+  Retain the owning `ObjectHandlePtr` for deferred work. `Notification` and `RpcRequest` in
+  [MsgpackRpc.h](../include/MsgpackRpc.h) carry that ownership across signal/slot boundaries.
+- **Protocol:** the Neovim redraw stream is authoritative. Validate supported event shapes; silent guards may tolerate
+  new variants but must not conceal bugs in supported events. With `ext_hlstate`, consume all of
+  `[id, rgb_attr, cterm_attr, info]` for `hl_attr_define`;
+  `HighlightTable` uses `ui_name`/`hi_name` metadata for rounding.
+- **Rendering boundary:** scene-graph updates may read cached grid/highlight/mode state and update renderer caches,
+  but must not mutate those models or issue RPC.
+- **Text:** preserve ordinary-text font fallback and the separate per-cell PUA placement in
+  `GridItem::updatePaintNode`; `GridRuns` skips PUA collection for rows without PUA cells.
+- **Thread ownership:** scene-graph nodes and render-path font-engine resources belong to the render thread.
+  Construct and release any `QRawFont` cache there, before scene-graph teardown; use a direct invalidation connection
+  if needed. Qt owns attached node roots: on a null `oldNode`, forget cached pool pointers rather than deleting them.
 
-- Copying `msgpack::object` (it's a non-owning view; the unpacker owns the bytes).
-- Mutating `GridModel` / `HighlightTable` from `GridItem::paint()`. Paint is pure.
-- Allocating per cell in the redraw or paint path. Batch text runs by `(hl_id, font_state)`.
-- Throttling `update()` manually — Qt already coalesces.
-- Reaching back into RPC / `NvimConnector` from `paint()`.
-- `std::freopen(nullptr, "rb", stdin)` to set stdin binary on Windows — triggers /W4 C4996. Use `_setmode(_fileno(stdin), _O_BINARY)` from `<io.h>`/`<fcntl.h>` instead. CRT-initialised `stdin` works fine for /SUBSYSTEM:WINDOWS apps when the parent shell redirects it.
-- Drawing Private Use Area codepoints (nerd-font icons, powerline glyphs) via `QPainter::drawText`. Qt's text shaper silently drops them on Windows (QTBUG-116417, root cause traced to `QChar::isPrint()` in `qtextengine.cpp`; QTBUG-110502 closed Won't Do). Use the hybrid pattern in `GridItem::paint()`: drawText for ordinary text (preserves Qt's automatic font fallback, which is what makes e.g. emoji render via the system emoji font), plus a per-row `QRawFont::glyphIndexesForString` + `drawGlyphRun` overlay pass for PUA-bearing cells. A `rowHasPua` flag set during run-building gates the overlay so PUA-free rows pay zero overhead.
-- Naming a `Q_PROPERTY` after a member that QQuickItem declares `final`. MOC emits "Final member X is overridden. The override won't be used." and QML treats the property as read-only — so a binding like `cursorItem.baseline: baseGrid.baseline` fails with "Invalid property assignment: baseline is a read-only property". `baseline` was the historical victim here; we renamed to `cellBaseline`. Prefix domain-specific names (`cellWidth`, `cellHeight`, `cellBaseline`) rather than reusing Qt-flavoured ones.
+## C++ conventions
 
-## Build/test cheatsheet
-
-Run CMake/CTest commands from the checkout's `desktop\` directory.
-
-Iterate on a single `.cpp` without re-running vcpkg-configure:
-```ps1
-msbuild <WORKTREE>\desktop\build\release\dot_lib.vcxproj /p:Configuration=RelWithDebInfo /m
-msbuild <WORKTREE>\desktop\build\dev\dot_lib.vcxproj /p:Configuration=Debug /m       # Debug escape hatch
-```
-Full build + tests (worktree):
-```ps1
-cmake --build --preset release
-ctest --preset release --output-on-failure -R test_grid_model
-```
-
-## Templates
-
-- Row-of-rows cell storage with O(rows) `std::rotate`-based scroll: `GridModel.cpp`. Keeps held-key scroll latency in the µs range.
-- Hashed attr cache: `HighlightTable.cpp`.
-- Redraw event dispatch: `NvimConnector.cpp`.
-- `QQuickPaintedItem` pure-paint renderer: `GridItem.cpp`.
-- `QKeyEvent` → nvim keycode encoding: `InputHandler.cpp`.
-- Rectilinear rounded overlay (union polygon + uniform `quadTo(corner, pOut)` for convex + concave inverse rounding): the visual-selection block in `GridItem.cpp::paint()`.
+- **Input:** `InputHandler::keyToNvim` must emit valid, bracket-balanced Neovim key notation without raw control bytes.
+  Preserve literal-less-than escaping and modifier handling.
+- **Namespace:** use `namespace dot`.
+- **Properties:** follow the [QML binding contract](../qml/AGENTS.md#binding-and-focus-contract).
+  Avoid Qt FINAL member names on `QQuickItem` subclasses; use domain names such as `cellBaseline`.
+- **Warnings:** follow the compiler flags in `CMakeLists.txt` and [.clang-tidy](../.clang-tidy); treat warnings as bugs.
+  For Windows redirected stdin, use `_setmode(_fileno(stdin), _O_BINARY)`, not `std::freopen(nullptr, ...)`.
 
 ## Adding a config option
 
-`Config` is the typed registry, but it's inert until something is wired to it. To add `g:dot_<name>` / `--dot-<name>` support:
+1. Register it in `main.cpp` before `ConfigCliReader::extract`; see `Config::resolve` for precedence.
+2. Apply its resolved value and connect `Config::changed` to the consumer before the `attachComplete` handler reads
+   globals through `ConfigGGlobalReader::read`.
+3. Use the existing registered-option CLI extraction rather than adding a parallel `--dot-*` parser.
 
-1. **Register** in `main.cpp` right after `Dot::Config cfg;` and BEFORE `ConfigCliReader::extract`:
-   ```cpp
-   cfg.registerOption(QStringLiteral("<name>"), Dot::ConfigType::<Type>, <default>);
-   ```
-2. **Wire** the resolved value to the target object. The lambda + signal pattern (used for `rounded_highlights`):
-   ```cpp
-   auto apply<X> = [&]() {
-       if (auto* target = connector.<accessor>()) {
-           target-><setter>(cfg.value(QStringLiteral("<name>")).to<Type>());
-       }
-   };
-   apply<X>();
-   QObject::connect(&cfg, &Dot::Config::changed, &connector,
-                    [apply<X>](const QString& name) {
-                        if (name == QStringLiteral("<name>")) apply<X>();
-                    });
-   ```
-3. **Order matters**: the `Config::changed` connection MUST be in place BEFORE the `attachComplete` handler runs `ConfigGGlobalReader::read`, otherwise the user's `g:` value resolves silently and never reaches the target.
-4. If the option needs CLI parity, nothing extra is needed — `ConfigCliReader::extract` auto-discovers `--dot-<name>=<value>` for any registered option.
+## Consuming a Neovim CLI argument locally
 
-## Intercepting an nvim CLI arg
-
-Some nvim CLI args conflict with `--embed` (which owns stdin/stdout for the RPC channel) or only make sense to dot. Examples: `-` (read stdin into buffer), `+<lnum>` (cursor position — works native, but a hypothetical dot-specific override would follow the same recipe). To consume an arg locally and simulate its effect via RPC:
-
-1. **Add a flag** to `DotArgs` in `include/ArgvParser.h` (`bool <feature> = false;`).
-2. **Intercept** in `parseArgv` (`src/ArgvParser.cpp`) BEFORE the `out.editorArgs << arg;` fallback — set the flag and `continue`, do NOT append. This is what keeps the arg out of nvim's argv.
-3. **Add an RPC method** on `NvimConnector` that performs the equivalent action via `m_rpc->request(...)` (e.g. `nvim_buf_set_lines`, `nvim_command`, `nvim_input`). Pack the msgpack array yourself in the lambda — match the existing `paste()` / `command()` style.
-4. **Wire on `attachComplete`** in `main.cpp` — the nvim instance is fully initialised and the UI is attached, so RPC effects are visible immediately. Capture any payload (e.g. the slurped stdin bytes) by value into the lambda so it survives past the local scope.
-5. If the action needs pre-Qt work (e.g. reading dot's own stdin), do it synchronously between the help/version short-circuits and the `QGuiApplication app(argc, argv);` construction.
+1. Add the necessary state to `DotArgs` in `..\include\ArgvParser.h`.
+2. Consume it in `parseArgv` before the `editorArgs` fallback; do not forward an argument owned by dot.
+3. Perform any pre-Qt stdin work after help/version handling and before `QGuiApplication` construction.
+4. Implement the equivalent RPC in `NvimConnector`, following its request-packing methods.
+5. Wire it on `attachComplete` in `main.cpp`; capture deferred payloads by value.
