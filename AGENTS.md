@@ -2,6 +2,15 @@
 
 dot is a Neovim GUI client written in C++23 / Qt 6.10 / QML, talking to an embedded `nvim --embed` process over msgpack-rpc. The shell is QML, the grid renderer is a `QQuickPaintedItem`, and tests run against a real `nvim` binary through the offscreen QPA.
 
+## Code review
+
+Complete the [code review](.github/agents/code-review.md) before reporting changes ready, opening a PR, or merging it.
+Run it in a session rooted in the worktree containing the change. For a PR, review its head against its target branch.
+Stop and report if the review covered no changed files, covered the wrong diff, failed, was incomplete, or was
+unavailable. The implementer fixes accepted findings within scope; ask the user before skipping one or expanding scope.
+Rerun after any change to the diff, including review fixes. Proceed only when a complete review covers the final diff
+and every accepted finding is fixed or explicitly waived by the user.
+
 ## Compatibility
 
 This project has no backward-compatibility concerns. There are no external consumers pinned to its
