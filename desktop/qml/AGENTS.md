@@ -1,38 +1,26 @@
-# qml/ — agent guide (delta)
+# Desktop QML
 
-Root `AGENTS.md` defines the reactive-proxy and focus rules. This file is the QML-side checklist.
+## Entry points
 
-## Conventions
+- [ChatPanel.qml](ChatPanel.qml): dot-native transcript UI; creates `ChatModel` and exposes its model/input surface.
+- [DesktopMetrics.qml](DesktopMetrics.qml): geometry derived from grid metrics.
+- [Main.qml](Main.qml): window readiness, startup-error presentation, title/chrome wiring, and chat visibility.
+- [Shell.qml](Shell.qml): long-lived `baseGrid`, `ImageItem`, `CursorItem`, and `focusGrid()`.
 
-- Connect QML to `NvimConnector` signals directly (`Connections { target: $connector }`). No imperative pull.
-- Top-level scene is `Main.qml`; the grid host is `Shell.qml`. The long-lived item that owns focus is the `baseGrid` inside `Shell.qml`.
-- Repeater delegates that need to react to per-id field changes consume a `Q_INVOKABLE QObject*` proxy (e.g. `$connector.gridFor(id)`), never a re-emitted whole-list.
-- Cursor rendering is a separate `CursorItem` overlay sibling of `baseGrid` in `Shell.qml` (z=99 — above the grid). It must NOT take focus — focus stays on the long-lived `baseGrid`. Bindings flow from `baseGrid` (cellWidth/cellHeight/cellBaseline/fontName/fontSize), so font/linespace changes propagate through one signal hop.
+QML registration lives in [CMakeLists.txt](../CMakeLists.txt).
+Use the [design index](../../docs/AGENTS.md) for geometry and color bindings instead of copying tokens into this guide.
+Build through the [desktop guide](../AGENTS.md#build-and-deployment); select validation from the
+[test guide](../tests/AGENTS.md#required-evidence).
 
-## Why the reactive QObject-proxy rule exists
+## Binding and focus contract
 
-A `QHash<id, X>` re-emitted as a property nukes Repeater delegates on every nvim window event. That destroys `activeFocusItem` (dead cursor), per-`GridItem` glyph caches (flicker, FPS drop), and cursor blink phase. A proxy `QObject` whose fields are `Q_PROPERTY` with NOTIFY lets bindings re-evaluate in-place; the delegate instance is preserved.
-
-## Focus lifetime
-
-`Component.onCompleted: forceActiveFocus()` fires exactly once. If the owning item is later destroyed (e.g. Repeater rebuild) focus is gone. Focus must live on an item that is never destroyed across nvim window churn — `baseGrid` in `Shell.qml`, not a Repeater delegate.
-
-## Bug patterns to avoid
-
-- `model = null; model = list` to "refresh" a Repeater. Destroys focus, glyph cache, blink phase. Use a proxy + NOTIFY.
-- `setContextProperty("foo", obj)` for a type that is already `QML_ELEMENT` — double-registers and shadows the QML import.
-- Owning focus on a Repeater delegate. It will be destroyed.
-
-## Build/test cheatsheet
-
-Run these commands from the checkout's `desktop\` directory.
-
-```ps1
-cmake --build --preset release
-ctest --preset release --output-on-failure -R '^test_qml$'
-```
-
-## Templates
-
-- Scene root + `$connector` wiring: `Main.qml`.
-- Long-lived grid host that owns focus: `Shell.qml`.
+- **Context:** [main.cpp](../src/main.cpp) supplies the application-owned context objects. Do not shadow a registered
+  `QML_ELEMENT` with `setContextProperty`; expose bindable C++ state through `Q_PROPERTY` with NOTIFY.
+- **Cursor:** keep the cursor overlay unfocused and above the grid. Bind its font and cell metrics to `baseGrid`;
+  do not duplicate metric calculations.
+- **Focus:** editor focus belongs to the long-lived `baseGrid`, never a Repeater delegate. Return focus through
+  `Shell.focusGrid()` when chat closes. `Component.onCompleted` cannot restore focus after an item is destroyed.
+- **Notifications:** use `Connections` and property bindings for updates, not imperative polling of the connector.
+- **Reactive delegates:** when a per-ID model needs field updates, expose a stable QObject proxy with NOTIFY properties.
+  Never refresh a Repeater with `model = null; model = list`; preserve identity, focus, caches, and blink phase.
+- **Readiness:** preserve `Main.qml`'s palette-validity and startup-error gates when changing visibility or layout.
