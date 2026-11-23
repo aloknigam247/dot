@@ -31,12 +31,11 @@ Add tests needing the integration environment to its `foreach(t ...)` list. QML 
 ## Required evidence
 
 Run CTest from `desktop\` after the [selected build](../AGENTS.md#build-and-deployment).
+Use these selectors with `ctest --preset release`:
 
-| Changed area | Required selector with `ctest --preset release` |
-| --- | --- |
-| Input encoding | `-R "test_input"` |
-| Paint path, fonts, or redraw dispatch | `-R "attach_and_render\|resize\|insert_and_quit"` |
-| QML | `-R "^test_qml"` |
+- Input encoding: `-R "test_input"`.
+- Paint path, fonts, or redraw dispatch: `-R "attach_and_render|resize|insert_and_quit"`.
+- QML: `-R "^test_qml"`.
 
 For a focused model run:
 

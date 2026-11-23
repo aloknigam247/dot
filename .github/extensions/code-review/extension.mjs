@@ -38,8 +38,9 @@ const LENSES = {
         task:
             "Find logic errors, and places where the change departs from the repository's established patterns " +
             "or where a better-organised, more maintainable design exists that is no larger. Check desktop changes " +
-            "against the root AGENTS.md Correctness, Conventions, and Gotchas (including thread affinity), the " +
-            "README load-bearing invariants, and the applicable desktop AGENTS.md bug patterns and templates. Check " +
+            "against root AGENTS.md Top priorities and Conventions, desktop/AGENTS.md Operational constraints, " +
+            "desktop/src/AGENTS.md Behavior and performance and C++ conventions, desktop/qml/AGENTS.md Binding and " +
+            "focus contract, desktop/tests/AGENTS.md Required evidence, and README load-bearing invariants. Check " +
             "android/ changes against the module split in android/README.md. Cite the existing pattern (file and " +
             "line) the change should follow.",
     },
@@ -47,7 +48,7 @@ const LENSES = {
         heading: "Performance",
         task:
             "Find performance problems that are unacceptable on realistic load. On desktop, the redraw → paint loop " +
-            "is the hot path (root AGENTS.md Performance, desktop/src/AGENTS.md), and launch time is user-visible " +
+            "is the hot path (desktop/src/AGENTS.md Behavior and performance), and launch time is user-visible " +
             "(README Launch performance). On android/, the hot paths are per-event work while folding the AHP " +
             "stream and projecting the transcript, and avoidable Compose recomposition. Show why the path is hot. " +
             "Ignore micro-optimisations and cold paths.",
