@@ -143,7 +143,8 @@ The helper exchanges one JSON object per line on stdin and stdout. Helper protoc
 | Output | `turn_ended` | `outcome` (`aborted`, `completed`, `failed`), `request_id`, `turn_id` |
 
 Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `protocol_unverified`, `startup_failed`, or
-`timed_out`), and `path`; a protocol mismatch adds `cli_protocol`, `cli_version`, and `required_protocol`.
+`timed_out`), and `path`; a protocol mismatch adds `cli_protocol` and `required_protocol`, plus `cli_version` when the
+CLI's version is available.
 
 - `ready` precedes every `item`. A startup `error` is the only record before the helper exits with code 1.
 - At most one turn is active. `send_accepted` precedes exactly one `turn_ended` for that turn; a rejected send has none.
@@ -155,7 +156,7 @@ Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `pro
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
   restarts.
 - A `shutdown` request or closed stdin ends any active turn as `failed`, stops the CLI, and exits with code 0. A stdin
-  read error does the same but exits with code 1.
+  read error does the same but exits with code 1. An I/O error that stops the helper is written to stderr.
 
 ## Architecture
 

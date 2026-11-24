@@ -170,8 +170,11 @@ async fn probe_version(path: &Path, cwd: &Path, limit: Duration) -> Option<Strin
         .stdout(Stdio::piped())
         .spawn()
         .ok()?;
-    // Killing a .cmd or .bat wrapper stops only cmd.exe; closing this job also stops the CLI it started.
-    let _job = child.raw_handle().and_then(kill_on_close_job);
+    // Killing a .cmd or .bat wrapper stops only cmd.exe, so the probe runs only inside a job that also stops its CLI.
+    let Some(_job) = child.raw_handle().and_then(kill_on_close_job) else {
+        let _ = child.kill().await;
+        return None;
+    };
     let reader = child.stdout.take()?;
     let writer = child.stdin.take()?;
     let client = Client::from_streams(ClientMode::CodingAgent, reader, writer, cwd.to_path_buf()).ok()?;

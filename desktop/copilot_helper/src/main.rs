@@ -18,7 +18,10 @@ const STARTUP_TIMEOUT_VARIABLE: &str = "DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS";
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    run_stdio().await.unwrap_or(ExitCode::FAILURE)
+    run_stdio().await.unwrap_or_else(|error| {
+        eprintln!("dot_copilot_helper: {error}");
+        ExitCode::FAILURE
+    })
 }
 
 async fn run_stdio() -> std::io::Result<ExitCode> {

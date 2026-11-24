@@ -46,6 +46,10 @@ const TESTS: &[Test] = &[
     ),
     ("cmd_wrapper_runs_turn", cmd_wrapper_runs_turn),
     (
+        "discovery_ignores_malformed_pathext_entries",
+        discovery_ignores_malformed_pathext_entries,
+    ),
+    (
         "discovery_selects_first_successful_handshake",
         discovery_selects_first_successful_handshake,
     ),
@@ -80,6 +84,10 @@ const TESTS: &[Test] = &[
     ("shutdown_request_stops_child", shutdown_request_stops_child),
     ("startup_failures_report_candidates", startup_failures_report_candidates),
     ("startup_items_follow_ready", startup_items_follow_ready),
+    (
+        "stdout_failure_is_reported_on_stderr",
+        stdout_failure_is_reported_on_stderr,
+    ),
     ("sub_agent_events_do_not_end_turn", sub_agent_events_do_not_end_turn),
     (
         "terminal_before_send_ack_holds_turn_ended",
@@ -672,6 +680,24 @@ fn closed_stdin_stops_child() {
     fixture.assert_children_exited();
 }
 
+fn stdout_failure_is_reported_on_stderr() {
+    let fixture = Fixture::empty();
+    let stdout = fixture.root.path().join("stdout.txt");
+    std::fs::write(&stdout, "").unwrap();
+    // A read-only handle makes writing the cli_not_found record fail.
+    let output = Command::new(env!("CARGO_BIN_EXE_dot_copilot_helper"))
+        .current_dir(fixture.root.path())
+        .env("PATH", "")
+        .env_remove("COPILOT_CLI_PATH")
+        .stdin(Stdio::null())
+        .stdout(std::fs::File::open(&stdout).unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.starts_with("dot_copilot_helper: "), "{stderr}");
+}
+
 // Discovery behavior
 
 fn discovery_selects_first_successful_handshake() {
@@ -836,6 +862,21 @@ fn discovery_skips_relative_path_entries() {
         .map(|entry| entry["exe"].clone())
         .collect();
     assert_eq!(started, vec![json!(absolute.join("copilot.exe"))]);
+}
+
+fn discovery_ignores_malformed_pathext_entries() {
+    let fixture = Fixture::empty();
+    let first = fixture.dir("first");
+    let second = fixture.dir("second");
+    fixture.install(&first, "copilot", "ok");
+    fixture.install(&first, "copilotexe", "ok");
+    fixture.install(&second, "copilot.exe", "ok");
+    let mut helper = fixture.helper_with(&[&first, &second], Some(";.EXE;;EXE;."), None);
+    let ready = helper.next();
+    assert_eq!(ready["cli"]["path"], json!(second.join("copilot.exe")), "{ready}");
+    let (code, _) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(started_exes(&fixture.log()), vec![second.join("copilot.exe")]);
 }
 
 fn session_create_failure_reports_start_failed() {
