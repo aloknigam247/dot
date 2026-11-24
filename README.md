@@ -123,8 +123,7 @@ GitHub Copilot CLI through the official `copilot-sdk` crate and never downloads 
 `copilot` executable on `PATH` (with `PATHEXT` extensions on Windows) that completes a protocol 4 SDK handshake. Each
 handshake and session creation must finish within `DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS` milliseconds (default 30000).
 The helper runs one session in its working directory, denies every permission request, disables client telemetry, and
-leaves credentials with the CLI. Run Cargo from `desktop\copilot_helper` so its pinned toolchain and
-`.cargo\config.toml` apply; that config stops the SDK build script from downloading a CLI.
+leaves credentials with the CLI. Build and test it as described in [SETUP.md](SETUP.md#10-copilot-cli-helper).
 
 The helper exchanges one JSON object per line on stdin and stdout. Helper protocol version 1 records:
 

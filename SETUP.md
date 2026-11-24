@@ -190,6 +190,20 @@ cold-builds Qt (1–3 h) and then publishes the blob. Two one-time requirements:
   its visibility to **Public** — otherwise a private package hits the 500 MB free quota and later
   runs fail to restore. Public packages on a public repo have unlimited storage and transfer.
 
+## 10. Copilot CLI helper
+
+The [Copilot CLI helper](README.md#copilot-cli-helper) needs [rustup](https://rustup.rs); a Cargo install without rustup
+ignores the pinned toolchain. Run Cargo from `desktop\copilot_helper` so `rust-toolchain.toml` and
+`.cargo\config.toml` apply; that config stops the SDK build script from downloading a CLI.
+
+```ps1
+cd desktop\copilot_helper
+cargo build --locked
+cargo test --locked
+```
+
+[Copilot helper CI](.github/workflows/copilot-helper-ci.yml) also checks formatting and lints.
+
 ## Troubleshooting
 
 | Symptom | Likely fix |
