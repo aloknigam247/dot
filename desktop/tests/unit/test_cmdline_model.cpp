@@ -188,11 +188,14 @@ private slots:
         QAbstractItemModelTester tester(model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
         QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
 
         // Neovim sends the inner level before redrawing the outer one.
         dispatch(conn, showEvent(Line{ { 0, "1+1", 0 } }, 3, "=", 2));
+        QCOMPARE(activeLevelSpy.count(), 1);
         dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
 
+        QCOMPARE(activeLevelSpy.count(), 1);
         QCOMPARE(model->rowCount(), 2);
         QCOMPARE(model->activeLevel(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 1);
@@ -203,11 +206,27 @@ private slots:
 
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(model->activeLevel(), 1);
+        QCOMPARE(activeLevelSpy.count(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, QStringLiteral("abc"), 0) });
         QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral(":"));
         QCOMPARE(hiddenSpy.count(), 1);
         QCOMPARE(hiddenSpy.at(0), QVariantList({ 2, false }));
+    }
+
+    void hidingLowerLevelKeepsActiveLevel() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
+        dispatch(conn, showEvent(Line{ { 0, "1+1", 0 } }, 3, "=", 2));
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+
+        dispatch(conn, redrawEvent("cmdline_hide", 1, false));
+
+        QCOMPARE(activeLevelSpy.count(), 0);
+        QCOMPARE(model->activeLevel(), 2);
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 2);
     }
 
     void specialCharacterClearedByShow() {
