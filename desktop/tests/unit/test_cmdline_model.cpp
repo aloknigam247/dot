@@ -108,9 +108,16 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialShiftRole).toBool(), false);
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+        QSignalSpy insertSpy(model, &CmdlineModel::rowsInserted);
 
         dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(":"), false,
                                    0, 1, -1));
+        QCOMPARE(insertSpy.count(), 0);
+        QCOMPARE(dataSpy.count(), 1);
+        QCOMPARE(dataSpy.at(0).at(0).toModelIndex(), model->index(0));
+        QCOMPARE(dataSpy.at(0).at(1).toModelIndex(), model->index(0));
+        QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), QList<int>());
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, QString(), 0) });
