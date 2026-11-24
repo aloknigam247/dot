@@ -8,3 +8,5 @@ FormatStyle: 'file'
 SystemHeaders: false
 CheckOptions:
   cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
+# clang-cl ignores cl's -std:c++23 and parses as C++14; the last /std flag wins, so pin C++23 here.
+ExtraArgs: ['/std:c++23preview']
