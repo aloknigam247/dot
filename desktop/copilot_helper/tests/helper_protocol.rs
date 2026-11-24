@@ -23,6 +23,7 @@ const TEST_THREADS: usize = 4;
 type Test = (&'static str, fn());
 
 const TESTS: &[Test] = &[
+    ("auth_status_is_reported", auth_status_is_reported),
     ("cancel_correlation", cancel_correlation),
     (
         "cancel_during_send_startup_is_rejected",
@@ -80,7 +81,6 @@ const TESTS: &[Test] = &[
         "unproven_boundary_rejects_next_send",
         unproven_boundary_rejects_next_send,
     ),
-    ("unverifiable_auth_is_unknown", unverifiable_auth_is_unknown),
 ];
 
 fn main() -> ExitCode {
@@ -530,19 +530,29 @@ fn permission_request_is_denied() {
     assert_eq!(starts[0]["telemetry_disabled"], "true");
 }
 
-fn unverifiable_auth_is_unknown() {
-    let fixture = Fixture::with_scenario("auth_error");
-    let mut helper = fixture.helper();
-    let ready = helper.next();
-    assert_eq!(ready["type"], "ready");
-    assert_eq!(ready["cli"]["auth"], "unknown");
-    assert!(
-        ready["cli"]["auth_error"]
-            .as_str()
-            .is_some_and(|error| error.contains("auth unavailable"))
-    );
-    let (code, _) = helper.shutdown();
-    assert_eq!(code, 0);
+fn auth_status_is_reported() {
+    let cases = [
+        ("auth_error", "unknown", Some("auth unavailable")),
+        ("signed_out", "signed_out", None),
+    ];
+    for (scenario, auth, auth_error) in cases {
+        let fixture = Fixture::with_scenario(scenario);
+        let mut helper = fixture.helper();
+        let ready = helper.next();
+        assert_eq!(ready["type"], "ready", "{scenario}");
+        assert_eq!(ready["cli"]["auth"], auth, "{scenario}");
+        match auth_error {
+            Some(expected) => assert!(
+                ready["cli"]["auth_error"]
+                    .as_str()
+                    .is_some_and(|error| error.contains(expected)),
+                "{ready}"
+            ),
+            None => assert!(ready["cli"].get("auth_error").is_none(), "{ready}"),
+        }
+        let (code, _) = helper.shutdown();
+        assert_eq!(code, 0, "{scenario}");
+    }
 }
 
 fn shutdown_request_stops_child() {
@@ -633,7 +643,7 @@ fn startup_failures_report_candidates() {
     fixture.install(&first, "copilot.exe", "exit");
     fixture.install(&second, "copilot.exe", "no_protocol");
     fixture.install(&third, "copilot.exe", "hang");
-    let helper = fixture.helper_with(&[&first, &second, &third], Some(".EXE"), Some(2000));
+    let helper = fixture.helper_with(&[&first, &first, &second, &third], Some(".EXE"), Some(2000));
     let (code, records) = helper.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
@@ -654,6 +664,8 @@ fn startup_failures_report_candidates() {
         "{candidates:#?}"
     );
     assert_eq!(candidates[2]["message"], "no protocol handshake within 2000 ms");
+    let exes = [&first, &second, &third].map(|dir| dir.join("copilot.exe"));
+    assert_eq!(started_exes(&fixture.log()), exes);
     fixture.assert_children_exited();
 }
 
@@ -1308,6 +1320,7 @@ mod fake {
             }
             match method {
                 "auth.getStatus" if self.scenario == "auth_error" => self.reply_error(id, -32603, "auth unavailable"),
+                "auth.getStatus" if self.scenario == "signed_out" => self.reply(id, json!({"isAuthenticated": false})),
                 "auth.getStatus" => self.reply(id, json!({"isAuthenticated": true})),
                 "connect" if self.scenario == "no_protocol" => self.reply_error(id, -32601, "method not found"),
                 "connect" if self.scenario == "protocol3" => {

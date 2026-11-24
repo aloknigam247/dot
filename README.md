@@ -147,7 +147,8 @@ Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `pro
 
 - `ready` precedes every `item`. A startup `error` is the only record before the helper exits with code 1.
 - At most one turn is active. `send_accepted` precedes exactly one `turn_ended` for that turn; a rejected send has none.
-  A cancel acknowledgement never ends a turn.
+  A cancel acknowledgement never ends a turn. CLI events that omit their turn-correlation IDs are ignored, as in the
+  SDK's `send_and_wait`, so a turn whose start or end events lack them stays active until `shutdown`.
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
   restarts.
