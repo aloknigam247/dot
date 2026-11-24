@@ -340,6 +340,8 @@ From `android/`:
 pwsh -NoProfile -File .\scripts\build_chat_cli.ps1
 ```
 
+Use the native build and smoke test for local/offline validation only; they are not part of CI.
+
 This downloads the GraalVM pinned in `graalvm.properties` to `%LOCALAPPDATA%\dot\graalvm` (override with
 `DOT_GRAALVM_CACHE`), verifies its checksum and `native-image` version, and builds and smoke-tests the executable with
 MSVC and GraalVM set only for that child build; `JAVA_HOME` and `PATH` are unchanged. `-NativeHeap` (default `6g`)
