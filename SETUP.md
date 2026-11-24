@@ -114,10 +114,11 @@ The following sections cover the Neovim runtime and contributor-only CI/coverage
 
 ### CI trigger boundaries
 
-[Desktop CI](.github/workflows/ci.yml) and [Android CI](.github/workflows/android-ci.yml) use native path filters following
-the [repository layout](README.md#repository-layout). Shared changes run both workflows; documentation inside an included
-component directory also runs its validation. Unrelated root documentation and design changes do not start validation.
-The workflow YAML files define the exact filters; an included change runs the complete existing workflow.
+[Desktop CI](.github/workflows/ci.yml), [Copilot helper CI](.github/workflows/copilot-helper-ci.yml), and
+[Android CI](.github/workflows/android-ci.yml) use native path filters following the
+[repository layout](README.md#repository-layout). Shared changes run Desktop and Android CI; documentation inside an
+included component directory also runs its validation. Unrelated root documentation and design changes do not start
+validation. The workflow YAML files define the exact filters; an included change runs the complete existing workflow.
 
 Skipped workflows may leave required checks or coverage requirements unsatisfied. Check the effective
 [repository rules](https://github.com/aloknigam247/dot/rules) and GitHub's

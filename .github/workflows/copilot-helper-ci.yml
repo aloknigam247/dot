@@ -1,0 +1,49 @@
+name: Copilot helper CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/copilot-helper-ci.yml"
+      - "desktop/copilot_helper/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/copilot-helper-ci.yml"
+      - "desktop/copilot_helper/**"
+
+concurrency:
+  group: copilot-helper-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-helper:
+    defaults:
+      run:
+        working-directory: desktop/copilot_helper
+    name: copilot-helper
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pinned toolchain
+        shell: pwsh
+        run: rustup toolchain install --no-self-update
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/copilot_helper
+
+      - name: Check formatting
+        shell: pwsh
+        run: cargo fmt --check
+
+      - name: Lint
+        shell: pwsh
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        shell: pwsh
+        run: cargo test --locked

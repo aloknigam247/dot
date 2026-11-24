@@ -75,7 +75,6 @@ enum TurnState {
         boundary_proven: bool,
         outcome: TurnOutcome,
     },
-    Failed,
     Running,
 }
 
@@ -105,7 +104,7 @@ impl ActiveTurn {
             self.pending.push(evidence);
             return;
         };
-        if matches!(self.state, TurnState::Ended { .. } | TurnState::Failed) {
+        if matches!(self.state, TurnState::Ended { .. }) {
             return;
         }
         match evidence {
@@ -221,7 +220,10 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
             }
         }
         if let Some(turn) = self.active_turn.as_mut() {
-            turn.state = TurnState::Failed;
+            turn.state = TurnState::Ended {
+                boundary_proven: false,
+                outcome: TurnOutcome::Failed,
+            };
         }
         self.emit_turn_ended().await
     }
@@ -335,11 +337,11 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
     }
 
     async fn handle_send_done(&mut self, request_id: String, result: Result<String, String>) -> std::io::Result<()> {
-        let rejection = match result {
-            Ok(sdk_id) if sdk_id.is_empty() => Some((
+        let (kind, message) = match result {
+            Ok(sdk_id) if sdk_id.is_empty() => (
                 SendRejectKind::EmptyTurnId,
                 "the SDK returned an empty turn ID".to_owned(),
-            )),
+            ),
             Ok(sdk_id) => {
                 let Some(turn) = self.active_turn.as_mut() else {
                     return Ok(());
@@ -357,21 +359,18 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                     .await?;
                 return self.emit_turn_ended().await;
             }
-            Err(message) => Some((SendRejectKind::SendFailed, message)),
+            Err(message) => (SendRejectKind::SendFailed, message),
         };
-        if let Some((kind, message)) = rejection {
-            // Without a correlated turn ID, later terminal evidence cannot be attributed to this or a later turn.
-            self.active_turn = None;
-            self.reuse_safe = false;
-            self.out
-                .emit(&HelperMessage::SendRejected {
-                    kind,
-                    message,
-                    request_id,
-                })
-                .await?;
-        }
-        Ok(())
+        // Without a correlated turn ID, later terminal evidence cannot be attributed to this or a later turn.
+        self.active_turn = None;
+        self.reuse_safe = false;
+        self.out
+            .emit(&HelperMessage::SendRejected {
+                kind,
+                message,
+                request_id,
+            })
+            .await
     }
 
     async fn handle_event(&mut self, event: SessionEvent) -> std::io::Result<()> {
@@ -413,7 +412,10 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         self.session_failed = true;
         self.out.emit(&HelperMessage::error(kind, message)).await?;
         if let Some(turn) = self.active_turn.as_mut() {
-            turn.state = TurnState::Failed;
+            turn.state = TurnState::Ended {
+                boundary_proven: false,
+                outcome: TurnOutcome::Failed,
+            };
         }
         self.emit_turn_ended().await
     }
@@ -434,7 +436,6 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                 self.reuse_safe &= boundary_proven;
                 outcome
             }
-            TurnState::Failed => TurnOutcome::Failed,
             TurnState::Running => return Ok(()),
         };
         let request_id = turn.request_id.clone();

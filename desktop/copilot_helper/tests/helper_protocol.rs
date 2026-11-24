@@ -29,6 +29,10 @@ const TESTS: &[Test] = &[
         cancel_during_send_startup_is_rejected,
     ),
     (
+        "cli_status_timeout_reports_unusable",
+        cli_status_timeout_reports_unusable,
+    ),
+    (
         "closed_stdin_finishes_starting_turn",
         closed_stdin_finishes_starting_turn,
     ),
@@ -464,13 +468,16 @@ fn sub_agent_events_do_not_end_turn() {
 fn terminal_evidence_sets_outcome() {
     let cases = [
         ("abort_plain_idle", "aborted", 1, true),
+        ("assistant_start", "completed", 1, true),
         ("autopilot:", "failed", 0, false),
         ("autopilot:aborted", "aborted", 0, false),
         ("autopilot:background_timeout", "failed", 0, false),
         ("autopilot:error", "failed", 0, false),
         ("autopilot_idle", "completed", 2, true),
+        ("foreign_autopilot", "completed", 1, true),
         ("malformed_idle", "failed", 1, false),
         ("policy_blocked", "completed", 1, true),
+        ("stale_abort", "completed", 1, true),
     ];
     for (prompt, outcome, idles, reusable) in cases {
         let fixture = Fixture::new();
@@ -650,6 +657,30 @@ fn startup_failures_report_candidates() {
     fixture.assert_children_exited();
 }
 
+fn cli_status_timeout_reports_unusable() {
+    for method in ["auth.getStatus", "status.get"] {
+        let fixture = Fixture::with_scenario(&format!("hang:{method}"));
+        let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+        let (code, records) = helper.finish();
+        assert_eq!(code, 1, "{method}");
+        assert_eq!(records.len(), 1, "{records:?}");
+        assert_eq!(records[0]["kind"], "cli_unusable");
+        assert_eq!(records[0]["protocol"], 1);
+        assert_eq!(
+            records[0]["candidates"],
+            json!([{
+                "message": "no protocol handshake within 2000 ms",
+                "outcome": "timed_out",
+                "path": fixture.bin.join("copilot.exe"),
+            }])
+        );
+        let log = fixture.log();
+        assert_eq!(rpc_count(&log, method), 1);
+        assert_eq!(rpc_count(&log, "session.create"), 0);
+        fixture.assert_children_exited();
+    }
+}
+
 fn discovery_skips_relative_path_entries() {
     let fixture = Fixture::empty();
     let relative = fixture.dir("relative");
@@ -671,15 +702,22 @@ fn discovery_skips_relative_path_entries() {
 }
 
 fn session_create_failure_reports_start_failed() {
-    let fixture = Fixture::with_scenario("create_error");
-    let helper = fixture.helper();
-    let (code, records) = helper.finish();
-    assert_eq!(code, 1);
-    assert_eq!(records.len(), 1, "{records:?}");
-    assert_eq!(records[0]["type"], "error");
-    assert_eq!(records[0]["kind"], "session_start_failed");
-    assert_eq!(records[0]["protocol"], 1);
-    fixture.assert_children_exited();
+    let cases = [
+        ("create_error", "create failed"),
+        ("hang:session.create", "session creation did not finish within 2000 ms"),
+    ];
+    for (scenario, message) in cases {
+        let fixture = Fixture::with_scenario(scenario);
+        let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+        let (code, records) = helper.finish();
+        assert_eq!(code, 1, "{scenario}");
+        assert_eq!(records.len(), 1, "{records:?}");
+        assert_eq!(records[0]["type"], "error");
+        assert_eq!(records[0]["kind"], "session_start_failed");
+        assert!(records[0]["message"].as_str().unwrap().contains(message), "{records:?}");
+        assert_eq!(records[0]["protocol"], 1);
+        fixture.assert_children_exited();
+    }
 }
 
 // Request parsing and exit during a turn
@@ -1265,7 +1303,7 @@ mod fake {
             let id = &message["id"];
             let params = &message["params"];
             self.record(json!({"event": "rpc", "method": method, "params": params}));
-            if id.is_null() || self.scenario == "hang" {
+            if id.is_null() || self.scenario == "hang" || self.scenario.strip_prefix("hang:") == Some(method) {
                 return;
             }
             match method {
@@ -1324,6 +1362,14 @@ mod fake {
                     self.event("abort", json!({"reason": "user initiated"}));
                     self.idle();
                 }
+                "assistant_start" => {
+                    self.reply(id, accepted);
+                    self.event(
+                        "assistant.message",
+                        json!({"content": "Hello", "messageId": "reply", "originatingMessageId": message_id}),
+                    );
+                    self.idle();
+                }
                 "autopilot" => {
                     self.reply(id, accepted);
                     self.user(&message_id);
@@ -1377,6 +1423,15 @@ mod fake {
                         json!({"errorReason": "crash", "shutdownType": "error"}),
                     );
                 }
+                "foreign_autopilot" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.event(
+                        "session.autopilot_stopped",
+                        json!({"reason": "aborted", "requestId": "msg-other"}),
+                    );
+                    self.idle();
+                }
                 "hold" => {
                     self.reply(id, accepted);
                     self.user(&message_id);
@@ -1426,6 +1481,12 @@ mod fake {
                 "slow_hold" => {
                     self.wait_for_release();
                     self.reply(id, accepted);
+                }
+                "stale_abort" => {
+                    self.reply(id, accepted);
+                    self.event("abort", json!({"reason": "user initiated"}));
+                    self.user(&message_id);
+                    self.idle();
                 }
                 "sub_agent" => {
                     self.reply(id, accepted);
