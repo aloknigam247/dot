@@ -120,8 +120,9 @@ changes; a successful `set` restores scroll-clipped content. Invalid input and e
 
 `dot_copilot_helper` is a standalone process for dot chat; dot does not launch it yet. It connects to the installed
 GitHub Copilot CLI through the official `copilot-sdk` crate and never downloads or bundles a CLI. It uses the first
-`copilot` executable on `PATH` (with `PATHEXT` extensions on Windows) that completes a protocol 4 SDK handshake. Each
-handshake and session creation must finish within `DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS` milliseconds (default 30000).
+`copilot` executable on `PATH` (with `PATHEXT` extensions) that completes a protocol 4 SDK handshake. Each handshake
+and session creation must finish within `DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS` milliseconds (default 30000); a status
+or auth query that exceeds it reports a `null` `version` or `unknown` `auth`.
 The helper runs one session in its working directory, denies every permission request, disables client telemetry, and
 leaves credentials with the CLI. Build and test it as described in [SETUP.md](SETUP.md#10-copilot-cli-helper).
 

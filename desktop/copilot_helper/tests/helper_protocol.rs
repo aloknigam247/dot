@@ -29,10 +29,7 @@ const TESTS: &[Test] = &[
         "cancel_during_send_startup_is_rejected",
         cancel_during_send_startup_is_rejected,
     ),
-    (
-        "cli_status_timeout_reports_unusable",
-        cli_status_timeout_reports_unusable,
-    ),
+    ("cli_status_timeout_reports_unknown", cli_status_timeout_reports_unknown),
     (
         "closed_stdin_finishes_starting_turn",
         closed_stdin_finishes_starting_turn,
@@ -670,28 +667,20 @@ fn startup_failures_report_candidates() {
     fixture.assert_children_exited();
 }
 
-fn cli_status_timeout_reports_unusable() {
-    for method in ["auth.getStatus", "status.get"] {
-        let fixture = Fixture::with_scenario(&format!("hang:{method}"));
-        let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
-        let (code, records) = helper.finish();
-        assert_eq!(code, 1, "{method}");
-        assert_eq!(records.len(), 1, "{records:?}");
-        assert_eq!(records[0]["kind"], "cli_unusable");
-        assert_eq!(records[0]["protocol"], 1);
-        assert_eq!(
-            records[0]["candidates"],
-            json!([{
-                "message": "no protocol handshake within 2000 ms",
-                "outcome": "timed_out",
-                "path": fixture.bin.join("copilot.exe"),
-            }])
-        );
-        let log = fixture.log();
-        assert_eq!(rpc_count(&log, method), 1);
-        assert_eq!(rpc_count(&log, "session.create"), 0);
-        fixture.assert_children_exited();
-    }
+fn cli_status_timeout_reports_unknown() {
+    let fixture = Fixture::with_scenario("hang:auth.getStatus,status.get");
+    let mut helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+    let ready = helper.next();
+    assert_eq!(ready["type"], "ready", "{ready}");
+    assert_eq!(ready["cli"]["auth"], "unknown");
+    assert_eq!(ready["cli"]["auth_error"], "no auth status within 2000 ms");
+    assert_eq!(ready["cli"].get("version"), Some(&Value::Null));
+    let (code, _) = helper.shutdown();
+    assert_eq!(code, 0);
+    let log = fixture.log();
+    assert_eq!(rpc_count(&log, "auth.getStatus"), 1);
+    assert_eq!(rpc_count(&log, "status.get"), 1);
+    fixture.assert_children_exited();
 }
 
 fn discovery_skips_relative_path_entries() {
@@ -1124,7 +1113,6 @@ fn started_exes(log: &[Value]) -> Vec<PathBuf> {
         .collect()
 }
 
-#[cfg(windows)]
 fn process_alive(pid: u64) -> bool {
     let filter = format!("PID eq {pid}");
     let output = Command::new("tasklist")
@@ -1132,14 +1120,6 @@ fn process_alive(pid: u64) -> bool {
         .output()
         .unwrap();
     String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
-}
-
-#[cfg(not(windows))]
-fn process_alive(pid: u64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .is_ok_and(|status| status.success())
 }
 
 mod fake {
@@ -1316,7 +1296,11 @@ mod fake {
             let id = &message["id"];
             let params = &message["params"];
             self.record(json!({"event": "rpc", "method": method, "params": params}));
-            if id.is_null() || self.scenario == "hang" || self.scenario.strip_prefix("hang:") == Some(method) {
+            let hung = self
+                .scenario
+                .strip_prefix("hang:")
+                .is_some_and(|methods| methods.split(',').any(|hung| hung == method));
+            if id.is_null() || self.scenario == "hang" || hung {
                 return;
             }
             match method {

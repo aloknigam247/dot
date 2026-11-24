@@ -15,7 +15,6 @@ use crate::protocol::{CandidateOutcome, CandidateReport};
 pub const REQUIRED_PROTOCOL: u32 = 4;
 
 const CLI_NAME: &str = "copilot";
-#[cfg(windows)]
 const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 const SERVER_ARGS: [&str; 3] = ["--server", "--stdio", "--no-auto-update"];
 
@@ -66,7 +65,7 @@ fn path_candidates(path: Option<&OsStr>, pathext: Option<&OsStr>) -> Vec<PathBuf
     for dir in std::env::split_paths(path.unwrap_or_default()).filter(|dir| dir.is_absolute()) {
         for extension in &extensions {
             let candidate = dir.join(format!("{CLI_NAME}{extension}"));
-            if is_executable(&candidate) && !candidates.contains(&candidate) {
+            if candidate.is_file() && !candidates.contains(&candidate) {
                 candidates.push(candidate);
             }
         }
@@ -74,7 +73,6 @@ fn path_candidates(path: Option<&OsStr>, pathext: Option<&OsStr>) -> Vec<PathBuf
     candidates
 }
 
-#[cfg(windows)]
 fn executable_extensions(pathext: Option<&OsStr>) -> Vec<String> {
     pathext
         .map_or(Some(DEFAULT_PATHEXT), OsStr::to_str)
@@ -83,23 +81,6 @@ fn executable_extensions(pathext: Option<&OsStr>) -> Vec<String> {
         .filter(|extension| extension.len() > 1 && extension.starts_with('.'))
         .map(str::to_ascii_lowercase)
         .collect()
-}
-
-#[cfg(not(windows))]
-fn executable_extensions(_pathext: Option<&OsStr>) -> Vec<String> {
-    vec![String::new()]
-}
-
-#[cfg(windows)]
-fn is_executable(path: &Path) -> bool {
-    path.is_file()
-}
-
-#[cfg(not(windows))]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 async fn handshake_candidate(
@@ -140,21 +121,25 @@ async fn handshake_candidate(
             "handshake completed without reporting a protocol version".to_owned(),
         ));
     }
-    match timeout(limit, describe(&client, path)).await {
-        Ok(resolution) => Ok((client, resolution)),
-        Err(_) => {
-            client.force_stop();
-            Err(timed_out(path, limit))
-        }
-    }
+    let resolution = describe(&client, path, limit).await;
+    Ok((client, resolution))
 }
 
-async fn describe(client: &Client, path: &Path) -> CliResolution {
-    let version = client.get_status().await.ok().map(|status| status.version);
-    let (auth, auth_error) = match client.get_auth_status().await {
-        Ok(status) if status.is_authenticated => (AuthStatus::SignedIn, None),
-        Ok(_) => (AuthStatus::SignedOut, None),
-        Err(error) => (AuthStatus::Unknown, Some(error.to_string())),
+// Version and auth are reported only when the CLI answers in time; neither decides whether the CLI is usable.
+async fn describe(client: &Client, path: &Path, limit: Duration) -> CliResolution {
+    let (status, auth_status) = tokio::join!(
+        timeout(limit, client.get_status()),
+        timeout(limit, client.get_auth_status())
+    );
+    let version = status.ok().and_then(Result::ok).map(|status| status.version);
+    let (auth, auth_error) = match auth_status {
+        Ok(Ok(status)) if status.is_authenticated => (AuthStatus::SignedIn, None),
+        Ok(Ok(_)) => (AuthStatus::SignedOut, None),
+        Ok(Err(error)) => (AuthStatus::Unknown, Some(error.to_string())),
+        Err(_) => (
+            AuthStatus::Unknown,
+            Some(format!("no auth status within {} ms", limit.as_millis())),
+        ),
     };
     CliResolution {
         auth,
