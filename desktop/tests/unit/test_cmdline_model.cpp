@@ -348,6 +348,8 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
         dispatch(conn, redrawEvent("cmdline_block_append",
                                    std::vector<std::tuple<int, int, int>>{ { 0, 1, 0 } }));
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
+        dispatch(conn, redrawEvent("cmdline_block_append"));
         QCOMPARE(model->blockLines(), expectedBlock);
         QCOMPARE(blockSpy.count(), 2);
 
@@ -463,6 +465,9 @@ private slots:
             << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
         QTest::newRow("hide integer abort")
             << redrawEvent("cmdline_hide", 1, 0)
+            << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
+        QTest::newRow("hide string level")
+            << redrawEvent("cmdline_hide", std::string("1"), true)
             << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
         QTest::newRow("block show argument not array")
             << redrawEvent("cmdline_block_show", 1)
