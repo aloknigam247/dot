@@ -345,6 +345,12 @@ private slots:
         };
         QCOMPARE(model->blockLines(), expectedBlock);
 
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
+        dispatch(conn, redrawEvent("cmdline_block_append",
+                                   std::vector<std::tuple<int, int, int>>{ { 0, 1, 0 } }));
+        QCOMPARE(model->blockLines(), expectedBlock);
+        QCOMPARE(blockSpy.count(), 2);
+
         dispatch(conn, redrawEvent("cmdline_block_hide"));
 
         QCOMPARE(model->blockActive(), false);
