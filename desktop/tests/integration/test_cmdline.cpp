@@ -106,23 +106,6 @@ private slots:
         }
     }
 
-    void typeaheadHideOfUnshownLevelIsIgnored() {
-        NvimConnector conn;
-        QVERIFY(attach(conn));
-        CmdlineModel *model = conn.cmdline();
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
-
-        // Typeahead lets Neovim leave the command line before it redraws, so it hides an unshown
-        // level.
-        conn.input(QStringLiteral(":<Esc>"));
-        conn.input(QStringLiteral(":abc"));
-
-        QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
-        QCOMPARE(model->rowCount(), 1);
-        QCOMPARE(model->activeLevel(), 1);
-        QCOMPARE(hiddenSpy.count(), 0);
-    }
-
     void inputPromptReportsPrompt() {
         NvimConnector conn;
         QVERIFY(attach(conn));

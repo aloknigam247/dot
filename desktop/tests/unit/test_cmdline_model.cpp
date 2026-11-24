@@ -442,6 +442,9 @@ private slots:
         QTest::newRow("pos string offset")
             << redrawEvent("cmdline_pos", std::string("0"), 1)
             << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
+        QTest::newRow("pos missing level")
+            << redrawEvent("cmdline_pos", 0)
+            << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
         QTest::newRow("special shift integer")
             << redrawEvent("cmdline_special_char", std::string("^"), 1, 1)
             << QStringLiteral(
@@ -452,6 +455,12 @@ private slots:
         QTest::newRow("hide missing abort")
             << redrawEvent("cmdline_hide", 1)
             << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
+        QTest::newRow("hide integer abort")
+            << redrawEvent("cmdline_hide", 1, 0)
+            << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
+        QTest::newRow("block show argument not array")
+            << redrawEvent("cmdline_block_show", 1)
+            << QStringLiteral("Invalid cmdline_block_show: expected an array of chunk lines");
         QTest::newRow("block show line not array")
             << redrawEvent("cmdline_block_show", std::vector<int>{ 1 })
             << QStringLiteral("Invalid cmdline_block_show: expected an array of chunk lines");
