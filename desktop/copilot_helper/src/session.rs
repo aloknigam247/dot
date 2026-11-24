@@ -120,9 +120,9 @@ impl ActiveTurn {
                 };
             }
             // The SDK stops waiting at the error; ending at the turn's own end keeps its boundary provable.
-            Evidence::Error(None) => self.error_seen = true,
-            Evidence::Error(Some(id)) if id == sdk_id => {
-                // A correlated error proves the request reached the CLI even if it failed before user.message.
+            Evidence::Error(id) if id.as_deref().is_none_or(|id| id == sdk_id) => {
+                // An error attributed to the turn proves the request reached the CLI even if it failed before
+                // user.message.
                 self.error_seen = true;
                 self.started = true;
             }

@@ -644,6 +644,7 @@ fn terminal_evidence_sets_outcome() {
         ("policy_blocked", "completed", 1, true),
         ("session_error_abort", "aborted", 1, true),
         ("session_error_foreign", "completed", 1, true),
+        ("session_error_uncorrelated", "failed", 1, true),
         ("session_error_unstarted", "failed", 1, true),
         ("stale_abort", "completed", 1, true),
     ];
@@ -1921,6 +1922,11 @@ mod fake {
                     self.reply(id, accepted);
                     self.user(&message_id);
                     self.session_error(Some("msg-other"));
+                    self.idle();
+                }
+                "session_error_uncorrelated" => {
+                    self.reply(id, accepted);
+                    self.session_error(None);
                     self.idle();
                 }
                 "session_error_unstarted" => {
