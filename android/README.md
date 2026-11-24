@@ -115,6 +115,114 @@ The app tracks the AHP client's Kotlin toolchain (Kotlin 2.3.21, Compose compile
 `org.jetbrains.kotlin.plugin.compose` plugin), so the newer-Kotlin AHP artifact is consumed directly
 with no metadata-version workarounds.
 
+### Local Android emulator (Windows x64)
+
+Use `dot_lite` to validate Android UI, lifecycle, and device networking changes locally, not in CI. It starts with a
+480x800 phone profile and an Android 11 (API 30) AOSP image without Google Play or Android Studio.
+
+From `android\`, set these paths in PowerShell 7 for both setup and daily use:
+
+```ps1
+$env:ANDROID_HOME ??= "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_AVD_HOME ??= "$env:USERPROFILE\.android\avd"
+$adb = "$env:ANDROID_HOME\platform-tools\adb.exe"
+$emulator = "$env:ANDROID_HOME\emulator\emulator.exe"
+```
+
+**One-time setup:**
+
+```ps1
+$image = "system-images;android-30;default;x86_64"
+$tools = "$env:ANDROID_HOME\cmdline-tools\latest\bin"
+& "$tools\sdkmanager.bat" "emulator" $image
+& $emulator -accel-check
+```
+
+If WHPX is not usable, check that firmware virtualization is enabled. To enable Windows Hypervisor Platform, run
+`gsudo pwsh -NoProfile -Command "Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -All -NoRestart"`.
+Restart Windows if requested, then rerun `-accel-check`. Once it reports WHPX is usable, create the device:
+
+```ps1
+New-Item -ItemType Directory -Force $env:ANDROID_AVD_HOME | Out-Null
+& "$tools\avdmanager.bat" create avd --name dot_lite --package $image --device "Nexus S"
+& $emulator -list-avds
+```
+
+**Run and validate:** Start with two cores, 2048 MB of guest RAM, and no audio or snapshots. Add `-no-window` to
+`$options` for headless checks; leave it out to interact with the app. The example uses a free port pair, 5556/5557.
+
+```ps1
+$serial = "emulator-5556"
+$options = "-avd", "dot_lite", "-port", "5556", "-cores", "2", "-memory", "2048", "-gpu", "software",
+           "-no-audio", "-no-boot-anim", "-no-snapshot"
+Start-Process $emulator -ArgumentList $options
+& $adb -s $serial wait-for-device
+& $adb -s $serial emu avd name
+& $adb -s $serial shell getprop sys.boot_completed
+```
+
+Confirm the name is `dot_lite` and rerun the last command until it prints `1`. Then install and launch:
+
+```ps1
+.\gradlew.bat :app:assembleDebug
+if ($LASTEXITCODE -ne 0) { throw "Debug build failed" }
+& $adb -s $serial install -r .\app\build\outputs\apk\debug\app-debug.apk
+if ($LASTEXITCODE -ne 0) { throw "APK install failed" }
+& $adb -s $serial shell am start -W -n com.dot.companion/.MainActivity
+```
+
+Look for `Status: ok` and exercise the changed behavior. For [cptower on the Windows host](#run-against-cptower),
+enter `10.0.2.2:8770` in the debug app (`localhost` is the emulator itself).
+
+**Debug:** Read the running app's logs, or attach the JDK debugger and enter `threads` to inspect it and `exit` to detach:
+
+```ps1
+$appPid = (& $adb -s $serial shell pidof -s com.dot.companion).Trim()
+& $adb -s $serial logcat -d "--pid=$appPid"
+$port = (& $adb -s $serial forward tcp:0 "jdwp:$appPid").Trim()
+try {
+    & "$env:JAVA_HOME\bin\jdb.exe" -connect "com.sun.jdi.SocketAttach:hostname=127.0.0.1,port=$port"
+} finally {
+    & $adb -s $serial forward --remove "tcp:$port"
+}
+```
+
+Run `& $adb -s $serial emu kill` when finished to release CPU and RAM. The AVD and installed app remain for next time.
+
+#### Match a phone's display
+
+Reuse `dot_lite` to test the phone's resolution, layout width, and text size. For Wi-Fi, enable **Wireless debugging**
+on the phone, tap **Pair device with pairing code**, and run `& $adb pair <ip>:<pairing-port>` locally. If the paired
+phone does not appear in `& $adb devices -l`, use `& $adb connect <ip>:<connection-port>` from the main Wireless
+debugging screen. The two ports are different.
+
+Read the phone without changing it:
+
+```ps1
+& $adb devices -l
+$phone = Read-Host "Phone serial from the device list (not the emulator)"
+& $adb -s $phone shell wm size
+& $adb -s $phone shell wm density
+& $adb -s $phone shell settings get system font_scale
+```
+
+With the emulator stopped, edit `$env:ANDROID_AVD_HOME\dot_lite.avd\config.ini`: set `hw.lcd.width` and `hw.lcd.height`
+from **Physical size**, and `hw.lcd.density` from **Physical density** (Android dpi, not advertised panel ppi).
+For an on-screen navigation bar, set `hw.mainKeys = no`. Boot `dot_lite` and confirm its name as above.
+
+Apply the phone's overrides **to the emulator only**. Use `reset` when no override is listed; use `1.0` if font scale
+is `null`. For example:
+
+```ps1
+& $adb -s $serial shell wm size reset
+& $adb -s $serial shell wm density 560
+& $adb -s $serial shell settings put system font_scale 0.9
+```
+
+If the phone uses gesture navigation, select it on the emulator under **Settings > System > Gestures > System
+navigation**. Compare `wm size`, `wm density`, `font_scale`, and `shell am get-config` on both devices; `w…dp` is the
+layout width. Matching display metrics does not reproduce OxygenOS, the cutout, or OS-specific system bar insets.
+
 ## Versioning
 
 See the repository's [independent component versioning](../README.md#versioning).

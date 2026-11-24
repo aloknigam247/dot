@@ -35,6 +35,8 @@ Run Gradle from `android\` using `.\gradlew.bat`; see [README.md](README.md#buil
 The [Android CI workflow](../.github/workflows/android-ci.yml) defines lint, JVM-test, coverage, and APK gates;
 module `build.gradle.kts` files own task configuration and coverage exclusions.
 Tests live under each module's `src\test`; desktop CTest results do not validate these modules.
+For changes that affect on-device behavior, use the [local emulator](README.md#local-android-emulator-windows-x64)
+to reproduce, debug, and validate the affected path. Keep emulator runs out of CI.
 
 For the native console executable, use [build_chat_cli.ps1](scripts/build_chat_cli.ps1); it configures MSVC and the
 GraalVM pinned by [graalvm.properties](graalvm.properties) without replacing Gradle's JDK.
