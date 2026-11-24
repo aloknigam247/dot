@@ -5,14 +5,21 @@ NeutralControl {
 
     property string text
 
-    accessibleName: text
+    Accessible.name: text
     implicitWidth: label.implicitWidth + 2 * padding
 
     Text {
         id: label
-        anchors.centerIn: parent
+        objectName: "label"
+        anchors.fill: parent
+        anchors.leftMargin: chip.padding
+        anchors.rightMargin: chip.padding
         color: chip.foreground
+        elide: Text.ElideRight
         font: chip.metrics.textFont
+        horizontalAlignment: Text.AlignHCenter
         text: chip.text
+        textFormat: Text.PlainText
+        verticalAlignment: Text.AlignVCenter
     }
 }

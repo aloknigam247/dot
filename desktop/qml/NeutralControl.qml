@@ -5,8 +5,7 @@ Item {
 
     required property DesktopMetrics metrics
 
-    property string accessibleName
-    property QtObject colors: $connector.colorPalette
+    readonly property ColorPalette colors: $connector.colorPalette
     default property alias content: contentItem.data
     property bool interactive: true
     property bool selectable: false
@@ -41,12 +40,11 @@ Item {
     function accessiblePressAction() { activate() }
 
     activeFocusOnTab: interactive
-    implicitHeight: metrics.rowHeight + 2 * padding
+    implicitHeight: metrics.rowHeight
 
     Accessible.checkable: interactive && selectable
     Accessible.checked: _isSelected
     Accessible.focusable: activeFocusOnTab
-    Accessible.name: accessibleName
     Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
 
     Keys.enabled: _live
@@ -71,6 +69,7 @@ Item {
     on_LiveChanged: if (!_live) _keyPressed = false
 
     Rectangle {
+        objectName: "background"
         anchors.fill: parent
         color: control.fill
         radius: control.cornerRadius

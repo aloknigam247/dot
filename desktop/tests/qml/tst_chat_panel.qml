@@ -90,13 +90,32 @@ TestCase {
         ui.toggle.activate()
         verify(ui.panel.visible)
         verify(ui.toggle.selected)
+        compare(ui.toggle.Accessible.name, "Close chat")
         tryVerify(function() { return ui.input.activeFocus })
 
-        ui.toggle.activate()
+        ui.panel.requestClose()
         verify(!ui.panel.visible)
         verify(!ui.toggle.selected)
+        compare(ui.toggle.Accessible.name, "Open chat")
         tryVerify(function() { return ui.grid.activeFocus })
         verify(!ui.toggle.activeFocus)
+    }
+
+    function test_toggle_paint_follows_selection() {
+        const ui = makeMain()
+        const background = findChild(ui.toggle, "background")
+        verify(background !== null)
+        const colors = $connector.colorPalette
+        verify(Qt.colorEqual(background.color, "transparent"))
+        verify(Qt.colorEqual(ui.icon.tint, colors.text))
+
+        ui.toggle.activate()
+        verify(Qt.colorEqual(background.color, colors.selection))
+        verify(Qt.colorEqual(ui.icon.tint, colors.selectedText))
+
+        ui.panel.requestClose()
+        verify(Qt.colorEqual(background.color, "transparent"))
+        verify(Qt.colorEqual(ui.icon.tint, colors.text))
     }
 
     function test_append_block_adds_external_messages() {
@@ -181,6 +200,8 @@ TestCase {
             compare(ui.toggle.width, ui.toggle.height)
             compare(ui.metrics.cellWidth, ui.grid.cellWidth)
             compare(ui.metrics.cellBaseline, ui.grid.cellBaseline)
+            verify(ui.metrics.iconSize <= ui.toggle.width - 2 * ui.toggle.padding)
+            compare(ui.icon.symbolSize, ui.metrics.iconSize)
         }
         verify(ui.metrics.rowHeight > initialRow)
         const fontRow = ui.metrics.rowHeight

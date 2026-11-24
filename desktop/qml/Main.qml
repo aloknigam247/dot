@@ -247,10 +247,11 @@ Window {
     NeutralButton {
         id: chatToggle
         objectName: "chatToggle"
-        accessibleName: chatPanel.visible ? qsTr("Close chat") : qsTr("Open chat")
+        Accessible.name: chatPanel.visible ? qsTr("Close chat") : qsTr("Open chat")
         activeFocusOnTab: false
         enabled: visible
         iconOnly: true
+        implicitHeight: metrics.rowHeight + 2 * metrics.padding
         metrics: shell.metrics
         selectable: true
         selected: chatPanel.visible

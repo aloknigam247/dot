@@ -11,25 +11,7 @@ TestCase {
     visible: true
     when: windowShown
 
-    QtObject {
-        id: darkPalette
-        readonly property color mutedText: "#808080"
-        readonly property color raised: "#303030"
-        readonly property color resting: "#202020"
-        readonly property color selectedText: "#ffffff"
-        readonly property color selection: "#264f78"
-        readonly property color text: "#d4d4d4"
-    }
-
-    QtObject {
-        id: lightPalette
-        readonly property color mutedText: "#6e6e6e"
-        readonly property color raised: "#e5e5e5"
-        readonly property color resting: "#f3f3f3"
-        readonly property color selectedText: "#000000"
-        readonly property color selection: "#cce4f7"
-        readonly property color text: "#1e1e1e"
-    }
+    readonly property var chrome: $connector.colorPalette
 
     DesktopMetrics {
         id: sharedMetrics
@@ -41,7 +23,7 @@ TestCase {
         NeutralButton {
             x: 50
             y: 50
-            accessibleName: "Action"
+            Accessible.name: "Action"
             metrics: sharedMetrics
         }
     }
@@ -54,6 +36,20 @@ TestCase {
             metrics: sharedMetrics
             text: "Chip"
         }
+    }
+
+    Component {
+        id: focusComp
+        Item {
+            activeFocusOnTab: true
+            height: 10
+            width: 10
+        }
+    }
+
+    Component {
+        id: metricsComp
+        TextMetrics { font: sharedMetrics.textFont }
     }
 
     Component {
@@ -108,8 +104,8 @@ TestCase {
         ]
     }
 
-    function checkStateColors(component, extra, data, palette, restFill) {
-        const props = Object.assign({colors: palette, enabled: data.enabled, selectable: data.selectable,
+    function checkStateColors(component, extra, data, restFill) {
+        const props = Object.assign({enabled: data.enabled, selectable: data.selectable,
                                      selected: data.selected}, extra)
         mouseMove(testCase, 1, 1)
         const ui = make(component, props)
@@ -118,11 +114,20 @@ TestCase {
             mouseMove(control, control.width / 2, control.height / 2)
         if (data.press)
             mousePress(control)
-        const expectedFill = data.fill === "resting" ? restFill : palette[data.fill]
+        const expectedFill = data.fill === "resting" ? restFill : chrome[data.fill]
+        const expectedForeground = chrome[data.foreground]
+        const background = findChild(control, "background")
+        verify(background !== null)
         verify(Qt.colorEqual(control.fill, expectedFill),
                `fill ${control.fill} != ${expectedFill} (${data.fill})`)
-        verify(Qt.colorEqual(control.foreground, palette[data.foreground]),
-               `foreground ${control.foreground} != ${palette[data.foreground]} (${data.foreground})`)
+        verify(Qt.colorEqual(background.color, expectedFill),
+               `background ${background.color} != ${expectedFill} (${data.fill})`)
+        verify(Qt.colorEqual(control.foreground, expectedForeground),
+               `foreground ${control.foreground} != ${expectedForeground} (${data.foreground})`)
+        const label = findChild(control, "label")
+        if (label !== null)
+            verify(Qt.colorEqual(label.color, expectedForeground),
+                   `label ${label.color} != ${expectedForeground} (${data.foreground})`)
         compare(control.hovered, data.enabled && (data.hover || data.press))
         compare(control.pressed, data.enabled && data.press)
         if (data.press) {
@@ -133,20 +138,24 @@ TestCase {
         control.visible = false
     }
 
+    function test_palette_roles_are_distinct() {
+        const roles = ["mutedText", "raised", "resting", "selectedText", "selection", "text"]
+        for (let i = 0; i < roles.length; ++i)
+            for (let j = i + 1; j < roles.length; ++j)
+                verify(!Qt.colorEqual(chrome[roles[i]], chrome[roles[j]]), `${roles[i]} == ${roles[j]}`)
+    }
+
     function test_button_state_colors_data() { return stateRows() }
 
     function test_button_state_colors(data) {
-        for (const palette of [darkPalette, lightPalette]) {
-            checkStateColors(buttonComp, {iconOnly: false}, data, palette, palette.resting)
-            checkStateColors(buttonComp, {iconOnly: true}, data, palette, "transparent")
-        }
+        checkStateColors(buttonComp, {iconOnly: false}, data, chrome.resting)
+        checkStateColors(buttonComp, {iconOnly: true}, data, "transparent")
     }
 
     function test_chip_state_colors_data() { return stateRows() }
 
     function test_chip_state_colors(data) {
-        for (const palette of [darkPalette, lightPalette])
-            checkStateColors(chipComp, {}, data, palette, palette.resting)
+        checkStateColors(chipComp, {}, data, chrome.resting)
     }
 
     function test_centered_button_content() {
@@ -158,8 +167,46 @@ TestCase {
         compare(button.width, label.implicitWidth + 2 * button.padding)
     }
 
+    function test_default_geometry_is_one_row() {
+        const row = sharedMetrics.rowHeight
+        const button = make(buttonComp, {}).control
+        compare(button.height, row)
+        compare(make(chipComp, {}).control.height, row)
+        const icon = make(buttonComp, {iconOnly: true}).control
+        compare(icon.width, row)
+        compare(icon.height, row)
+    }
+
+    function test_chip_elides_overflowing_label() {
+        const chip = make(chipComp, {text: "A chip label that is far too long to fit"}).control
+        const label = findChild(chip, "label")
+        verify(label !== null)
+        const fullWidth = chip.implicitWidth
+        compare(chip.width, fullWidth)
+        verify(!label.truncated)
+
+        chip.width = fullWidth / 2
+        verify(label.truncated)
+        compare(label.x, chip.padding)
+        compare(label.width, chip.width - 2 * chip.padding)
+        verify(label.contentWidth <= label.width)
+        compare(chip.implicitWidth, fullWidth)
+        compare(chip.Accessible.name, "A chip label that is far too long to fit")
+    }
+
+    function test_chip_label_is_literal_text() {
+        const markup = "<b>main</b>"
+        const chip = make(chipComp, {text: markup}).control
+        const label = findChild(chip, "label")
+        verify(label !== null)
+        const literal = createTemporaryObject(metricsComp, testCase, {text: markup})
+        verify(literal !== null)
+        verify(Math.abs(label.contentWidth - literal.advanceWidth) < 1)
+        compare(chip.Accessible.name, markup)
+    }
+
     function test_descriptive_chip() {
-        const ui = make(chipComp, {colors: darkPalette, interactive: false, selectable: true, selected: true})
+        const ui = make(chipComp, {interactive: false, selectable: true, selected: true})
         const chip = ui.control
         compare(chip.Accessible.role, Accessible.StaticText)
         verify(!chip.Accessible.checkable)
@@ -169,14 +216,14 @@ TestCase {
         verify(!chip.hovered)
         mousePress(chip)
         verify(!chip.pressed)
-        verify(Qt.colorEqual(chip.fill, darkPalette.resting))
+        verify(Qt.colorEqual(chip.fill, chrome.resting))
         mouseRelease(chip)
         mouseClick(chip)
         chip.forceActiveFocus()
         keyClick(Qt.Key_Space)
         keyClick(Qt.Key_Return)
         chip.activate()
-        verify(Qt.colorEqual(chip.fill, darkPalette.resting))
+        verify(Qt.colorEqual(chip.fill, chrome.resting))
         compare(ui.spy.count, 0)
     }
 
@@ -196,7 +243,7 @@ TestCase {
     }
 
     function test_keyboard_activation() {
-        const ui = make(buttonComp, {colors: darkPalette})
+        const ui = make(buttonComp, {})
         const button = ui.control
         button.forceActiveFocus()
         tryVerify(function() { return button.activeFocus })
@@ -204,17 +251,79 @@ TestCase {
         keyPress(Qt.Key_Space)
         verify(button.pressed)
         verify(!button.hovered)
-        verify(Qt.colorEqual(button.fill, darkPalette.raised))
+        verify(Qt.colorEqual(button.fill, chrome.raised))
         compare(ui.spy.count, 0)
         keyRelease(Qt.Key_Space)
         verify(!button.pressed)
-        verify(Qt.colorEqual(button.fill, darkPalette.resting))
+        verify(Qt.colorEqual(button.fill, chrome.resting))
         compare(ui.spy.count, 1)
 
         keyClick(Qt.Key_Return)
         compare(ui.spy.count, 2)
         keyClick(Qt.Key_Enter)
         compare(ui.spy.count, 3)
+    }
+
+    function test_key_repeat_activates_once_data() {
+        return [{tag: "space", key: Qt.Key_Space, onPress: 0},
+                {tag: "return", key: Qt.Key_Return, onPress: 1},
+                {tag: "enter", key: Qt.Key_Enter, onPress: 1}]
+    }
+
+    function test_key_repeat_activates_once(data) {
+        const ui = make(buttonComp, {})
+        const button = ui.control
+        button.forceActiveFocus()
+        tryVerify(function() { return button.activeFocus })
+
+        keyPress(data.key)
+        compare(ui.spy.count, data.onPress)
+        for (let i = 0; i < 3; ++i) {
+            $keys.repeatKey(testCase.Window.window, data.key)
+            compare(ui.spy.count, data.onPress)
+        }
+        compare(button.pressed, data.key === Qt.Key_Space)
+        keyRelease(data.key)
+        verify(!button.pressed)
+        compare(ui.spy.count, 1)
+    }
+
+    function test_interrupted_space_press_does_not_activate_data() {
+        return [{tag: "focus_loss"}, {tag: "interactive"}, {tag: "enabled"}]
+    }
+
+    function test_interrupted_space_press_does_not_activate(data) {
+        const ui = make(buttonComp, {})
+        const button = ui.control
+        const other = createTemporaryObject(focusComp, testCase)
+        verify(other !== null)
+        button.forceActiveFocus()
+        tryVerify(function() { return button.activeFocus })
+
+        keyPress(Qt.Key_Space)
+        verify(button.pressed)
+        if (data.tag === "focus_loss") {
+            other.forceActiveFocus()
+            tryVerify(function() { return !button.activeFocus })
+        } else if (data.tag === "interactive") {
+            // Qt refuses to clear activeFocusOnTab while the item holds focus.
+            ignoreWarning(/Cannot set activeFocusOnTab to false/)
+            button.interactive = false
+        } else {
+            button.enabled = false
+        }
+        verify(!button.pressed)
+
+        button.interactive = true
+        button.enabled = true
+        button.forceActiveFocus()
+        tryVerify(function() { return button.activeFocus })
+        keyRelease(Qt.Key_Space)
+        verify(!button.pressed)
+        compare(ui.spy.count, 0)
+
+        keyClick(Qt.Key_Space)
+        compare(ui.spy.count, 1)
     }
 
     function test_disabled_blocks_activation() {
@@ -258,15 +367,5 @@ TestCase {
         const chip = make(chipComp, {}).control
         compare(chip.Accessible.name, "Chip")
         compare(chip.Accessible.role, Accessible.Button)
-    }
-
-    function test_icon_size_tracks_font() {
-        const grid = sharedMetrics.grid
-        grid.fontSize = 12
-        compare(sharedMetrics.iconSize, grid.textFont.pixelSize * 6 / 7)
-        const small = sharedMetrics.iconSize
-        grid.fontSize = 24
-        compare(sharedMetrics.iconSize, grid.textFont.pixelSize * 6 / 7)
-        verify(sharedMetrics.iconSize > small)
     }
 }
