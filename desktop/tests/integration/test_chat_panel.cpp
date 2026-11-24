@@ -2,6 +2,7 @@
 // chat focus fails the test instead of being bypassed by direct RPC input.
 
 #include <QAbstractSocket>
+#include <QAccessible>
 #include <QColor>
 #include <QHash>
 #include <QImage>
@@ -71,6 +72,37 @@ void clickItem(QQuickWindow *window, QQuickItem *item) {
     QTest::mouseClick(window, Qt::LeftButton, {}, c.toPoint());
 }
 
+QString accessibleName(QQuickItem *item) {
+    QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(item);
+    return iface ? iface->text(QAccessible::Name) : QString();
+}
+
+struct Scene {
+    QQuickItem *grid = nullptr;
+    QQuickItem *input = nullptr;
+    QQuickItem *panel = nullptr;
+    QQuickItem *toggle = nullptr;
+    QQuickWindow *window = nullptr;
+};
+
+// Loads Main against a live Neovim and waits until the grid owns focus.
+void startScene(NvimConnector &conn, QQmlApplicationEngine &engine, Scene &scene) {
+    QSignalSpy flushSpy(&conn, &NvimConnector::flush);
+    QVERIFY(startTestNvim(conn));
+    scene.window = loadMainQml(engine, &conn);
+    QVERIFY2(scene.window, "Main.qml failed to load");
+    QVERIFY(QTest::qWaitForWindowExposed(scene.window));
+    QVERIFY(waitForAttach(&conn));
+    QVERIFY(waitUntil([&] { return !flushSpy.isEmpty(); }, 5000));
+    scene.grid = scene.window->findChild<GridItem *>();
+    scene.input = scene.window->findChild<QQuickItem *>(QStringLiteral("chatInput"));
+    scene.panel = scene.window->findChild<QQuickItem *>(QStringLiteral("chatPanel"));
+    scene.toggle = scene.window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
+    QVERIFY(scene.grid && scene.input && scene.panel && scene.toggle);
+    QVERIFY(waitUntil([&] { return scene.window->activeFocusItem() == scene.grid; }, 3000));
+    QVERIFY(!scene.panel->isVisible());
+}
+
 } // namespace
 
 class TestChatPanel : public QObject {
@@ -111,6 +143,8 @@ private slots:
         QVERIFY2(toggle, "chatToggle button not found in scene");
         QVERIFY2(panel, "chatPanel not found in scene");
         QVERIFY2(model, "ChatModel not found in scene");
+        QSignalSpy activatedSpy(toggle, SIGNAL(activated()));
+        QVERIFY(activatedSpy.isValid());
 
         auto *cursor = window->findChild<CursorItem *>();
         auto *grid = window->findChild<GridItem *>();
@@ -140,6 +174,7 @@ private slots:
         clickItem(window, toggle);
         QVERIFY2(waitUntil([&] { return panel->isVisible(); }, 3000),
                  "Panel did not become visible after clicking the toggle");
+        QCOMPARE(activatedSpy.count(), 1);
         QVERIFY2(waitUntil(
                      [&] {
             QQuickItem *f = window->activeFocusItem();
@@ -197,6 +232,7 @@ private slots:
             QCOMPARE(input->property("text").toString(), QStringLiteral("hi"));
             QCOMPARE(input->property("font").value<QFont>(), grid->textFont());
             QVERIFY(panel->isVisible());
+            QVERIFY(toggle->property("selected").toBool());
             QVERIFY(panel->findChildren<QTcpServer *>().isEmpty());
             QVERIFY(panel->findChildren<QAbstractSocket *>().isEmpty());
         }
@@ -242,6 +278,8 @@ private slots:
                  "Grid columns did not restore after closing the panel");
         QVERIFY2(waitUntil([&] { return window->activeFocusItem() == gridFocus; }, 3000),
                  "Focus was not handed back to the grid after closing the panel");
+        QVERIFY(!toggle->property("selected").toBool());
+        QCOMPARE(accessibleName(toggle), QStringLiteral("Open chat"));
 
         // Keystrokes reach nvim again: enter insert mode, type 'x', escape.
         QTest::keyClick(window, Qt::Key_I);
@@ -254,14 +292,62 @@ private slots:
         clickItem(window, toggle);
         QVERIFY(waitUntil([&] { return panel->isVisible() && window->activeFocusItem() == input; },
                           3000));
+        QCOMPARE(activatedSpy.count(), 2);
         QCOMPARE(window->findChild<ChatModel *>(), model);
         QCOMPARE(model->count(), 1);
         QCOMPARE(model->textAt(0), replyText);
+        QVERIFY(toggle->property("selected").toBool());
+        QCOMPARE(accessibleName(toggle), QStringLiteral("Close chat"));
         QVERIFY(panel->findChildren<QTcpServer *>().isEmpty());
         QVERIFY(panel->findChildren<QAbstractSocket *>().isEmpty());
-        QTest::keyClick(window, Qt::Key_Escape);
+        clickItem(window, toggle);
         QVERIFY(waitUntil(
             [&] { return !panel->isVisible() && window->activeFocusItem() == gridFocus; }, 3000));
+        QCOMPARE(activatedSpy.count(), 3);
+        QVERIFY(!toggle->property("selected").toBool());
+        QCOMPARE(accessibleName(toggle), QStringLiteral("Open chat"));
+        QCOMPARE(window->findChild<GridItem *>(), grid);
+        QTest::keyClick(window, Qt::Key_Tab);
+        QCOMPARE(window->activeFocusItem(), gridFocus);
+        QVERIFY(!toggle->hasActiveFocus());
+    }
+
+    void chatToggleAccessibility() {
+        NvimConnector conn;
+        QQmlApplicationEngine engine;
+        Scene scene;
+        startScene(conn, engine, scene);
+        if(QTest::currentTestFailed()) return;
+
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(scene.toggle);
+        QVERIFY(iface);
+        QAccessibleActionInterface *actions = iface->actionInterface();
+        QVERIFY(actions);
+        QCOMPARE(iface->role(), QAccessible::Button);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Open chat"));
+        QCOMPARE(actions->actionNames().count(QAccessibleActionInterface::pressAction()), 1);
+        QVERIFY(iface->state().checkable);
+        QVERIFY(!iface->state().checked);
+
+        actions->doAction(QAccessibleActionInterface::pressAction());
+        QVERIFY(waitUntil([&] { return scene.panel->isVisible(); }, 3000));
+        QVERIFY(waitUntil([&] { return scene.window->activeFocusItem() == scene.input; }, 3000));
+        QVERIFY(iface->state().checked);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Close chat"));
+
+        actions->doAction(QAccessibleActionInterface::pressAction());
+        QVERIFY(waitUntil([&] { return !scene.panel->isVisible(); }, 3000));
+        QVERIFY(waitUntil([&] { return scene.window->activeFocusItem() == scene.grid; }, 3000));
+        QVERIFY(!iface->state().checked);
+
+        QSignalSpy activatedSpy(scene.toggle, SIGNAL(activated()));
+        QVERIFY(activatedSpy.isValid());
+        scene.toggle->setEnabled(false);
+        QVERIFY(iface->state().disabled);
+        actions->doAction(QAccessibleActionInterface::pressAction());
+        QCOMPARE(activatedSpy.count(), 0);
+        QVERIFY(!scene.panel->isVisible());
+        QVERIFY(!scene.toggle->property("selected").toBool());
     }
 };
 
