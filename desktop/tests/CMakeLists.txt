@@ -78,9 +78,9 @@ cmake_path(NATIVE_PATH DOT_TEST_IMAGEFORMATS_DIR DOT_TEST_IMAGEFORMATS_DIR_NATIV
 set_tests_properties(test_app_icon PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QT_PLUGIN_PATH=${DOT_TEST_IMAGEFORMATS_DIR_NATIVE}"
 )
-# test_cmdline_model and test_option_set_dispatch use QTEST_MAIN (QGuiApplication)
-# so they need a resolvable platform plugin too.
-set_tests_properties(test_cmdline_model test_option_set_dispatch PROPERTIES
+# test_option_set_dispatch uses QTEST_MAIN (QGuiApplication) so it needs a
+# resolvable platform plugin too.
+set_tests_properties(test_option_set_dispatch PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
 )

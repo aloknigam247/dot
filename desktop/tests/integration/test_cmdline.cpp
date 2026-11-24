@@ -4,6 +4,7 @@
 #include "CmdlineModel.h"
 #include "IntegrationHelpers.h"
 
+#include <QRegularExpression>
 #include <QtTest>
 
 namespace dot {
@@ -45,6 +46,8 @@ private:
     }
 
 private slots:
+    void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_"))); }
+
     void colonPromptTracksUnicodeCursor() {
         NvimConnector conn;
         QVERIFY(attach(conn));

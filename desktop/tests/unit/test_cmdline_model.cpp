@@ -147,16 +147,43 @@ private slots:
         verifyUnicodeSession(conn);
     }
 
-    void invalidUtf8DecodesEachByteAsReplacement() {
-        NvimConnector conn;
-        dispatch(conn, showEvent(Line{ { 0, std::string("\xE0\x80\x80") + "a", 0 } }, 2, ":", 1));
+    void invalidUtf8DecodesEachByteAsReplacement_data() {
+        QTest::addColumn<QByteArray>("bytes");
+        QTest::addColumn<QString>("text");
 
         const QString replacement(QChar::ReplacementCharacter);
+        QTest::newRow("overlong E0") << QByteArray("\xE0\x80\x80"
+                                                   "a")
+                                     << replacement.repeated(3) + u'a';
+        QTest::newRow("surrogate ED") << QByteArray("\xED\xA0\x80"
+                                                    "a")
+                                      << replacement.repeated(3) + u'a';
+        QTest::newRow("above U+10FFFF") << QByteArray("\xF4\x90\x80\x80"
+                                                      "a")
+                                        << replacement.repeated(4) + u'a';
+        QTest::newRow("invalid lead C0") << QByteArray("\xC0\x80"
+                                                       "a")
+                                         << replacement.repeated(2) + u'a';
+        QTest::newRow("invalid lead F5") << QByteArray("\xF5"
+                                                       "a")
+                                         << replacement + u'a';
+        QTest::newRow("truncated tail")
+            << QByteArray("a\xE2\x82") << u'a' + replacement.repeated(2);
+    }
+
+    void invalidUtf8DecodesEachByteAsReplacement() {
+        QFETCH(QByteArray, bytes);
+        QFETCH(QString, text);
+        NvimConnector conn;
+        dispatch(conn, showEvent(Line{ { 0, bytes.toStdString(), 0 } }, 0, ":", 1));
+
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
-                 QVariantList{ chunkMap(0, replacement.repeated(3) + u'a', 0) });
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
-        dispatch(conn, redrawEvent("cmdline_pos", 4, 1));
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 4);
+                 QVariantList{ chunkMap(0, text, 0) });
+        // Every byte decodes to one UTF-16 unit, so each byte offset is also its text offset.
+        for(qsizetype offset = 0; offset <= bytes.size(); ++offset) {
+            dispatch(conn, redrawEvent("cmdline_pos", static_cast<int>(offset), 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), offset);
+        }
     }
 
     void positionOnlyKeepsChunks() {
@@ -331,6 +358,20 @@ private slots:
         QTest::newRow("show negative indent")
             << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), -1, 1, -1)
             << showShape;
+        QTest::newRow("show chunk negative attr_id")
+            << showEvent(Line{ { -1, "x", 0 } }, 1, ":", 1) << showShape;
+        QTest::newRow("show chunk negative hl_id")
+            << showEvent(Line{ { 0, "x", -1 } }, 1, ":", 1) << showShape;
+        QTest::newRow("show firstc integer")
+            << redrawEvent("cmdline_show", valid, 1, 58, std::string(), 0, 1, -1) << showShape;
+        QTest::newRow("show hl_id string")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), 0, 1,
+                           std::string("-1"))
+            << showShape;
+        QTest::newRow("show negative cursor")
+            << showEvent(valid, -1, ":", 1)
+            << QStringLiteral(
+                   "Invalid cmdline_show: cursor byte offset -1 is outside 1 content bytes");
         QTest::newRow("show level zero")
             << showEvent(valid, 1, ":", 0)
             << QStringLiteral("Invalid cmdline_show: level 0 is not positive");
@@ -341,6 +382,10 @@ private slots:
         QTest::newRow("pos invisible level")
             << redrawEvent("cmdline_pos", 0, 3)
             << QStringLiteral("Invalid cmdline_pos: level 3 is not visible");
+        QTest::newRow("pos negative offset")
+            << redrawEvent("cmdline_pos", -1, 1)
+            << QStringLiteral(
+                   "Invalid cmdline_pos: cursor byte offset -1 is outside 7 content bytes");
         QTest::newRow("pos string offset")
             << redrawEvent("cmdline_pos", std::string("0"), 1)
             << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
@@ -399,5 +444,5 @@ private slots:
 
 } // namespace dot
 
-QTEST_MAIN(dot::TestCmdlineModel)
+QTEST_GUILESS_MAIN(dot::TestCmdlineModel)
 #include "test_cmdline_model.moc"
