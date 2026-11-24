@@ -71,6 +71,10 @@ const TESTS: &[Test] = &[
     ("lagged_stream_fails_turn", lagged_stream_fails_turn),
     ("missing_cli_reports_not_found", missing_cli_reports_not_found),
     ("permission_request_is_denied", permission_request_is_denied),
+    (
+        "protocol_mismatch_omits_unanswered_version",
+        protocol_mismatch_omits_unanswered_version,
+    ),
     ("protocol_mismatch_reports_version", protocol_mismatch_reports_version),
     ("rejected_send_emits_no_turn_ended", rejected_send_emits_no_turn_ended),
     (
@@ -82,11 +86,13 @@ const TESTS: &[Test] = &[
         session_error_before_send_ack_fails_turn,
     ),
     ("session_error_fails_turn_at_idle", session_error_fails_turn_at_idle),
+    ("shutdown_answers_pending_cancel", shutdown_answers_pending_cancel),
     (
         "shutdown_before_send_ack_fails_turn",
         shutdown_before_send_ack_fails_turn,
     ),
     ("shutdown_finishes_active_turn", shutdown_finishes_active_turn),
+    ("shutdown_rejects_unanswered_cancel", shutdown_rejects_unanswered_cancel),
     ("shutdown_request_stops_child", shutdown_request_stops_child),
     ("startup_failures_report_candidates", startup_failures_report_candidates),
     ("startup_items_follow_ready", startup_items_follow_ready),
@@ -829,6 +835,23 @@ fn protocol_mismatch_reports_version() {
     fixture.assert_children_exited();
 }
 
+fn protocol_mismatch_omits_unanswered_version() {
+    let fixture = Fixture::with_scenario("protocol3_silent");
+    let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+    let (code, records) = helper.finish();
+    assert_eq!(code, 1);
+    assert_eq!(records.len(), 1);
+    let candidates = records[0]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1);
+    let candidate = &candidates[0];
+    assert_eq!(candidate["outcome"], "protocol_mismatch");
+    assert_eq!(candidate["cli_protocol"], 3);
+    assert_eq!(candidate["required_protocol"], 4);
+    assert!(candidate.get("cli_version").is_none(), "{candidate}");
+    assert_eq!(rpc_count(&fixture.log(), "status.get"), 1);
+    fixture.assert_children_exited();
+}
+
 fn cmd_wrapper_mismatch_stops_lingering_cli() {
     let fixture = Fixture::empty();
     fixture.install_cmd(&fixture.bin, "protocol3_linger");
@@ -1026,6 +1049,57 @@ fn shutdown_finishes_active_turn() {
         ]
     );
     assert_eq!(records.last().unwrap()["type"], "turn_ended");
+    fixture.assert_children_exited();
+}
+
+fn shutdown_answers_pending_cancel() {
+    let fixture = Fixture::with_scenario("idle_before_abort");
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "hold");
+    helper.until_type("send_accepted");
+    helper.cancel("c1", "msg-1");
+    helper.until_turn_ended("t1");
+    helper.request(json!({"type": "shutdown", "request_id": "stop"}));
+    // Releasing well after the helper reads shutdown makes the held abort reply arrive while the helper is exiting.
+    thread::sleep(Duration::from_millis(500));
+    fixture.release();
+    let (code, records) = helper.drain();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "completed", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "cancel_acknowledged", "request_id": "c1", "turn_id": "msg-1"}),
+        ]
+    );
+    fixture.assert_children_exited();
+}
+
+fn shutdown_rejects_unanswered_cancel() {
+    let fixture = Fixture::with_scenario("hang:session.abort");
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "hold");
+    helper.until_type("send_accepted");
+    helper.cancel("c1", "msg-1");
+    fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.abort");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({
+                "type": "cancel_rejected",
+                "kind": "abort_failed",
+                "message": "the helper stopped before the abort finished",
+                "request_id": "c1",
+            }),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+        ]
+    );
     fixture.assert_children_exited();
 }
 
@@ -1687,6 +1761,7 @@ mod fake {
                     }
                 }
                 "session.send" => self.send(id, params["prompt"].as_str().unwrap_or_default()),
+                "status.get" if self.scenario == "protocol3_silent" => {}
                 "status.get" if self.scenario.starts_with("protocol3") => {
                     self.reply(id, json!({"protocolVersion": 3, "version": LEGACY_VERSION}))
                 }

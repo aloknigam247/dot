@@ -154,7 +154,7 @@ pub struct SessionController<W> {
     internal_rx: mpsc::UnboundedReceiver<Internal>,
     internal_tx: mpsc::UnboundedSender<Internal>,
     out: Output<W>,
-    pending_aborts: usize,
+    pending_cancels: Vec<String>,
     reuse_safe: bool,
     sdk: SdkSession,
     session_failed: bool,
@@ -168,7 +168,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
             internal_rx,
             internal_tx,
             out,
-            pending_aborts: 0,
+            pending_cancels: Vec::new(),
             reuse_safe: true,
             sdk,
             session_failed: false,
@@ -210,26 +210,32 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         }
     }
 
-    // Every send gets exactly one reply and every accepted turn exactly one turn_ended, even when the helper exits.
+    // Every send and cancel gets exactly one reply and every accepted turn exactly one turn_ended, even on exit.
     async fn finish_active_turn(&mut self) -> std::io::Result<()> {
         let deadline = Instant::now() + SEND_RESULT_WAIT;
-        while self.active_turn.as_ref().is_some_and(|turn| turn.sdk_id.is_none()) {
+        while self.active_turn.as_ref().is_some_and(|turn| turn.sdk_id.is_none()) || !self.pending_cancels.is_empty() {
             match timeout_at(deadline, self.internal_rx.recv()).await {
                 Ok(Some(internal)) => self.handle_internal(internal).await?,
-                Ok(None) | Err(_) => {
-                    let Some(turn) = self.active_turn.take() else {
-                        return Ok(());
-                    };
-                    return self
-                        .out
-                        .emit(&HelperMessage::SendRejected {
-                            kind: SendRejectKind::SendFailed,
-                            message: "the helper stopped before the send was acknowledged".to_owned(),
-                            request_id: turn.request_id,
-                        })
-                        .await;
-                }
+                Ok(None) | Err(_) => break,
             }
+        }
+        if let Some(turn) = self.active_turn.take_if(|turn| turn.sdk_id.is_none()) {
+            self.out
+                .emit(&HelperMessage::SendRejected {
+                    kind: SendRejectKind::SendFailed,
+                    message: "the helper stopped before the send was acknowledged".to_owned(),
+                    request_id: turn.request_id,
+                })
+                .await?;
+        }
+        for request_id in std::mem::take(&mut self.pending_cancels) {
+            self.out
+                .emit(&HelperMessage::CancelRejected {
+                    kind: CancelRejectKind::AbortFailed,
+                    message: "the helper stopped before the abort finished".to_owned(),
+                    request_id,
+                })
+                .await?;
         }
         if let Some(turn) = self.active_turn.as_mut() {
             turn.state = TurnState::Ended {
@@ -252,7 +258,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
     async fn handle_send(&mut self, request_id: String, prompt: String) -> std::io::Result<()> {
         let rejection = if self.session_failed {
             Some((SendRejectKind::SessionFailed, "the session failed; restart the helper"))
-        } else if self.pending_aborts > 0 {
+        } else if !self.pending_cancels.is_empty() {
             // A turn can end on its own before its abort runs, and that abort would then cancel the next turn.
             Some((SendRejectKind::CancelPending, "a cancellation is still in progress"))
         } else if self.active_turn.is_some() {
@@ -312,7 +318,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         }
         let internal_tx = self.internal_tx.clone();
         let session = Arc::clone(&self.sdk.session);
-        self.pending_aborts += 1;
+        self.pending_cancels.push(request_id.clone());
         tokio::spawn(async move {
             let result = session.abort().await.map_err(|error| error.to_string());
             let _ = internal_tx.send(Internal::CancelDone {
@@ -331,7 +337,9 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                 result,
                 turn_id,
             } => {
-                self.pending_aborts -= 1;
+                if let Some(index) = self.pending_cancels.iter().position(|pending| *pending == request_id) {
+                    self.pending_cancels.remove(index);
+                }
                 let message = match result {
                     Ok(()) => HelperMessage::CancelAcknowledged { request_id, turn_id },
                     Err(message) => HelperMessage::CancelRejected {
