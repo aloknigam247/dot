@@ -83,6 +83,20 @@ TestCase {
         p.requestClose()
         verify(!p.visible)
         compare(closedSpy.count, 1)
+
+        const ui = makeMain()
+        verify(!ui.toggle.activeFocusOnTab)
+        verify(!ui.toggle.selected)
+        ui.toggle.activate()
+        verify(ui.panel.visible)
+        verify(ui.toggle.selected)
+        tryVerify(function() { return ui.input.activeFocus })
+
+        ui.toggle.activate()
+        verify(!ui.panel.visible)
+        verify(!ui.toggle.selected)
+        tryVerify(function() { return ui.grid.activeFocus })
+        verify(!ui.toggle.activeFocus)
     }
 
     function test_append_block_adds_external_messages() {

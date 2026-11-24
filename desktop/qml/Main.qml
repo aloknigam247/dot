@@ -244,12 +244,16 @@ Window {
     // top strip. Floating overlay so it never perturbs Shell geometry or the
     // boot resize sequence. Not in the native OS caption (that would need a
     // frameless-window rewrite).
-    Item {
+    NeutralButton {
         id: chatToggle
         objectName: "chatToggle"
+        accessibleName: chatPanel.visible ? qsTr("Close chat") : qsTr("Open chat")
+        activeFocusOnTab: false
         enabled: visible
-        width: metrics.rowHeight + 2 * padding
-        height: width
+        iconOnly: true
+        metrics: shell.metrics
+        selectable: true
+        selected: chatPanel.visible
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.rightMargin: 6
@@ -257,15 +261,7 @@ Window {
         visible: !window._startupFailed
         z: 150
 
-        readonly property real cornerRadius: metrics.cornerRadius
-        readonly property DesktopMetrics metrics: shell.metrics
-        readonly property real padding: metrics.padding
-
-        Accessible.name: chatPanel.visible ? qsTr("Close chat") : qsTr("Open chat")
-        Accessible.role: Accessible.Button
-        Accessible.onPressAction: toggle()
-
-        function toggle() {
+        onActivated: {
             if (chatPanel.visible) chatPanel.requestClose()
             else chatPanel.open()
         }
@@ -274,14 +270,12 @@ Window {
             id: chatIcon
             objectName: "chatIcon"
             anchors.fill: parent
-            property color tint: chatPanel.visible ? $connector.colorPalette.accent
-                               : (toggleArea.containsMouse ? $connector.colorPalette.text
-                                                          : $connector.colorPalette.mutedText)
+            property color tint: chatToggle.foreground
             readonly property real cornerRadius: chatToggle.cornerRadius
             readonly property real padding: chatToggle.padding
             readonly property real strokeWidth: Math.min(1.5, symbolSize)
             readonly property real symbolSize: Math.max(0, Math.min(width - 2 * padding, height - 2 * padding,
-                                                                   chatToggle.metrics.textFont.pixelSize * 6 / 7))
+                                                                   chatToggle.metrics.iconSize))
 
             onHeightChanged: requestPaint()
             onSymbolSizeChanged: requestPaint()
@@ -319,13 +313,6 @@ Window {
                 ctx.closePath()
                 ctx.stroke()
             }
-        }
-
-        MouseArea {
-            id: toggleArea
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: chatToggle.toggle()
         }
     }
 
