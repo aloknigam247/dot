@@ -1,4 +1,5 @@
-// Tier-2 tests for command-line state produced by a real Neovim with ext_cmdline enabled.
+// Tier-2 tests for command-line state produced by a real Neovim. Tests enable ext_cmdline on their
+// own UI channel because production attaches keep the grid-rendered command line.
 
 #include "CmdlineModel.h"
 #include "IntegrationHelpers.h"
@@ -13,12 +14,21 @@ class TestCmdline : public QObject {
     Q_OBJECT
 
 private:
-    static bool attach(NvimConnector &conn) {
-        conn.m_extCmdline = true;
-        if(!startTestNvim(conn) || !conn.attachUi(80, 24) || !waitForAttach(&conn)) return false;
+    static bool enableExtCmdline(NvimConnector &conn) {
+        conn.m_rpc->notify(QStringLiteral("nvim_ui_set_option"),
+                           [](msgpack::packer<msgpack::sbuffer> &pk) {
+            pk.pack_array(2);
+            pk.pack(std::string("ext_cmdline"));
+            pk.pack(true);
+        });
         const auto extCmdline =
-            evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"));
+            evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 5000);
         return extCmdline && extCmdline->toBool();
+    }
+
+    static bool attach(NvimConnector &conn) {
+        if(!startTestNvim(conn) || !conn.attachUi(80, 24) || !waitForAttach(&conn)) return false;
+        return enableExtCmdline(conn);
     }
 
     static QVariant role(NvimConnector &conn, int row, int role) {
@@ -91,6 +101,23 @@ private slots:
             conn.input(QStringLiteral("<Esc>"));
             QTRY_COMPARE(model->rowCount(), 0);
         }
+    }
+
+    void typeaheadHideOfUnshownLevelIsIgnored() {
+        NvimConnector conn;
+        QVERIFY(attach(conn));
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+
+        // Typeahead lets Neovim leave the command line before it redraws, so it hides an unshown
+        // level.
+        conn.input(QStringLiteral(":<Esc>"));
+        conn.input(QStringLiteral(":abc"));
+
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->activeLevel(), 1);
+        QCOMPARE(hiddenSpy.count(), 0);
     }
 
     void inputPromptReportsPrompt() {
@@ -268,10 +295,7 @@ private slots:
         QVERIFY(conn.attached());
         QCOMPARE(disconnectedSpy.count(), 0);
         QCOMPARE(model->rowCount(), 0);
-        const auto extCmdline =
-            evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 5000);
-        QVERIFY(extCmdline);
-        QCOMPARE(extCmdline->toBool(), true);
+        QVERIFY(enableExtCmdline(conn));
 
         conn.input(QStringLiteral(":xyz"));
 

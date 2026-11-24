@@ -235,8 +235,6 @@ private:
     bool m_colorSnapshotBoundaryPending = false;
     bool m_colorSnapshotReceived = false;
     CmdlineModel *m_cmdline = nullptr;
-    // Only tests enable ext_cmdline; production attaches keep the grid-rendered command line.
-    bool m_extCmdline = false;
 };
 
 } // namespace dot

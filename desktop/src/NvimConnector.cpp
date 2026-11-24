@@ -67,16 +67,13 @@ static std::optional<CmdlineLine> cmdlineLine(const msgpack::object &value) {
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
 // diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
-static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows,
-                              bool extCmdline) {
+static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows) {
     pk.pack_array(3);
     pk.pack(static_cast<int64_t>(cols));
     pk.pack(static_cast<int64_t>(rows));
-    pk.pack_map(4);
+    pk.pack_map(3);
     pk.pack("rgb");
     pk.pack(true);
-    pk.pack("ext_cmdline");
-    pk.pack(extCmdline);
     pk.pack("ext_linegrid");
     pk.pack(true);
     pk.pack("ext_hlstate");
@@ -494,8 +491,8 @@ bool NvimConnector::attachUi(int cols, int rows) {
     m_sentUiSizes.emplace_back(cols, rows);
     if(m_sentUiSizes.size() > kMaxSentUiSizes) m_sentUiSizes.pop_front();
     m_rpc->request(QStringLiteral("nvim_ui_attach"),
-                   [cols, rows, extCmdline = m_extCmdline](msgpack::packer<msgpack::sbuffer> &pk) {
-        packAttachOptions(pk, cols, rows, extCmdline);
+                   [cols, rows](msgpack::packer<msgpack::sbuffer> &pk) {
+        packAttachOptions(pk, cols, rows);
     }, [this](RpcResult res) {
         m_attachPending = false;
         if(res) {
