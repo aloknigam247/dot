@@ -14,6 +14,12 @@ private slots:
         QVERIFY(waitForAttach(&conn));
         QVERIFY(waitForFlush(&conn));
 
+        // Production attaches leave the command line on the grid until a consumer exists.
+        const auto initialExtCmdline =
+            evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"));
+        QVERIFY(initialExtCmdline);
+        QCOMPARE(initialExtCmdline->toBool(), false);
+
         // The `restart` UI event landed with nvim API level 14. On older servers
         // :restart just quits, so there is nothing to exercise.
         const auto apiLevel = evalSync(conn, QStringLiteral("api_info().version.api_level"));
@@ -67,6 +73,10 @@ private slots:
             evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_hlstate', v:false)"), 5000);
         QVERIFY(extHl);
         QCOMPARE(extHl->toBool(), true);
+        const auto extCmdline =
+            evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 5000);
+        QVERIFY(extCmdline);
+        QCOMPARE(extCmdline->toBool(), false);
 
         // The connection stayed up across the handoff and is attached again.
         QCOMPARE(disconnectedSpy.count(), 0);

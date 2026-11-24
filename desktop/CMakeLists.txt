@@ -74,6 +74,7 @@ set(DOT_LIB_SOURCES
     src/ArgvParser.cpp          include/ArgvParser.h
     src/CellMetrics.cpp         include/CellMetrics.h
     src/ChatModel.cpp           include/ChatModel.h
+    src/CmdlineModel.cpp        include/CmdlineModel.h
     src/ColorPalette.cpp        include/ColorPalette.h
     src/Config.cpp              include/Config.h
     src/ConfigCliReader.cpp     include/ConfigCliReader.h
