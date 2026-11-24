@@ -63,6 +63,11 @@ const TESTS: &[Test] = &[
         session_create_failure_reports_start_failed,
     ),
     (
+        "session_error_before_send_ack_fails_turn",
+        session_error_before_send_ack_fails_turn,
+    ),
+    ("session_error_fails_turn_at_idle", session_error_fails_turn_at_idle),
+    (
         "shutdown_before_send_ack_fails_turn",
         shutdown_before_send_ack_fails_turn,
     ),
@@ -77,7 +82,6 @@ const TESTS: &[Test] = &[
     ),
     ("terminal_evidence_sets_outcome", terminal_evidence_sets_outcome),
     ("trailing_idle_never_ends_next_turn", trailing_idle_never_ends_next_turn),
-    ("transient_error_does_not_end_turn", transient_error_does_not_end_turn),
     (
         "unproven_boundary_rejects_next_send",
         unproven_boundary_rejects_next_send,
@@ -324,12 +328,14 @@ fn trailing_idle_never_ends_next_turn() {
     assert_eq!(idles, 5);
 }
 
-fn transient_error_does_not_end_turn() {
+fn session_error_fails_turn_at_idle() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
     helper.expect_ready();
-    helper.send("t1", "transient_error");
+    helper.send("t1", "session_error");
     let turn = helper.until_turn_ended("t1");
+    helper.send("t2", "complete");
+    helper.until_turn_ended("t2");
     let (code, records) = helper.shutdown();
     assert_eq!(code, 0);
     let error = position(&turn, |record| item_type(record).as_deref() == Some("session.error"));
@@ -337,11 +343,38 @@ fn transient_error_does_not_end_turn() {
         .iter()
         .rposition(|record| item_type(record).as_deref() == Some("assistant.message_delta"));
     assert!(delta.is_some_and(|delta| error < delta), "{turn:?}");
+    assert_eq!(item_types(&turn).last().map(String::as_str), Some("session.idle"));
     assert_eq!(
         turn_ended(&records),
-        vec![json!({"type": "turn_ended", "outcome": "completed", "request_id": "t1", "turn_id": "msg-1"})]
+        vec![
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "completed", "request_id": "t2", "turn_id": "msg-2"}),
+        ]
     );
     assert!(records.iter().all(|record| record["type"] != "error"));
+}
+
+fn session_error_before_send_ack_fails_turn() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "session_error_before_ack");
+    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    fixture.release();
+    helper.until_turn_ended("t1");
+    helper.send("t2", "complete");
+    helper.until_turn_ended("t2");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "send_accepted", "request_id": "t2", "turn_id": "msg-2"}),
+            json!({"type": "turn_ended", "outcome": "completed", "request_id": "t2", "turn_id": "msg-2"}),
+        ]
+    );
 }
 
 fn lagged_stream_fails_turn() {
@@ -508,6 +541,9 @@ fn terminal_evidence_sets_outcome() {
         ("foreign_autopilot", "completed", 1, true),
         ("malformed_idle", "failed", 1, false),
         ("policy_blocked", "completed", 1, true),
+        ("session_error_abort", "aborted", 1, true),
+        ("session_error_foreign", "completed", 1, true),
+        ("session_error_unstarted", "failed", 1, true),
         ("stale_abort", "completed", 1, true),
     ];
     for (prompt, outcome, idles, reusable) in cases {
@@ -1301,6 +1337,14 @@ mod fake {
             self.event("session.idle", json!({}));
         }
 
+        fn session_error(&mut self, originating_message_id: Option<&str>) {
+            let mut data = json!({"errorType": "query", "message": "request failed"});
+            if let Some(originating_message_id) = originating_message_id {
+                data["originatingMessageId"] = json!(originating_message_id);
+            }
+            self.event("session.error", data);
+        }
+
         fn wait_for_release(&self) {
             let release = release_path(&self.log);
             while !release.exists() {
@@ -1510,6 +1554,37 @@ mod fake {
                     self.idle();
                 }
                 "send_error" => self.reply_error(id, -32000, "send failed"),
+                "session_error" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.session_error(None);
+                    self.delta("recovered");
+                    self.idle();
+                }
+                "session_error_abort" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.session_error(Some(&message_id));
+                    self.event("session.idle", json!({"aborted": true}));
+                }
+                "session_error_before_ack" => {
+                    self.user(&message_id);
+                    self.session_error(Some(&message_id));
+                    self.idle();
+                    self.wait_for_release();
+                    self.reply(id, accepted);
+                }
+                "session_error_foreign" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.session_error(Some("msg-other"));
+                    self.idle();
+                }
+                "session_error_unstarted" => {
+                    self.reply(id, accepted);
+                    self.session_error(Some(&message_id));
+                    self.idle();
+                }
                 "shutdown_before_ack" => {
                     self.user(&message_id);
                     self.event(
@@ -1551,16 +1626,6 @@ mod fake {
                     self.reply(id, accepted);
                     self.idle();
                     self.complete(&message_id);
-                }
-                "transient_error" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event(
-                        "session.error",
-                        json!({"errorType": "rate_limit", "message": "transient"}),
-                    );
-                    self.delta("recovered");
-                    self.idle();
                 }
                 _ => {
                     self.reply(id, accepted);

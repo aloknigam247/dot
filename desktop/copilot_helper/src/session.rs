@@ -53,6 +53,7 @@ impl SdkSession {
 enum Evidence {
     Abort,
     AutopilotStopped { outcome: TurnOutcome, request_id: String },
+    Error(Option<String>),
     Idle { aborted: bool },
     MalformedIdle,
     Started(String),
@@ -80,6 +81,7 @@ enum TurnState {
 
 struct ActiveTurn {
     abort_seen: bool,
+    error_seen: bool,
     pending: Vec<Evidence>,
     request_id: String,
     sdk_id: Option<String>,
@@ -91,6 +93,7 @@ impl ActiveTurn {
     fn new(request_id: String) -> Self {
         Self {
             abort_seen: false,
+            error_seen: false,
             pending: Vec::new(),
             request_id,
             sdk_id: None,
@@ -115,6 +118,13 @@ impl ActiveTurn {
                     boundary_proven: false,
                     outcome,
                 };
+            }
+            // The SDK stops waiting at the error; ending at the turn's own end keeps its boundary provable.
+            Evidence::Error(None) => self.error_seen = true,
+            Evidence::Error(Some(id)) if id == sdk_id => {
+                // A correlated error proves the request reached the CLI even if it failed before user.message.
+                self.error_seen = true;
+                self.started = true;
             }
             Evidence::Idle { aborted } if self.started => {
                 let outcome = if aborted || self.abort_seen {
@@ -438,6 +448,12 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
             }
             TurnState::Running => return Ok(()),
         };
+        // An error keeps the turn from completing; an abort still wins so cancellation stays distinguishable.
+        let outcome = if turn.error_seen && outcome == TurnOutcome::Completed {
+            TurnOutcome::Failed
+        } else {
+            outcome
+        };
         let request_id = turn.request_id.clone();
         self.active_turn = None;
         self.out
@@ -455,7 +471,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
     }
 }
 
-// Mirrors the SDK's own send-and-wait correlation: only root-agent events mark a turn's start and end.
+// Mirrors the SDK's own send-and-wait correlation: only root-agent events mark a turn's start, failure, and end.
 fn evidence(event: &SessionEvent) -> Option<Evidence> {
     if !event.agent_id.as_deref().is_none_or(str::is_empty) {
         return None;
@@ -472,6 +488,9 @@ fn evidence(event: &SessionEvent) -> Option<Evidence> {
             };
             text("requestId").map(|request_id| Evidence::AutopilotStopped { outcome, request_id })
         }
+        "session.error" => Some(Evidence::Error(
+            text("originatingMessageId").filter(|id| !id.is_empty()),
+        )),
         "session.idle" => match event.typed_data::<SessionIdleData>() {
             Some(data) => (data.mode != Some(SessionMode::Autopilot)).then(|| Evidence::Idle {
                 aborted: data.aborted == Some(true),
