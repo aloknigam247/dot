@@ -154,6 +154,7 @@ pub struct SessionController<W> {
     internal_rx: mpsc::UnboundedReceiver<Internal>,
     internal_tx: mpsc::UnboundedSender<Internal>,
     out: Output<W>,
+    pending_aborts: usize,
     reuse_safe: bool,
     sdk: SdkSession,
     session_failed: bool,
@@ -167,6 +168,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
             internal_rx,
             internal_tx,
             out,
+            pending_aborts: 0,
             reuse_safe: true,
             sdk,
             session_failed: false,
@@ -250,6 +252,9 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
     async fn handle_send(&mut self, request_id: String, prompt: String) -> std::io::Result<()> {
         let rejection = if self.session_failed {
             Some((SendRejectKind::SessionFailed, "the session failed; restart the helper"))
+        } else if self.pending_aborts > 0 {
+            // A turn can end on its own before its abort runs, and that abort would then cancel the next turn.
+            Some((SendRejectKind::CancelPending, "a cancellation is still in progress"))
         } else if self.active_turn.is_some() {
             Some((SendRejectKind::TurnActive, "another turn is still active"))
         } else if !self.reuse_safe {
@@ -307,6 +312,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         }
         let internal_tx = self.internal_tx.clone();
         let session = Arc::clone(&self.sdk.session);
+        self.pending_aborts += 1;
         tokio::spawn(async move {
             let result = session.abort().await.map_err(|error| error.to_string());
             let _ = internal_tx.send(Internal::CancelDone {
@@ -322,25 +328,19 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         match internal {
             Internal::CancelDone {
                 request_id,
-                result: Ok(()),
+                result,
                 turn_id,
             } => {
-                self.out
-                    .emit(&HelperMessage::CancelAcknowledged { request_id, turn_id })
-                    .await
-            }
-            Internal::CancelDone {
-                request_id,
-                result: Err(message),
-                ..
-            } => {
-                self.out
-                    .emit(&HelperMessage::CancelRejected {
+                self.pending_aborts -= 1;
+                let message = match result {
+                    Ok(()) => HelperMessage::CancelAcknowledged { request_id, turn_id },
+                    Err(message) => HelperMessage::CancelRejected {
                         kind: CancelRejectKind::AbortFailed,
                         message,
                         request_id,
-                    })
-                    .await
+                    },
+                };
+                self.out.emit(&message).await
             }
             Internal::SendDone { request_id, result } => self.handle_send_done(request_id, result).await,
         }

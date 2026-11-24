@@ -34,6 +34,7 @@ const TESTS: &[Test] = &[
         "cancel_during_send_startup_is_rejected",
         cancel_during_send_startup_is_rejected,
     ),
+    ("cancel_pending_rejects_send", cancel_pending_rejects_send),
     ("cli_status_timeout_reports_unknown", cli_status_timeout_reports_unknown),
     (
         "closed_stdin_finishes_starting_turn",
@@ -267,7 +268,17 @@ fn cancel_correlation() {
     assert_rejection(&helper.until_type("send_rejected"), "t2", "turn_active");
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 0);
     helper.cancel("c2", "msg-1");
-    let records = helper.until(|record| record["type"] == "turn_ended");
+    assert_eq!(
+        helper.until_type("cancel_acknowledged"),
+        json!({"type": "cancel_acknowledged", "request_id": "c2", "turn_id": "msg-1"})
+    );
+    // The fake holds the abort's terminal events, so the acknowledgement alone must leave the turn active.
+    helper.send("t3", "complete");
+    let rejected = helper.until(|record| record["type"] == "send_rejected");
+    assert!(turn_ended(&rejected).is_empty(), "{rejected:?}");
+    assert_rejection(rejected.last().unwrap(), "t3", "turn_active");
+    fixture.release();
+    let records = helper.until_turn_ended("t1");
     assert_eq!(records.last().unwrap()["outcome"], "aborted");
     helper.cancel("c3", "msg-1");
     assert_rejection(&helper.until_type("cancel_rejected"), "c3", "no_active_turn");
@@ -281,7 +292,10 @@ fn cancel_correlation() {
         acknowledged,
         vec![&json!({"type": "cancel_acknowledged", "request_id": "c2", "turn_id": "msg-1"})]
     );
-    assert_eq!(turn_ended(&records).len(), 1);
+    assert_eq!(
+        turn_ended(&records),
+        vec![json!({"type": "turn_ended", "outcome": "aborted", "request_id": "t1", "turn_id": "msg-1"})]
+    );
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 1);
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
 }
@@ -300,6 +314,42 @@ fn cancel_during_send_startup_is_rejected() {
     let (code, _) = helper.shutdown();
     assert_eq!(code, 0);
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 0);
+}
+
+fn cancel_pending_rejects_send() {
+    let fixture = Fixture::with_scenario("idle_before_abort");
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "hold");
+    helper.until_type("send_accepted");
+    helper.cancel("c1", "msg-1");
+    // The fake ends the turn on its own and then holds the abort reply.
+    helper.until_turn_ended("t1");
+    helper.send("t2", "complete");
+    helper.until_type("send_rejected");
+    fixture.release();
+    helper.until_type("cancel_acknowledged");
+    helper.send("t3", "complete");
+    helper.until_turn_ended("t3");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "completed", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({
+                "type": "send_rejected",
+                "kind": "cancel_pending",
+                "message": "a cancellation is still in progress",
+                "request_id": "t2",
+            }),
+            json!({"type": "cancel_acknowledged", "request_id": "c1", "turn_id": "msg-1"}),
+            json!({"type": "send_accepted", "request_id": "t3", "turn_id": "msg-2"}),
+            json!({"type": "turn_ended", "outcome": "completed", "request_id": "t3", "turn_id": "msg-2"}),
+        ]
+    );
+    assert_eq!(rpc_count(&fixture.log(), "session.send"), 2);
 }
 
 fn empty_turn_id_is_rejected() {
@@ -1254,11 +1304,16 @@ impl Helper {
 
     fn shutdown(mut self) -> (i32, Vec<Value>) {
         self.request(json!({"type": "shutdown", "request_id": "stop"}));
-        self.finish()
+        // Stdin stays open until the helper exits, so end of input cannot stand in for the shutdown request.
+        self.drain()
     }
 
     fn finish(mut self) -> (i32, Vec<Value>) {
         self.stdin = None;
+        self.drain()
+    }
+
+    fn drain(mut self) -> (i32, Vec<Value>) {
         loop {
             match self.lines.recv_timeout(READ_TIMEOUT) {
                 Ok(line) => self.records.push(serde_json::from_str(&line).unwrap()),
@@ -1597,9 +1652,17 @@ mod fake {
                 "connect" => self.reply(id, json!({"ok": true, "protocolVersion": 4, "version": VERSION})),
                 "ping" => self.reply(id, json!({"message": "pong", "timestamp": "1970-01-01T00:00:00Z"})),
                 "session.abort" if self.scenario == "abort_error" => self.reply_error(id, -32000, "abort failed"),
+                "session.abort" if self.scenario == "idle_before_abort" => {
+                    if std::mem::take(&mut self.waiting_for_abort) {
+                        self.idle();
+                    }
+                    self.wait_for_release();
+                    self.reply(id, json!({}));
+                }
                 "session.abort" => {
                     self.reply(id, json!({}));
                     if std::mem::take(&mut self.waiting_for_abort) {
+                        self.wait_for_release();
                         self.event("abort", json!({"reason": "user initiated"}));
                         self.event("session.idle", json!({"aborted": true}));
                     }

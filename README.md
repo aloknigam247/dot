@@ -139,7 +139,7 @@ The helper exchanges one JSON object per line on stdin and stdout. Helper protoc
 | Output | `item` | `item` (the SDK event's exact JSON serialization, as a string), `source` (`lifecycle`, `session`) |
 | Output | `ready` | `cli` (`auth`: `signed_in`, `signed_out`, or `unknown` with `auth_error`; `path`; `protocol`; `version` or `null`), `protocol` |
 | Output | `send_accepted` | `request_id`, `turn_id` |
-| Output | `send_rejected` | `kind` (`empty_turn_id`, `reuse_rejected`, `send_failed`, `session_failed`, `turn_active`), `message`, `request_id` |
+| Output | `send_rejected` | `kind` (`cancel_pending`, `empty_turn_id`, `reuse_rejected`, `send_failed`, `session_failed`, `turn_active`), `message`, `request_id` |
 | Output | `turn_ended` | `outcome` (`aborted`, `completed`, `failed`), `request_id`, `turn_id` |
 
 Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `protocol_unverified`, `startup_failed`, or
@@ -152,6 +152,7 @@ CLI's version is available.
   that omit their correlation IDs are ignored, so such a turn stays active until `shutdown`. A root `session.error`
   whose `originatingMessageId` is absent or names the turn makes that turn end `failed`, unless aborted, at its next
   end event.
+- Sends are rejected with `cancel_pending` until every cancel has its `cancel_acknowledged` or `cancel_rejected`.
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
   restarts.
