@@ -164,8 +164,7 @@ independent per-image texture items between the grid's background/text layers. I
 the text grid.
 
 [`CmdlineModel`](desktop/include/CmdlineModel.h), exposed as `NvimConnector.cmdline`, decodes `cmdline_*` events into
-nesting levels, highlighted chunks, prompts, cursor offsets, and block lines. dot does not yet request `ext_cmdline`,
-so Neovim still draws the command line in the grid until a command panel consumes this model.
+nesting levels, highlighted chunks, prompts, cursor offsets, and block lines.
 
 ### Input path (keyboard → nvim)
 

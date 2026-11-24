@@ -147,6 +147,23 @@ private slots:
         verifyUnicodeSession(conn);
     }
 
+    void multiChunkUnicodeOffsetsAccumulateText() {
+        NvimConnector conn;
+        dispatch(conn,
+                 showEvent(Line{ { 0, "\xC3\xA9", 0 }, { 1, "\xF0\x9F\x98\x80x", 2 } }, 0, ":", 1));
+
+        const std::vector<std::pair<int, int>> boundaries{ { 2, 1 }, { 6, 3 }, { 7, 4 } };
+        for(const auto &[byteOffset, textOffset]: boundaries) {
+            dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
+        }
+
+        QTest::ignoreMessage(
+            QtWarningMsg, "Invalid cmdline_pos: cursor byte offset 3 is inside a UTF-8 sequence");
+        dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 7);
+    }
+
     void invalidUtf8DecodesEachByteAsReplacement_data() {
         QTest::addColumn<QByteArray>("bytes");
         QTest::addColumn<QString>("text");
