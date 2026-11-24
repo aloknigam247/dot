@@ -286,6 +286,7 @@ private slots:
         CmdlineModel *model = conn.cmdline();
         QSignalSpy attachSpy(&conn, &NvimConnector::attachComplete);
         QSignalSpy disconnectedSpy(&conn, &NvimConnector::disconnected);
+        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
 
         conn.input(QStringLiteral(":abc"));
         QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
@@ -298,6 +299,7 @@ private slots:
         QVERIFY(conn.attached());
         QCOMPARE(disconnectedSpy.count(), 0);
         QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(hiddenSpy.count(), 0);
         QVERIFY(enableExtCmdline(conn));
 
         conn.input(QStringLiteral(":xyz"));
