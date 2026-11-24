@@ -468,6 +468,7 @@ fn sub_agent_events_do_not_end_turn() {
 fn terminal_evidence_sets_outcome() {
     let cases = [
         ("abort_plain_idle", "aborted", 1, true),
+        ("aborted_idle", "aborted", 1, true),
         ("assistant_start", "completed", 1, true),
         ("autopilot:", "failed", 0, false),
         ("autopilot:aborted", "aborted", 0, false),
@@ -1374,6 +1375,11 @@ mod fake {
                     self.user(&message_id);
                     self.event("abort", json!({"reason": "user initiated"}));
                     self.idle();
+                }
+                "aborted_idle" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.event("session.idle", json!({"aborted": true}));
                 }
                 "assistant_start" => {
                     self.reply(id, accepted);
