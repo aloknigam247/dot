@@ -272,6 +272,9 @@ private slots:
                                        CmdlineModel::SpecialShiftRole };
         QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), specialRoles);
 
+        dispatch(conn, redrawEvent("cmdline_special_char", std::string("\""), true, 1));
+        QCOMPARE(dataSpy.count(), 1);
+
         dispatch(conn, showEvent(Line{ { 0, "2", 0 } }, 1, ":", 1));
 
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
@@ -330,6 +333,39 @@ private slots:
         QCOMPARE(model->blockActive(), false);
         QCOMPARE(model->blockLines(), QVariantList());
         QCOMPARE(blockSpy.count(), 3);
+    }
+
+    void blockReshowReplacesLines() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+
+        dispatch(conn,
+                 redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 0, "one", 0 } },
+                                                                      Line{ { 0, "two", 0 } } }));
+        dispatch(conn,
+                 redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 0, "three", 0 } } }));
+
+        QCOMPARE(model->blockActive(), true);
+        QCOMPARE(model->blockLines().size(), 1);
+        QCOMPARE(model->blockLines().at(0).toList(),
+                 QVariantList{ chunkMap(0, QStringLiteral("three"), 0) });
+        QCOMPARE(blockSpy.count(), 2);
+    }
+
+    void emptyResetAndBlockHideEmitNothing() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
+
+        conn.resetUiState();
+        dispatch(conn, redrawEvent("cmdline_block_hide"));
+
+        QCOMPARE(activeLevelSpy.count(), 0);
+        QCOMPARE(blockSpy.count(), 0);
+        QCOMPARE(resetSpy.count(), 0);
     }
 
     void malformedEventsKeepLastValidState_data() {
