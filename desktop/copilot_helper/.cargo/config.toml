@@ -1,0 +1,3 @@
+# The SDK build script otherwise downloads a CLI runtime; the helper uses the CLI installed on PATH.
+[env]
+COPILOT_SKIP_CLI_DOWNLOAD = "1"

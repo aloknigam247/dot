@@ -26,6 +26,7 @@ The design is not a claim of native implementation parity.
 | `android\` | Android application, shared JVM chat client, and Gradle build |
 | `common\` | Shared artwork, release tooling, and patch-coverage checker |
 | `desktop\` | C++/QML client, build configuration, tests, and desktop tooling |
+| `desktop\copilot_helper\` | Rust [Copilot CLI helper](#copilot-cli-helper) |
 | `docs\` | Repository-wide design documentation |
 
 ## Versioning
@@ -114,6 +115,43 @@ Use `set(id, opts)` to update a placement, `get(id)` to inspect its requested op
 Images follow actual grid scrolling, not buffer/extmark positions. Plugins must re-place them after other viewport
 changes; a successful `set` restores scroll-clipped content. Invalid input and exhausted
 [resource limits](desktop/include/ImageModel.h) raise a Lua error without silently evicting existing images.
+
+## Copilot CLI helper
+
+`dot_copilot_helper` is a standalone process for dot chat; dot does not launch it yet. It connects to the installed
+GitHub Copilot CLI through the official `copilot-sdk` crate and never downloads or bundles a CLI. It uses the first
+`copilot` executable on `PATH` (with `PATHEXT` extensions on Windows) that completes a protocol 4 SDK handshake. Each
+handshake and session creation must finish within `DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS` milliseconds (default 30000).
+The helper runs one session in its working directory, denies every permission request, disables client telemetry, and
+leaves credentials with the CLI. Run Cargo from `desktop\copilot_helper` so its pinned toolchain and
+`.cargo\config.toml` apply; that config stops the SDK build script from downloading a CLI.
+
+The helper exchanges one JSON object per line on stdin and stdout. Helper protocol version 1 records:
+
+| Direction | `type` | Fields |
+| --- | --- | --- |
+| Input | `cancel` | `request_id`, `turn_id` |
+| Input | `send` | `prompt`, `request_id` |
+| Input | `shutdown` | `request_id` |
+| Output | `cancel_acknowledged` | `request_id`, `turn_id` |
+| Output | `cancel_rejected` | `kind` (`abort_failed`, `no_active_turn`, `turn_mismatch`, `turn_starting`), `message`, `request_id` |
+| Output | `error` | `kind` (`cli_not_found`, `cli_unusable`, `event_stream_closed`, `event_stream_lagged`, `invalid_request`, `session_shutdown`, `session_start_failed`), `message`; startup errors add `protocol` and, for discovery, `candidates`; invalid requests add `request_id` when present |
+| Output | `item` | `item` (the SDK event's exact JSON serialization, as a string), `source` (`lifecycle`, `session`) |
+| Output | `ready` | `cli` (`auth`: `signed_in`, `signed_out`, or `unknown` with `auth_error`; `path`; `protocol`; `version` or `null`), `protocol` |
+| Output | `send_accepted` | `request_id`, `turn_id` |
+| Output | `send_rejected` | `kind` (`empty_turn_id`, `reuse_rejected`, `send_failed`, `session_failed`, `turn_active`), `message`, `request_id` |
+| Output | `turn_ended` | `outcome` (`aborted`, `completed`, `failed`), `request_id`, `turn_id` |
+
+Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `protocol_unverified`, `startup_failed`, or
+`timed_out`), and `path`; a protocol mismatch adds `cli_protocol`, `cli_version`, and `required_protocol`.
+
+- `ready` precedes every `item`. A startup `error` is the only record before the helper exits with code 1.
+- At most one turn is active. `send_accepted` precedes exactly one `turn_ended` for that turn; a rejected send has none.
+  A cancel acknowledgement never ends a turn.
+- After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
+  `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
+  restarts.
+- A `shutdown` request or closed stdin stops the CLI and exits with code 0.
 
 ## Architecture
 
