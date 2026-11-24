@@ -62,6 +62,10 @@ const TESTS: &[Test] = &[
         "session_create_failure_reports_start_failed",
         session_create_failure_reports_start_failed,
     ),
+    (
+        "shutdown_before_send_ack_fails_turn",
+        shutdown_before_send_ack_fails_turn,
+    ),
     ("shutdown_finishes_active_turn", shutdown_finishes_active_turn),
     ("shutdown_request_stops_child", shutdown_request_stops_child),
     ("startup_failures_report_candidates", startup_failures_report_candidates),
@@ -391,6 +395,35 @@ fn fatal_shutdown_fails_turn() {
     assert_eq!(turn_ended(&records).len(), 1);
 }
 
+fn shutdown_before_send_ack_fails_turn() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "shutdown_before_ack");
+    helper.until_type("error");
+    fixture.release();
+    helper.until_turn_ended("t1");
+    helper.send("t2", "complete");
+    helper.until_type("send_rejected");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "error", "kind": "session_shutdown", "message": "the session shut down (error)"}),
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({
+                "type": "send_rejected",
+                "kind": "session_failed",
+                "message": "the session failed; restart the helper",
+                "request_id": "t2",
+            }),
+        ]
+    );
+    assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
+}
+
 fn unproven_boundary_rejects_next_send() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -578,11 +611,12 @@ fn discovery_selects_first_successful_handshake() {
     let fixture = Fixture::empty();
     let first = fixture.dir("first");
     let second = fixture.dir("second");
+    let third = fixture.dir("third");
     fixture.install(&first, "copilot.com", "exit");
     fixture.install(&first, "copilot.txt", "ok");
     fixture.install(&second, "copilot.exe", "ok");
-    fixture.install(&second, "copilot.cmd", "ok");
-    let mut helper = fixture.helper_with(&[&first, &second], Some(".COM;.EXE"), None);
+    fixture.install(&third, "copilot.exe", "ok");
+    let mut helper = fixture.helper_with(&[&first, &second, &third], Some(".COM;.EXE"), None);
     let ready = helper.next();
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["cli"]["path"], json!(second.join("copilot.exe")));
@@ -1476,6 +1510,15 @@ mod fake {
                     self.idle();
                 }
                 "send_error" => self.reply_error(id, -32000, "send failed"),
+                "shutdown_before_ack" => {
+                    self.user(&message_id);
+                    self.event(
+                        "session.shutdown",
+                        json!({"errorReason": "crash", "shutdownType": "error"}),
+                    );
+                    self.wait_for_release();
+                    self.reply(id, accepted);
+                }
                 "slow_ack" => {
                     self.wait_for_release();
                     self.reply(id, accepted);
