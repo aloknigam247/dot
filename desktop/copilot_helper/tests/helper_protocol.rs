@@ -2,10 +2,12 @@
 //! with DOT_FAKE_CLI_LOG set, `main` serves the SDK's JSON-RPC protocol instead of running tests.
 
 use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::windows::io::{FromRawHandle, OwnedHandle};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, ExitCode, Stdio};
+use std::ptr;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -14,6 +16,9 @@ use std::time::{Duration, Instant};
 use copilot_sdk::{SessionEvent, SessionLifecycleEvent};
 use serde_json::{Value, json};
 use tempfile::TempDir;
+use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_INBOUND;
+use windows_sys::Win32::System::Pipes::{CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT};
 
 const FAKE_LOG_VARIABLE: &str = "DOT_FAKE_CLI_LOG";
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
@@ -84,6 +89,7 @@ const TESTS: &[Test] = &[
     ("shutdown_request_stops_child", shutdown_request_stops_child),
     ("startup_failures_report_candidates", startup_failures_report_candidates),
     ("startup_items_follow_ready", startup_items_follow_ready),
+    ("stdin_read_error_fails_turn", stdin_read_error_fails_turn),
     (
         "stdout_failure_is_reported_on_stderr",
         stdout_failure_is_reported_on_stderr,
@@ -698,6 +704,35 @@ fn stdout_failure_is_reported_on_stderr() {
     assert!(stderr.starts_with("dot_copilot_helper: "), "{stderr}");
 }
 
+fn stdin_read_error_fails_turn() {
+    let fixture = Fixture::new();
+    let (mut client, server) = fixture.message_pipe();
+    let mut command = fixture.command(&[&fixture.bin], Some(".EXE"), None);
+    command.stderr(Stdio::piped()).stdin(server);
+    let mut helper = Helper::spawn(command);
+    let mut stderr = helper.child.stderr.take().unwrap();
+    helper.expect_ready();
+    let send = json!({"type": "send", "request_id": "t1", "prompt": "hold"});
+    client.write_all(format!("{send}\n").as_bytes()).unwrap();
+    helper.until_type("send_accepted");
+    // One message larger than the helper's stdin buffer fails its read with ERROR_MORE_DATA instead of reaching EOF.
+    client.write_all(&[b' '; 16 * 1024]).unwrap();
+    let (code, records) = helper.finish();
+    assert_eq!(code, 1);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+        ]
+    );
+    assert_eq!(records.last().unwrap()["type"], "turn_ended");
+    fixture.assert_children_exited();
+    let mut text = String::new();
+    stderr.read_to_string(&mut text).unwrap();
+    assert!(text.starts_with("dot_copilot_helper: "), "{text}");
+}
+
 // Discovery behavior
 
 fn discovery_selects_first_successful_handshake() {
@@ -1070,6 +1105,12 @@ impl Fixture {
     }
 
     fn helper_with(&self, dirs: &[&Path], pathext: Option<&str>, timeout_ms: Option<u64>) -> Helper {
+        let mut command = self.command(dirs, pathext, timeout_ms);
+        command.stdin(Stdio::piped());
+        Helper::spawn(command)
+    }
+
+    fn command(&self, dirs: &[&Path], pathext: Option<&str>, timeout_ms: Option<u64>) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_dot_copilot_helper"));
         command
             .current_dir(self.root.path())
@@ -1078,7 +1119,6 @@ impl Fixture {
             .env_remove("COPILOT_CLI_PATH")
             .env_remove(STARTUP_TIMEOUT_VARIABLE)
             .stderr(Stdio::null())
-            .stdin(Stdio::piped())
             .stdout(Stdio::piped());
         match pathext {
             Some(pathext) => command.env("PATHEXT", pathext),
@@ -1087,27 +1127,22 @@ impl Fixture {
         if let Some(timeout_ms) = timeout_ms {
             command.env(STARTUP_TIMEOUT_VARIABLE, timeout_ms.to_string());
         }
-        let mut child = command.spawn().unwrap();
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take().unwrap();
-        // A rendezvous channel keeps the reader from draining stdout ahead of the test.
-        let (tx, lines) = sync_channel(0);
-        thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else {
-                    break;
-                };
-                if tx.send(line).is_err() {
-                    break;
-                }
-            }
-        });
-        Helper {
-            child,
-            lines,
-            records: Vec::new(),
-            stdin,
-        }
+        command
+    }
+
+    fn message_pipe(&self) -> (std::fs::File, OwnedHandle) {
+        let unique = self.root.path().file_name().unwrap().to_string_lossy().into_owned();
+        let name = format!(r"\\.\pipe\dot_helper_{}_{unique}", std::process::id());
+        let wide: Vec<u16> = name.encode_utf16().chain([0]).collect();
+        let mode = PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT;
+        // SAFETY: wide is a live, nul-terminated name, and null security attributes are allowed.
+        let handle = unsafe { CreateNamedPipeW(wide.as_ptr(), PIPE_ACCESS_INBOUND, mode, 1, 0, 65536, 0, ptr::null()) };
+        assert_ne!(handle, INVALID_HANDLE_VALUE, "{}", std::io::Error::last_os_error());
+        // SAFETY: CreateNamedPipeW returned a new handle that nothing else owns.
+        let server = unsafe { OwnedHandle::from_raw_handle(handle) };
+        // Reading a server end that no client has connected to fails, so the client connects before the helper starts.
+        let client = OpenOptions::new().write(true).open(&name).unwrap();
+        (client, server)
     }
 }
 
@@ -1138,6 +1173,30 @@ struct Helper {
 }
 
 impl Helper {
+    fn spawn(mut command: Command) -> Self {
+        let mut child = command.spawn().unwrap();
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().unwrap();
+        // A rendezvous channel keeps the reader from draining stdout ahead of the test.
+        let (tx, lines) = sync_channel(0);
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let Ok(line) = line else {
+                    break;
+                };
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        Self {
+            child,
+            lines,
+            records: Vec::new(),
+            stdin,
+        }
+    }
+
     fn next(&mut self) -> Value {
         let line = self.lines.recv_timeout(READ_TIMEOUT).expect("helper output timed out");
         let record: Value = serde_json::from_str(&line).unwrap();
