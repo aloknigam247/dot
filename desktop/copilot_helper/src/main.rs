@@ -76,14 +76,19 @@ fn resolve_error_message(error: ResolveError) -> HelperMessage {
 }
 
 // A blocked tokio stdin read would keep the runtime alive after shutdown, so lines are read on a plain thread.
-fn spawn_stdin_reader() -> mpsc::Receiver<String> {
+// Raw bytes let the controller reject a non-UTF-8 line as an invalid request instead of ending input.
+fn spawn_stdin_reader() -> mpsc::Receiver<std::io::Result<Vec<u8>>> {
     let (tx, rx) = mpsc::channel(64);
     std::thread::spawn(move || {
-        for line in std::io::stdin().lock().lines() {
-            let Ok(line) = line else {
-                break;
+        let mut stdin = std::io::stdin().lock();
+        loop {
+            let mut line = Vec::new();
+            let read = match stdin.read_until(b'\n', &mut line) {
+                Ok(0) => break,
+                result => result.map(|_| line),
             };
-            if tx.blocking_send(line).is_err() {
+            let failed = read.is_err();
+            if tx.blocking_send(read).is_err() || failed {
                 break;
             }
         }

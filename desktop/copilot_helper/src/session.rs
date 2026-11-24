@@ -10,12 +10,14 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
-use tokio::time::timeout;
+use tokio::time::{Instant, timeout, timeout_at};
 
 use crate::protocol::{
     CancelRejectKind, ControlRequest, ErrorKind, HelperMessage, ItemSource, Output, RequestKind, SendRejectKind,
     TurnOutcome, parse_request,
 };
+
+const SEND_RESULT_WAIT: Duration = Duration::from_secs(5);
 
 pub struct SdkSession {
     events: EventSubscription,
@@ -52,6 +54,7 @@ enum Evidence {
     Abort,
     AutopilotStopped { outcome: TurnOutcome, request_id: String },
     Idle { aborted: bool },
+    MalformedIdle,
     Started(String),
 }
 
@@ -67,15 +70,13 @@ enum Internal {
     },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
 enum TurnState {
-    Active,
     Ended {
         boundary_proven: bool,
         outcome: TurnOutcome,
     },
     Failed,
-    Starting,
+    Running,
 }
 
 struct ActiveTurn {
@@ -95,7 +96,7 @@ impl ActiveTurn {
             request_id,
             sdk_id: None,
             started: false,
-            state: TurnState::Starting,
+            state: TurnState::Running,
         }
     }
 
@@ -125,6 +126,12 @@ impl ActiveTurn {
                 self.state = TurnState::Ended {
                     boundary_proven: true,
                     outcome,
+                };
+            }
+            Evidence::MalformedIdle if self.started => {
+                self.state = TurnState::Ended {
+                    boundary_proven: false,
+                    outcome: TurnOutcome::Failed,
                 };
             }
             Evidence::Started(id) if id == sdk_id => self.started = true,
@@ -157,7 +164,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         }
     }
 
-    pub async fn run_session(mut self, mut requests: mpsc::Receiver<String>) -> std::io::Result<()> {
+    pub async fn run_session(mut self, mut requests: mpsc::Receiver<std::io::Result<Vec<u8>>>) -> std::io::Result<()> {
         let mut events_open = true;
         let mut lifecycle_open = true;
         loop {
@@ -173,19 +180,50 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                     Err(error) => lifecycle_open = self.handle_recv_error(&error, "lifecycle").await?,
                 },
                 line = requests.recv() => match line {
-                    Some(line) if line.trim().is_empty() => {}
-                    Some(line) => match parse_request(&line) {
+                    Some(Ok(line)) if line.trim_ascii().is_empty() => {}
+                    Some(Ok(line)) => match parse_request(&line) {
                         Ok(request) => {
                             if !self.handle_request(request).await? {
-                                return Ok(());
+                                return self.finish_active_turn().await;
                             }
                         }
                         Err(message) => self.out.emit(&message).await?,
                     },
-                    None => return Ok(()),
+                    Some(Err(error)) => {
+                        self.finish_active_turn().await?;
+                        return Err(error);
+                    }
+                    None => return self.finish_active_turn().await,
                 },
             }
         }
+    }
+
+    // Every send gets exactly one reply and every accepted turn exactly one turn_ended, even when the helper exits.
+    async fn finish_active_turn(&mut self) -> std::io::Result<()> {
+        let deadline = Instant::now() + SEND_RESULT_WAIT;
+        while self.active_turn.as_ref().is_some_and(|turn| turn.sdk_id.is_none()) {
+            match timeout_at(deadline, self.internal_rx.recv()).await {
+                Ok(Some(internal)) => self.handle_internal(internal).await?,
+                Ok(None) | Err(_) => {
+                    let Some(turn) = self.active_turn.take() else {
+                        return Ok(());
+                    };
+                    return self
+                        .out
+                        .emit(&HelperMessage::SendRejected {
+                            kind: SendRejectKind::SendFailed,
+                            message: "the helper stopped before the send was acknowledged".to_owned(),
+                            request_id: turn.request_id,
+                        })
+                        .await;
+                }
+            }
+        }
+        if let Some(turn) = self.active_turn.as_mut() {
+            turn.state = TurnState::Failed;
+        }
+        self.emit_turn_ended().await
     }
 
     async fn handle_request(&mut self, request: ControlRequest) -> std::io::Result<bool> {
@@ -308,9 +346,6 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                 };
                 let pending = std::mem::take(&mut turn.pending);
                 turn.sdk_id = Some(sdk_id.clone());
-                if turn.state == TurnState::Starting {
-                    turn.state = TurnState::Active;
-                }
                 for evidence in pending {
                     turn.observe(evidence);
                 }
@@ -400,7 +435,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                 outcome
             }
             TurnState::Failed => TurnOutcome::Failed,
-            TurnState::Active | TurnState::Starting => return Ok(()),
+            TurnState::Running => return Ok(()),
         };
         let request_id = turn.request_id.clone();
         self.active_turn = None;
@@ -431,17 +466,17 @@ fn evidence(event: &SessionEvent) -> Option<Evidence> {
         "session.autopilot_stopped" => {
             let outcome = match text("reason").as_deref() {
                 Some("aborted") => TurnOutcome::Aborted,
-                Some("error") => TurnOutcome::Failed,
-                _ => TurnOutcome::Completed,
+                Some("task_complete") => TurnOutcome::Completed,
+                _ => TurnOutcome::Failed,
             };
             text("requestId").map(|request_id| Evidence::AutopilotStopped { outcome, request_id })
         }
-        "session.idle" => {
-            let data = event.typed_data::<SessionIdleData>().unwrap_or_default();
-            (data.mode != Some(SessionMode::Autopilot)).then(|| Evidence::Idle {
+        "session.idle" => match event.typed_data::<SessionIdleData>() {
+            Some(data) => (data.mode != Some(SessionMode::Autopilot)).then(|| Evidence::Idle {
                 aborted: data.aborted == Some(true),
-            })
-        }
+            }),
+            None => Some(Evidence::MalformedIdle),
+        },
         "session.warning" if text("warningType").as_deref() == Some("policy_blocked") => {
             text("originatingMessageId").map(Evidence::Started)
         }

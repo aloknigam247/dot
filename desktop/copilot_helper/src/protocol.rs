@@ -162,8 +162,8 @@ impl HelperMessage {
     }
 }
 
-pub fn parse_request(line: &str) -> Result<ControlRequest, HelperMessage> {
-    let value: serde_json::Value = serde_json::from_str(line)
+pub fn parse_request(line: &[u8]) -> Result<ControlRequest, HelperMessage> {
+    let value: serde_json::Value = serde_json::from_slice(line)
         .map_err(|error| HelperMessage::error(ErrorKind::InvalidRequest, format!("invalid JSON: {error}")))?;
     let request_id = value
         .get("request_id")

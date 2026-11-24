@@ -28,27 +28,48 @@ const TESTS: &[Test] = &[
         "cancel_during_send_startup_is_rejected",
         cancel_during_send_startup_is_rejected,
     ),
+    (
+        "closed_stdin_finishes_starting_turn",
+        closed_stdin_finishes_starting_turn,
+    ),
+    (
+        "closed_stdin_rejects_unacknowledged_send",
+        closed_stdin_rejects_unacknowledged_send,
+    ),
     ("closed_stdin_stops_child", closed_stdin_stops_child),
     ("closed_stream_fails_turn", closed_stream_fails_turn),
     (
         "discovery_selects_first_successful_handshake",
         discovery_selects_first_successful_handshake,
     ),
+    (
+        "discovery_skips_relative_path_entries",
+        discovery_skips_relative_path_entries,
+    ),
     ("empty_turn_id_is_rejected", empty_turn_id_is_rejected),
+    ("failed_abort_is_rejected", failed_abort_is_rejected),
     ("fatal_shutdown_fails_turn", fatal_shutdown_fails_turn),
+    ("invalid_requests_are_reported", invalid_requests_are_reported),
     ("items_match_sdk_serialization", items_match_sdk_serialization),
     ("lagged_stream_fails_turn", lagged_stream_fails_turn),
     ("missing_cli_reports_not_found", missing_cli_reports_not_found),
     ("permission_request_is_denied", permission_request_is_denied),
     ("protocol_mismatch_reports_version", protocol_mismatch_reports_version),
     ("rejected_send_emits_no_turn_ended", rejected_send_emits_no_turn_ended),
+    (
+        "session_create_failure_reports_start_failed",
+        session_create_failure_reports_start_failed,
+    ),
+    ("shutdown_finishes_active_turn", shutdown_finishes_active_turn),
     ("shutdown_request_stops_child", shutdown_request_stops_child),
     ("startup_failures_report_candidates", startup_failures_report_candidates),
     ("startup_items_follow_ready", startup_items_follow_ready),
+    ("sub_agent_events_do_not_end_turn", sub_agent_events_do_not_end_turn),
     (
         "terminal_before_send_ack_holds_turn_ended",
         terminal_before_send_ack_holds_turn_ended,
     ),
+    ("terminal_evidence_sets_outcome", terminal_evidence_sets_outcome),
     ("trailing_idle_never_ends_next_turn", trailing_idle_never_ends_next_turn),
     ("transient_error_does_not_end_turn", transient_error_does_not_end_turn),
     (
@@ -384,6 +405,101 @@ fn unproven_boundary_rejects_next_send() {
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
 }
 
+fn failed_abort_is_rejected() {
+    let fixture = Fixture::with_scenario("abort_error");
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "hold");
+    helper.until_type("send_accepted");
+    helper.cancel("c1", "msg-1");
+    let before_shutdown = helper.until(|record| record["type"] == "cancel_rejected");
+    assert_rejection(before_shutdown.last().unwrap(), "c1", "abort_failed");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert!(records.iter().all(|record| record["type"] != "cancel_acknowledged"));
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["type"] == "cancel_rejected")
+            .count(),
+        1
+    );
+    // The only turn_ended comes from shutdown, so the failed abort did not end the turn.
+    assert_eq!(
+        turn_ended(&records),
+        vec![json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"})]
+    );
+    assert_eq!(records.last().unwrap()["type"], "turn_ended");
+    assert_eq!(rpc_count(&fixture.log(), "session.abort"), 1);
+}
+
+fn sub_agent_events_do_not_end_turn() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "sub_agent");
+    let turn = helper.until_turn_ended("t1");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    let events: Vec<(Value, Value)> = turn
+        .iter()
+        .filter_map(item)
+        .map(|event| (event["type"].clone(), event["agentId"].clone()))
+        .collect();
+    assert_eq!(
+        events[events.len() - 4..],
+        [
+            (json!("assistant.message"), json!("agent-1")),
+            (json!("session.idle"), json!("agent-1")),
+            (json!("assistant.message_delta"), Value::Null),
+            (json!("session.idle"), Value::Null),
+        ]
+    );
+    assert_eq!(
+        turn_ended(&records),
+        vec![json!({"type": "turn_ended", "outcome": "completed", "request_id": "t1", "turn_id": "msg-1"})]
+    );
+}
+
+fn terminal_evidence_sets_outcome() {
+    let cases = [
+        ("abort_plain_idle", "aborted", 1, true),
+        ("autopilot:", "failed", 0, false),
+        ("autopilot:aborted", "aborted", 0, false),
+        ("autopilot:background_timeout", "failed", 0, false),
+        ("autopilot:error", "failed", 0, false),
+        ("autopilot_idle", "completed", 2, true),
+        ("malformed_idle", "failed", 1, false),
+        ("policy_blocked", "completed", 1, true),
+    ];
+    for (prompt, outcome, idles, reusable) in cases {
+        let fixture = Fixture::new();
+        let mut helper = fixture.helper();
+        helper.expect_ready();
+        helper.send("t1", prompt);
+        let turn = helper.until_turn_ended("t1");
+        assert_eq!(turn.last().unwrap()["outcome"], outcome, "{prompt}");
+        let seen_idles = turn
+            .iter()
+            .filter(|record| item_type(record).as_deref() == Some("session.idle"))
+            .count();
+        assert_eq!(seen_idles, idles, "{prompt}");
+        helper.send("t2", "complete");
+        if reusable {
+            assert_eq!(
+                helper.until_turn_ended("t2").last().unwrap()["outcome"],
+                "completed",
+                "{prompt}"
+            );
+        } else {
+            assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
+        }
+        let (code, records) = helper.shutdown();
+        assert_eq!(code, 0, "{prompt}");
+        assert_eq!(turn_ended(&records).len(), if reusable { 2 } else { 1 }, "{prompt}");
+    }
+}
+
 // Permission, auth, and shutdown behavior
 
 fn permission_request_is_denied() {
@@ -451,7 +567,7 @@ fn discovery_selects_first_successful_handshake() {
     fixture.install(&first, "copilot.txt", "ok");
     fixture.install(&second, "copilot.exe", "ok");
     fixture.install(&second, "copilot.cmd", "ok");
-    let mut helper = fixture.helper_with(&[&first, &second], ".COM;.EXE", None);
+    let mut helper = fixture.helper_with(&[&first, &second], Some(".COM;.EXE"), None);
     let ready = helper.next();
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["cli"]["path"], json!(second.join("copilot.exe")));
@@ -491,7 +607,7 @@ fn missing_cli_reports_not_found() {
     let first = fixture.dir("first");
     let second = fixture.dir("second");
     fixture.install(&first, "copilot.txt", "ok");
-    let helper = fixture.helper_with(&[&first, &second], ".COM;.EXE", None);
+    let helper = fixture.helper_with(&[&first, &second], Some(".COM;.EXE"), None);
     let (code, records) = helper.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
@@ -510,7 +626,7 @@ fn startup_failures_report_candidates() {
     fixture.install(&first, "copilot.exe", "exit");
     fixture.install(&second, "copilot.exe", "no_protocol");
     fixture.install(&third, "copilot.exe", "hang");
-    let helper = fixture.helper_with(&[&first, &second, &third], ".EXE", Some(2000));
+    let helper = fixture.helper_with(&[&first, &second, &third], Some(".EXE"), Some(2000));
     let (code, records) = helper.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
@@ -531,6 +647,122 @@ fn startup_failures_report_candidates() {
         "{candidates:#?}"
     );
     assert_eq!(candidates[2]["message"], "no protocol handshake within 2000 ms");
+    fixture.assert_children_exited();
+}
+
+fn discovery_skips_relative_path_entries() {
+    let fixture = Fixture::empty();
+    let relative = fixture.dir("relative");
+    let absolute = fixture.dir("absolute");
+    fixture.install(&relative, "copilot.exe", "ok");
+    fixture.install(&absolute, "copilot.exe", "ok");
+    // Without PATHEXT, only the default executable extensions can find copilot.exe.
+    let mut helper = fixture.helper_with(&[Path::new("relative"), &absolute], None, None);
+    assert_eq!(helper.next()["cli"]["path"], json!(absolute.join("copilot.exe")));
+    let (code, _) = helper.shutdown();
+    assert_eq!(code, 0);
+    let started: Vec<Value> = fixture
+        .log()
+        .iter()
+        .filter(|entry| entry["event"] == "start")
+        .map(|entry| entry["exe"].clone())
+        .collect();
+    assert_eq!(started, vec![json!(absolute.join("copilot.exe"))]);
+}
+
+fn session_create_failure_reports_start_failed() {
+    let fixture = Fixture::with_scenario("create_error");
+    let helper = fixture.helper();
+    let (code, records) = helper.finish();
+    assert_eq!(code, 1);
+    assert_eq!(records.len(), 1, "{records:?}");
+    assert_eq!(records[0]["type"], "error");
+    assert_eq!(records[0]["kind"], "session_start_failed");
+    assert_eq!(records[0]["protocol"], 1);
+    fixture.assert_children_exited();
+}
+
+// Request parsing and exit during a turn
+
+fn invalid_requests_are_reported() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.write_raw(b"\r\n");
+    helper.write_raw(b"{not json\n");
+    helper.write_raw(b"{\"type\": \"pause\", \"request_id\": \"p1\"}\n");
+    helper.write_raw(b"\xff\xfe\n");
+    helper.send("t1", "complete");
+    let turn = helper.until_turn_ended("t1");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    let errors: Vec<(&Value, Option<&Value>)> = records
+        .iter()
+        .filter(|record| record["type"] == "error")
+        .map(|record| (&record["kind"], record.get("request_id")))
+        .collect();
+    let invalid = json!("invalid_request");
+    assert_eq!(
+        errors,
+        vec![(&invalid, None), (&invalid, Some(&json!("p1"))), (&invalid, None)]
+    );
+    assert_eq!(turn.last().unwrap()["outcome"], "completed");
+}
+
+fn shutdown_finishes_active_turn() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "hold");
+    helper.until_type("send_accepted");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+        ]
+    );
+    assert_eq!(records.last().unwrap()["type"], "turn_ended");
+    fixture.assert_children_exited();
+}
+
+fn closed_stdin_finishes_starting_turn() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "slow_hold");
+    fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.send");
+    helper.close_stdin();
+    fixture.release();
+    let (code, records) = helper.finish();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+        ]
+    );
+    assert_eq!(records.last().unwrap()["type"], "turn_ended");
+    fixture.assert_children_exited();
+}
+
+fn closed_stdin_rejects_unacknowledged_send() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "slow_hold");
+    fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.send");
+    helper.close_stdin();
+    assert_rejection(&helper.until_type("send_rejected"), "t1", "send_failed");
+    // The fake acknowledges only after the helper gave up, so the late result cannot produce a turn.
+    fixture.release();
+    let (code, records) = helper.finish();
+    assert_eq!(code, 0);
+    assert_eq!(replies(&records).len(), 1, "{records:?}");
+    assert!(turn_ended(&records).is_empty());
     fixture.assert_children_exited();
 }
 
@@ -609,21 +841,24 @@ impl Fixture {
     }
 
     fn helper(&self) -> Helper {
-        self.helper_with(&[&self.bin], ".EXE", None)
+        self.helper_with(&[&self.bin], Some(".EXE"), None)
     }
 
-    fn helper_with(&self, dirs: &[&Path], pathext: &str, timeout_ms: Option<u64>) -> Helper {
+    fn helper_with(&self, dirs: &[&Path], pathext: Option<&str>, timeout_ms: Option<u64>) -> Helper {
         let mut command = Command::new(env!("CARGO_BIN_EXE_dot_copilot_helper"));
         command
             .current_dir(self.root.path())
             .env("PATH", std::env::join_paths(dirs).unwrap())
-            .env("PATHEXT", pathext)
             .env(FAKE_LOG_VARIABLE, self.log_path())
             .env_remove("COPILOT_CLI_PATH")
             .env_remove(STARTUP_TIMEOUT_VARIABLE)
             .stderr(Stdio::null())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
+        match pathext {
+            Some(pathext) => command.env("PATHEXT", pathext),
+            None => command.env_remove("PATHEXT"),
+        };
         if let Some(timeout_ms) = timeout_ms {
             command.env(STARTUP_TIMEOUT_VARIABLE, timeout_ms.to_string());
         }
@@ -698,6 +933,16 @@ impl Helper {
 
     fn send(&mut self, request_id: &str, prompt: &str) {
         self.request(json!({"type": "send", "request_id": request_id, "prompt": prompt}));
+    }
+
+    fn write_raw(&mut self, bytes: &[u8]) {
+        let stdin = self.stdin.as_mut().unwrap();
+        stdin.write_all(bytes).unwrap();
+        stdin.flush().unwrap();
+    }
+
+    fn close_stdin(&mut self) {
+        self.stdin = None;
     }
 
     fn cancel(&mut self, request_id: &str, turn_id: &str) {
@@ -784,6 +1029,14 @@ fn position(records: &[Value], predicate: impl Fn(&Value) -> bool) -> usize {
         .iter()
         .position(predicate)
         .unwrap_or_else(|| panic!("no matching record in {records:?}"))
+}
+
+fn replies(records: &[Value]) -> Vec<Value> {
+    records
+        .iter()
+        .filter(|record| record["type"] != "item" && record["type"] != "ready")
+        .cloned()
+        .collect()
 }
 
 fn turn_ended(records: &[Value]) -> Vec<Value> {
@@ -946,14 +1199,21 @@ mod fake {
         }
 
         fn event(&mut self, kind: &str, data: Value) {
+            self.agent_event(None, kind, data);
+        }
+
+        fn agent_event(&mut self, agent_id: Option<&str>, kind: &str, data: Value) {
             self.event_count += 1;
-            let event = json!({
+            let mut event = json!({
                 "data": data,
                 "id": format!("evt-{}", self.event_count),
                 "parentId": null,
                 "timestamp": "2026-01-01T00:00:00.000Z",
                 "type": kind,
             });
+            if let Some(agent_id) = agent_id {
+                event["agentId"] = json!(agent_id);
+            }
             self.record(json!({"event": "sent", "item": event, "source": "session"}));
             let params = json!({"event": event, "sessionId": self.session_id});
             self.write(&json!({"jsonrpc": "2.0", "method": "session.event", "params": params}));
@@ -974,6 +1234,13 @@ mod fake {
 
         fn idle(&mut self) {
             self.event("session.idle", json!({}));
+        }
+
+        fn wait_for_release(&self) {
+            let release = release_path(&self.log);
+            while !release.exists() {
+                thread::sleep(Duration::from_millis(10));
+            }
         }
 
         fn user(&mut self, message_id: &str) {
@@ -1010,6 +1277,7 @@ mod fake {
                 }
                 "connect" => self.reply(id, json!({"ok": true, "protocolVersion": 4, "version": VERSION})),
                 "ping" => self.reply(id, json!({"message": "pong", "timestamp": "1970-01-01T00:00:00Z"})),
+                "session.abort" if self.scenario == "abort_error" => self.reply_error(id, -32000, "abort failed"),
                 "session.abort" => {
                     self.reply(id, json!({}));
                     if std::mem::take(&mut self.waiting_for_abort) {
@@ -1017,6 +1285,7 @@ mod fake {
                         self.event("session.idle", json!({"aborted": true}));
                     }
                 }
+                "session.create" if self.scenario == "create_error" => self.reply_error(id, -32000, "create failed"),
                 "session.create" => {
                     self.session_id = params["sessionId"].as_str().unwrap_or("fake-session").to_owned();
                     self.lifecycle("session.created");
@@ -1049,6 +1318,12 @@ mod fake {
             let message_id = format!("msg-{}", self.message_count);
             let accepted = json!({"messageId": message_id});
             match prompt {
+                "abort_plain_idle" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.event("abort", json!({"reason": "user initiated"}));
+                    self.idle();
+                }
                 "autopilot" => {
                     self.reply(id, accepted);
                     self.user(&message_id);
@@ -1057,6 +1332,23 @@ mod fake {
                         "session.autopilot_stopped",
                         json!({"reason": "task_complete", "requestId": message_id}),
                     );
+                }
+                "autopilot_idle" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.event("session.idle", json!({"mode": "autopilot"}));
+                    self.delta("continuing");
+                    self.idle();
+                }
+                _ if prompt.starts_with("autopilot:") => {
+                    let reason = &prompt["autopilot:".len()..];
+                    let data = match reason {
+                        "" => json!({"requestId": message_id}),
+                        _ => json!({"reason": reason, "requestId": message_id}),
+                    };
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.event("session.autopilot_stopped", data);
                 }
                 "close" => {
                     self.reply(id, accepted);
@@ -1101,6 +1393,11 @@ mod fake {
                     self.idle();
                     self.record(json!({"event": "burst_done"}));
                 }
+                "malformed_idle" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.event("session.idle", json!({"aborted": "yes"}));
+                }
                 "permission" => {
                     self.reply(id, accepted);
                     self.user(&message_id);
@@ -1110,14 +1407,37 @@ mod fake {
                     );
                     self.waiting_for_permission = true;
                 }
+                "policy_blocked" => {
+                    self.reply(id, accepted);
+                    let warning = json!({
+                        "message": "blocked",
+                        "originatingMessageId": message_id,
+                        "warningType": "policy_blocked",
+                    });
+                    self.event("session.warning", warning);
+                    self.idle();
+                }
                 "send_error" => self.reply_error(id, -32000, "send failed"),
                 "slow_ack" => {
-                    let release = release_path(&self.log);
-                    while !release.exists() {
-                        thread::sleep(Duration::from_millis(10));
-                    }
+                    self.wait_for_release();
                     self.reply(id, accepted);
                     self.complete(&message_id);
+                }
+                "slow_hold" => {
+                    self.wait_for_release();
+                    self.reply(id, accepted);
+                }
+                "sub_agent" => {
+                    self.reply(id, accepted);
+                    self.user(&message_id);
+                    self.agent_event(
+                        Some("agent-1"),
+                        "assistant.message",
+                        json!({"content": "sub", "messageId": "sub-reply", "originatingMessageId": message_id}),
+                    );
+                    self.agent_event(Some("agent-1"), "session.idle", json!({}));
+                    self.delta("root");
+                    self.idle();
                 }
                 "trailing" => {
                     self.idle();

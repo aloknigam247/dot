@@ -151,7 +151,8 @@ Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `pro
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
   restarts.
-- A `shutdown` request or closed stdin stops the CLI and exits with code 0.
+- A `shutdown` request or closed stdin ends any active turn as `failed`, stops the CLI, and exits with code 0. A stdin
+  read error does the same but exits with code 1.
 
 ## Architecture
 
