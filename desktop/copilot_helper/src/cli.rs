@@ -15,6 +15,7 @@ use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
+use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
 use crate::protocol::{CandidateOutcome, CandidateReport};
 
@@ -160,6 +161,7 @@ async fn describe(client: &Client, path: &Path, limit: Duration) -> CliResolutio
 async fn probe_version(path: &Path, cwd: &Path, limit: Duration) -> Option<String> {
     let mut child = tokio::process::Command::new(path)
         .args(SERVER_ARGS)
+        .creation_flags(CREATE_NO_WINDOW)
         .current_dir(cwd)
         .env("COPILOT_TELEMETRY_DISABLED", "true")
         .kill_on_drop(true)

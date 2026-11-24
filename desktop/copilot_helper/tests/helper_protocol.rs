@@ -41,6 +41,11 @@ const TESTS: &[Test] = &[
     ("closed_stdin_stops_child", closed_stdin_stops_child),
     ("closed_stream_fails_turn", closed_stream_fails_turn),
     (
+        "cmd_wrapper_mismatch_stops_lingering_cli",
+        cmd_wrapper_mismatch_stops_lingering_cli,
+    ),
+    ("cmd_wrapper_runs_turn", cmd_wrapper_runs_turn),
+    (
         "discovery_selects_first_successful_handshake",
         discovery_selects_first_successful_handshake,
     ),
@@ -82,6 +87,10 @@ const TESTS: &[Test] = &[
     ),
     ("terminal_evidence_sets_outcome", terminal_evidence_sets_outcome),
     ("trailing_idle_never_ends_next_turn", trailing_idle_never_ends_next_turn),
+    (
+        "uncorrelated_start_waits_for_shutdown",
+        uncorrelated_start_waits_for_shutdown,
+    ),
     (
         "unproven_boundary_rejects_next_send",
         unproven_boundary_rejects_next_send,
@@ -326,6 +335,28 @@ fn trailing_idle_never_ends_next_turn() {
         .filter(|record| item_type(record).as_deref() == Some("session.idle"))
         .count();
     assert_eq!(idles, 5);
+}
+
+fn uncorrelated_start_waits_for_shutdown() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "uncorrelated_start");
+    let turn = helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    let types = item_types(&turn);
+    assert_eq!(types[types.len() - 2..], ["user.message", "session.idle"]);
+    assert!(turn_ended(&turn).is_empty(), "{turn:?}");
+    let (code, records) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+        ]
+    );
+    assert_eq!(records.last().unwrap()["type"], "turn_ended");
+    fixture.assert_children_exited();
 }
 
 fn session_error_fails_turn_at_idle() {
@@ -687,6 +718,40 @@ fn protocol_mismatch_reports_version() {
     fixture.assert_children_exited();
 }
 
+fn cmd_wrapper_mismatch_stops_lingering_cli() {
+    let fixture = Fixture::empty();
+    fixture.install_cmd(&fixture.bin, "protocol3_linger");
+    let mut helper = fixture.helper_with(&[&fixture.bin], Some(".CMD"), None);
+    let error = helper.next();
+    assert_eq!(error["kind"], "cli_unusable");
+    let candidates = error["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0]["path"], json!(fixture.bin.join("copilot.cmd")));
+    assert_eq!(candidates[0]["outcome"], "protocol_mismatch");
+    assert_eq!(candidates[0]["cli_version"], fake::LEGACY_VERSION);
+    // Both waits together stay below LINGER, so a probe CLI left running fails here rather than exiting on its own.
+    assert_eq!(helper.wait(), 1);
+    fixture.assert_children_exit_within(fake::LINGER / 3);
+    assert_eq!(rpc_count(&fixture.log(), "status.get"), 1);
+    let (_, records) = helper.finish();
+    assert_eq!(records.len(), 1);
+}
+
+fn cmd_wrapper_runs_turn() {
+    let fixture = Fixture::empty();
+    fixture.install_cmd(&fixture.bin, "ok");
+    let mut helper = fixture.helper_with(&[&fixture.bin], Some(".CMD"), None);
+    let ready = helper.next();
+    assert_eq!(ready["type"], "ready");
+    assert_eq!(ready["cli"]["path"], json!(fixture.bin.join("copilot.cmd")));
+    helper.send("t1", "complete");
+    assert_eq!(helper.until_turn_ended("t1").last().unwrap()["outcome"], "completed");
+    let (code, _) = helper.shutdown();
+    assert_eq!(code, 0);
+    assert_eq!(started_exes(&fixture.log()), vec![fixture.bin.join("fake_cli.exe")]);
+    fixture.assert_children_exited();
+}
+
 fn missing_cli_reports_not_found() {
     let fixture = Fixture::empty();
     let first = fixture.dir("first");
@@ -919,6 +984,11 @@ impl Fixture {
         std::fs::write(fake::scenario_path(&target), scenario).unwrap();
     }
 
+    fn install_cmd(&self, dir: &Path, scenario: &str) {
+        self.install(dir, "fake_cli.exe", scenario);
+        std::fs::write(dir.join("copilot.cmd"), "@\"%~dp0fake_cli.exe\" %*\r\n").unwrap();
+    }
+
     fn log_path(&self) -> PathBuf {
         self.root.path().join("fake.jsonl")
     }
@@ -940,9 +1010,13 @@ impl Fixture {
     }
 
     fn assert_children_exited(&self) {
+        self.assert_children_exit_within(READ_TIMEOUT);
+    }
+
+    fn assert_children_exit_within(&self, limit: Duration) {
+        let deadline = Instant::now() + limit;
         for entry in self.log().iter().filter(|entry| entry["event"] == "start") {
             let pid = entry["pid"].as_u64().unwrap();
-            let deadline = Instant::now() + READ_TIMEOUT;
             while process_alive(pid) {
                 assert!(Instant::now() < deadline, "fake CLI {pid} is still running");
                 thread::sleep(Duration::from_millis(50));
@@ -992,6 +1066,25 @@ impl Fixture {
             lines,
             records: Vec::new(),
             stdin,
+        }
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        if !thread::panicking() {
+            return;
+        }
+        // A failed test can leave a fake CLI running; the image filter avoids killing a process that reused its pid.
+        for entry in self.log().iter().filter(|entry| entry["event"] == "start") {
+            let exe = PathBuf::from(entry["exe"].as_str().unwrap());
+            let image = format!("IMAGENAME eq {}", exe.file_name().unwrap().to_string_lossy());
+            let pid = entry["pid"].to_string();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid, "/FI", &image])
+                .stderr(Stdio::null())
+                .stdout(Stdio::null())
+                .status();
         }
     }
 }
@@ -1073,15 +1166,19 @@ impl Helper {
                 Err(RecvTimeoutError::Timeout) => panic!("helper did not close stdout"),
             }
         }
+        let code = self.wait();
+        (code, std::mem::take(&mut self.records))
+    }
+
+    fn wait(&mut self) -> i32 {
         let deadline = Instant::now() + READ_TIMEOUT;
-        let status = loop {
+        loop {
             if let Some(status) = self.child.try_wait().unwrap() {
-                break status;
+                return status.code().unwrap();
             }
             assert!(Instant::now() < deadline, "helper did not exit");
             thread::sleep(Duration::from_millis(20));
-        };
-        (status.code().unwrap(), std::mem::take(&mut self.records))
+        }
     }
 }
 
@@ -1196,6 +1293,7 @@ mod fake {
     use super::*;
 
     pub const LEGACY_VERSION: &str = "3.0.0-fake";
+    pub const LINGER: Duration = Duration::from_secs(60);
     pub const VERSION: &str = "9.9.9-fake";
 
     const BURST_EVENTS: usize = 3000;
@@ -1216,6 +1314,7 @@ mod fake {
         let exe = std::env::current_exe().unwrap();
         let scenario = std::fs::read_to_string(scenario_path(&exe)).unwrap_or_default();
         let mut fake = Fake {
+            connected: false,
             event_count: 0,
             log,
             message_count: 0,
@@ -1238,6 +1337,10 @@ mod fake {
         let mut stdin = BufReader::new(std::io::stdin());
         while let Some(message) = read_frame(&mut stdin) {
             fake.handle(&message);
+        }
+        // Only the version probe skips connect, so this outlives the probe unless the helper stops its process tree.
+        if fake.scenario == "protocol3_linger" && !fake.connected {
+            thread::sleep(LINGER);
         }
         fake.exit();
     }
@@ -1263,6 +1366,7 @@ mod fake {
     }
 
     struct Fake {
+        connected: bool,
         event_count: usize,
         log: PathBuf,
         message_count: usize,
@@ -1374,6 +1478,7 @@ mod fake {
             let id = &message["id"];
             let params = &message["params"];
             self.record(json!({"event": "rpc", "method": method, "params": params}));
+            self.connected |= method == "connect";
             let hung = self
                 .scenario
                 .strip_prefix("hang:")
@@ -1386,7 +1491,7 @@ mod fake {
                 "auth.getStatus" if self.scenario == "signed_out" => self.reply(id, json!({"isAuthenticated": false})),
                 "auth.getStatus" => self.reply(id, json!({"isAuthenticated": true})),
                 "connect" if self.scenario == "no_protocol" => self.reply_error(id, -32601, "method not found"),
-                "connect" if self.scenario == "protocol3" => {
+                "connect" if self.scenario.starts_with("protocol3") => {
                     self.reply(id, json!({"ok": true, "protocolVersion": 3, "version": LEGACY_VERSION}))
                 }
                 "connect" => self.reply(id, json!({"ok": true, "protocolVersion": 4, "version": VERSION})),
@@ -1419,7 +1524,7 @@ mod fake {
                     }
                 }
                 "session.send" => self.send(id, params["prompt"].as_str().unwrap_or_default()),
-                "status.get" if self.scenario == "protocol3" => {
+                "status.get" if self.scenario.starts_with("protocol3") => {
                     self.reply(id, json!({"protocolVersion": 3, "version": LEGACY_VERSION}))
                 }
                 "status.get" => self.reply(id, json!({"protocolVersion": 4, "version": VERSION})),
@@ -1626,6 +1731,11 @@ mod fake {
                     self.reply(id, accepted);
                     self.idle();
                     self.complete(&message_id);
+                }
+                "uncorrelated_start" => {
+                    self.reply(id, accepted);
+                    self.event("user.message", json!({"content": "prompt"}));
+                    self.idle();
                 }
                 _ => {
                     self.reply(id, accepted);
