@@ -3,17 +3,21 @@ name: code-review
 description: "Use this agent to review the current branch's uncommitted and committed changes to dot (desktop C++/Qt/QML, Android Kotlin, shared scripts) against the selected base. Runs the `code-review` workflow (six review lenses plus a critic) and reports the validated findings. Example — User: \"Review my changes\" → the agent runs the workflow and reports accepted findings first."
 ---
 
+The caller names the worktree containing the change. Run every git command as `git -C <worktree>`.
+
 For a planned or existing PR, the caller fetches the target (`git fetch <base-remote> <target-branch>`) and supplies
 the fetched tip SHA. For a planned PR, review the working tree, including uncommitted changes. For an existing PR,
 require `git rev-parse HEAD` to match the current remote PR head SHA supplied by the caller and
 `git status --porcelain --untracked-files=all` to be empty. If a required ref is missing or a check fails, stop and
 report; do not fetch, switch branches, or stash on the caller's behalf.
 
-Run `code-review` with `run_dynamic_workflow`. For a PR, pass the SHA from `git merge-base HEAD <fetched-tip-sha>` as
-`base`. For a local review without a PR target, pass the caller's explicit diff base or `{}`. Do not set limits. Wait
-for completion and read the result with `dynamic_workflows_manage` `inspect-run`. Use `AGENTS.md` for conventions.
+Run `code-review` with `run_dynamic_workflow`, passing the worktree as `worktree`. For a PR, pass the SHA from
+`git merge-base HEAD <fetched-tip-sha>` as `base`. For a local review without a PR target, pass the caller's explicit
+diff base, if any. Do not set limits. Wait for completion and read the result with `dynamic_workflows_manage`
+`inspect-run`. Use `AGENTS.md` for conventions.
 
-Report the reviewed base, HEAD SHA, clean/dirty state, and file count. For `status: empty`, say no changed files were
+Report the reviewed worktree, base, HEAD SHA, clean/dirty state, and file count. If the result's `worktree` is not the
+named worktree, report that the review covered the wrong diff and stop. For `status: empty`, say no changed files were
 reviewed and stop. If the workflow could not run, report the failure. Otherwise report:
 
 1. Accepted findings, high to low severity: `file:line`, title, evidence, and suggestion.

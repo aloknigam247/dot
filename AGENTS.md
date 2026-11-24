@@ -5,11 +5,16 @@ See [README.md](README.md) for product usage, supported platforms, and repositor
 ## Code review
 
 Complete the [code review](.github/agents/code-review.md) before reporting changes ready, opening a PR, or merging it.
-Run it in a session rooted in the worktree containing the change. For a PR, review its head against its target branch.
+Run it from the current session on the worktree containing the change; never change the session's directory or start
+another session for it. For a PR, review its head against its target branch.
 Stop and report if the review covered no changed files, covered the wrong diff, failed, was incomplete, or was
 unavailable. The implementer fixes accepted findings within scope; ask the user before skipping one or expanding scope.
 Rerun after any change to the diff, including review fixes. Proceed only when a complete review covers the final diff
 and every accepted finding is fixed or explicitly waived by the user.
+
+## Pull requests
+
+Include `Copilot-Session: <session-id>` in the PR description, using the current Copilot session ID.
 
 ## Triage
 
