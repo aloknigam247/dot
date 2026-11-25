@@ -156,6 +156,8 @@ CLI's version is available.
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
   restarts.
+- Each record is written to stdout before the next event is handled, so `event_stream_lagged` means stdout went unread
+  while more events arrived than the SDK buffers (512 session events, 256 lifecycle events).
 - A `shutdown` request or closed stdin ends any active turn as `failed`, stops the CLI, and exits with code 0. A stdin
   read error does the same but exits with code 1. An I/O error that stops the helper is written to stderr.
 
