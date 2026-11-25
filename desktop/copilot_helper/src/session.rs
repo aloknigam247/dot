@@ -18,6 +18,7 @@ use crate::protocol::{
 };
 
 const SEND_RESULT_WAIT: Duration = Duration::from_secs(5);
+const MAX_EVENTS_BEFORE_CONTROL: usize = 32;
 
 pub struct SdkSession {
     events: EventSubscription,
@@ -102,47 +103,54 @@ impl ActiveTurn {
         }
     }
 
+    fn fail(&mut self) {
+        self.pending.clear();
+        self.state = TurnState::Ended {
+            boundary_proven: false,
+            outcome: TurnOutcome::Failed,
+        };
+    }
+
     fn observe(&mut self, evidence: Evidence) {
+        if matches!(self.state, TurnState::Ended { .. }) {
+            return;
+        }
         let Some(sdk_id) = self.sdk_id.as_deref() else {
             self.pending.push(evidence);
             return;
         };
-        if matches!(self.state, TurnState::Ended { .. }) {
-            return;
-        }
         match evidence {
             Evidence::Abort => self.abort_seen |= self.started,
             Evidence::AutopilotStopped { outcome, request_id } if request_id == sdk_id => {
                 // Autopilot stop is not session-wide idle, so trailing work may still follow it.
                 self.state = TurnState::Ended {
                     boundary_proven: false,
-                    outcome,
+                    outcome: if self.error_seen && outcome == TurnOutcome::Completed {
+                        TurnOutcome::Failed
+                    } else {
+                        outcome
+                    },
                 };
             }
             // The SDK stops waiting at the error; ending at the turn's own end keeps its boundary provable.
             Evidence::Error(id) if id.as_deref().is_none_or(|id| id == sdk_id) => {
-                // An error attributed to the turn proves the request reached the CLI even if it failed before
-                // user.message.
                 self.error_seen = true;
-                self.started = true;
+                self.started |= id.is_some();
             }
-            Evidence::Idle { aborted } if self.started => {
+            Evidence::Idle { aborted } if self.started || self.error_seen => {
                 let outcome = if aborted || self.abort_seen {
                     TurnOutcome::Aborted
+                } else if self.error_seen {
+                    TurnOutcome::Failed
                 } else {
                     TurnOutcome::Completed
                 };
                 self.state = TurnState::Ended {
-                    boundary_proven: true,
+                    boundary_proven: self.started,
                     outcome,
                 };
             }
-            Evidence::MalformedIdle if self.started => {
-                self.state = TurnState::Ended {
-                    boundary_proven: false,
-                    outcome: TurnOutcome::Failed,
-                };
-            }
+            Evidence::MalformedIdle if self.started || self.error_seen => self.fail(),
             Evidence::Started(id) if id == sdk_id => self.started = true,
             _ => {}
         }
@@ -176,43 +184,79 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
     }
 
     pub async fn run_session(mut self, mut requests: mpsc::Receiver<std::io::Result<Vec<u8>>>) -> std::io::Result<()> {
+        let mut event_count = 0;
         let mut events_open = true;
         let mut lifecycle_open = true;
         loop {
+            // Drain short SDK bursts in order without letting a sustained stream starve a queued control.
+            if event_count >= MAX_EVENTS_BEFORE_CONTROL {
+                event_count = 0;
+                let line = match requests.try_recv() {
+                    Ok(line) => Some(line),
+                    Err(mpsc::error::TryRecvError::Disconnected) => None,
+                    Err(mpsc::error::TryRecvError::Empty) => continue,
+                };
+                if !self.handle_line(line).await? {
+                    return Ok(());
+                }
+            }
             tokio::select! {
                 biased;
                 Some(internal) = self.internal_rx.recv() => self.handle_internal(internal).await?,
                 event = self.sdk.events.recv(), if events_open => match event {
-                    Ok(event) => self.handle_event(event).await?,
+                    Ok(event) => {
+                        event_count += 1;
+                        self.handle_event(event).await?;
+                    }
                     Err(error) => events_open = self.handle_recv_error(&error, "session").await?,
                 },
                 event = self.sdk.lifecycle.recv(), if lifecycle_open => match event {
-                    Ok(event) => self.emit_item(ItemSource::Lifecycle, &event).await?,
+                    Ok(event) => {
+                        event_count += 1;
+                        self.emit_item(ItemSource::Lifecycle, &event).await?;
+                    }
                     Err(error) => lifecycle_open = self.handle_recv_error(&error, "lifecycle").await?,
                 },
-                line = requests.recv() => match line {
-                    Some(Ok(line)) if line.trim_ascii().is_empty() => {}
-                    Some(Ok(line)) => match parse_request(&line) {
-                        Ok(request) => {
-                            if !self.handle_request(request).await? {
-                                return self.finish_active_turn().await;
-                            }
-                        }
-                        Err(message) => self.out.emit(&message).await?,
-                    },
-                    Some(Err(error)) => {
-                        self.finish_active_turn().await?;
-                        return Err(error);
+                line = requests.recv() => {
+                    event_count = 0;
+                    if !self.handle_line(line).await? {
+                        return Ok(());
                     }
-                    None => return self.finish_active_turn().await,
-                },
+                }
             }
         }
+    }
+
+    async fn handle_line(&mut self, line: Option<std::io::Result<Vec<u8>>>) -> std::io::Result<bool> {
+        match line {
+            Some(Ok(line)) if line.trim_ascii().is_empty() => return Ok(true),
+            Some(Ok(line)) => match parse_request(&line) {
+                Ok(request) => {
+                    if self.handle_request(request).await? {
+                        return Ok(true);
+                    }
+                }
+                Err(message) => {
+                    self.out.emit(&message).await?;
+                    return Ok(true);
+                }
+            },
+            Some(Err(error)) => {
+                self.finish_active_turn().await?;
+                return Err(error);
+            }
+            None => {}
+        }
+        self.finish_active_turn().await?;
+        Ok(false)
     }
 
     // Every send and cancel gets exactly one reply and every accepted turn exactly one turn_ended, even on exit.
     async fn finish_active_turn(&mut self) -> std::io::Result<()> {
         let deadline = Instant::now() + SEND_RESULT_WAIT;
+        if let Some(turn) = self.active_turn.as_mut() {
+            turn.fail();
+        }
         while self.active_turn.as_ref().is_some_and(|turn| turn.sdk_id.is_none()) || !self.pending_cancels.is_empty() {
             match timeout_at(deadline, self.internal_rx.recv()).await {
                 Ok(Some(internal)) => self.handle_internal(internal).await?,
@@ -236,12 +280,6 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                     request_id,
                 })
                 .await?;
-        }
-        if let Some(turn) = self.active_turn.as_mut() {
-            turn.state = TurnState::Ended {
-                boundary_proven: false,
-                outcome: TurnOutcome::Failed,
-            };
         }
         self.emit_turn_ended().await
     }
@@ -430,10 +468,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         self.session_failed = true;
         self.out.emit(&HelperMessage::error(kind, message)).await?;
         if let Some(turn) = self.active_turn.as_mut() {
-            turn.state = TurnState::Ended {
-                boundary_proven: false,
-                outcome: TurnOutcome::Failed,
-            };
+            turn.fail();
         }
         self.emit_turn_ended().await
     }
@@ -455,12 +490,6 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                 outcome
             }
             TurnState::Running => return Ok(()),
-        };
-        // An error keeps the turn from completing; an abort still wins so cancellation stays distinguishable.
-        let outcome = if turn.error_seen && outcome == TurnOutcome::Completed {
-            TurnOutcome::Failed
-        } else {
-            outcome
         };
         let request_id = turn.request_id.clone();
         self.active_turn = None;
@@ -496,9 +525,11 @@ fn evidence(event: &SessionEvent) -> Option<Evidence> {
             };
             text("requestId").map(|request_id| Evidence::AutopilotStopped { outcome, request_id })
         }
-        "session.error" => Some(Evidence::Error(
-            text("originatingMessageId").filter(|id| !id.is_empty()),
-        )),
+        "session.error" => match event.data.get("originatingMessageId") {
+            None => Some(Evidence::Error(None)),
+            Some(Value::String(id)) if !id.is_empty() => Some(Evidence::Error(Some(id.clone()))),
+            _ => None,
+        },
         "session.idle" => match event.typed_data::<SessionIdleData>() {
             Some(data) => (data.mode != Some(SessionMode::Autopilot)).then(|| Evidence::Idle {
                 aborted: data.aborted == Some(true),
@@ -510,5 +541,136 @@ fn evidence(event: &SessionEvent) -> Option<Evidence> {
         }
         "user.message" => text("messageId").map(Evidence::Started),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use TurnOutcome::{Aborted, Completed, Failed};
+    use serde_json::json;
+
+    fn event(kind: &str, data: Value) -> SessionEvent {
+        serde_json::from_value(json!({
+            "data": data, "id": "evt", "parentId": null, "timestamp": "2026-01-01T00:00:00Z", "type": kind
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn terminal_evidence_sets_outcome_and_boundary() {
+        let abort = event("abort", json!({}));
+        let assistant = event("assistant.message", json!({"originatingMessageId": "id"}));
+        let error = |data| event("session.error", data);
+        let idle = event("session.idle", json!({}));
+        let invalid_idle = event("session.idle", json!({"aborted": "yes"}));
+        let stop = |reason, id| event("session.autopilot_stopped", json!({"reason": reason, "requestId": id}));
+        let user = event("user.message", json!({"messageId": "id"}));
+        let cases = [
+            (vec![user.clone(), abort.clone(), idle.clone()], Aborted, true),
+            (
+                vec![user.clone(), event("session.idle", json!({"aborted": true}))],
+                Aborted,
+                true,
+            ),
+            (vec![assistant, idle.clone()], Completed, true),
+            (vec![stop("aborted", "id")], Aborted, false),
+            (vec![stop("background_timeout", "id")], Failed, false),
+            (vec![stop("error", "id")], Failed, false),
+            (vec![stop("task_complete", "id")], Completed, false),
+            (
+                vec![event("session.autopilot_stopped", json!({"requestId": "id"}))],
+                Failed,
+                false,
+            ),
+            (
+                vec![
+                    user.clone(),
+                    event("session.idle", json!({"mode": "autopilot"})),
+                    abort.clone(),
+                    idle.clone(),
+                ],
+                Aborted,
+                true,
+            ),
+            (
+                vec![user.clone(), stop("aborted", "other"), idle.clone()],
+                Completed,
+                true,
+            ),
+            (vec![user.clone(), invalid_idle.clone()], Failed, false),
+            (vec![invalid_idle, user.clone(), idle.clone()], Completed, true),
+            (
+                vec![
+                    event(
+                        "session.warning",
+                        json!({"warningType":"policy_blocked","originatingMessageId":"id"}),
+                    ),
+                    idle.clone(),
+                ],
+                Completed,
+                true,
+            ),
+            (
+                vec![user.clone(), error(json!({})), abort.clone(), idle.clone()],
+                Aborted,
+                true,
+            ),
+            (
+                vec![error(json!({"originatingMessageId":"id"})), idle.clone()],
+                Failed,
+                true,
+            ),
+            (
+                vec![
+                    user.clone(),
+                    error(json!({"originatingMessageId":"other"})),
+                    idle.clone(),
+                ],
+                Completed,
+                true,
+            ),
+            (vec![error(json!({})), idle.clone()], Failed, false),
+            (vec![error(json!({})), user.clone(), idle.clone()], Failed, true),
+            (vec![error(json!({})), stop("task_complete", "id")], Failed, false),
+            (vec![abort, user, idle], Completed, true),
+        ];
+        for (events, expected, reusable) in cases {
+            let mut turn = ActiveTurn::new("request".into());
+            turn.sdk_id = Some("id".into());
+            for event in &events {
+                if let Some(evidence) = evidence(event) {
+                    turn.observe(evidence);
+                }
+            }
+            assert!(
+                matches!(turn.state, TurnState::Ended { outcome, boundary_proven }
+                    if outcome == expected && boundary_proven == reusable),
+                "{events:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_error_ids_are_not_session_wide_errors() {
+        for id in [json!(""), json!(null), json!(false), json!(7), json!([])] {
+            assert!(evidence(&event("session.error", json!({"originatingMessageId": id}))).is_none());
+        }
+    }
+
+    #[test]
+    fn failed_turn_drops_existing_and_subsequent_evidence_before_ack() {
+        let mut turn = ActiveTurn::new("request".into());
+        turn.observe(Evidence::Abort);
+        turn.fail();
+        turn.observe(Evidence::Started("id".into()));
+        assert!(turn.pending.is_empty());
+        assert!(matches!(
+            turn.state,
+            TurnState::Ended {
+                outcome: Failed,
+                boundary_proven: false
+            }
+        ));
     }
 }

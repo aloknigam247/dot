@@ -16,6 +16,6 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 tempfile = "3"
 windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes"] }
 
-[[test]]
-harness = false
-name = "helper_protocol"
+[[example]]
+name = "fake_cli"
+path = "tests/fixtures/fake_cli.rs"

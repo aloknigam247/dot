@@ -1,15 +1,11 @@
-//! Hermetic protocol tests. The test binary doubles as the fake Copilot CLI: when the helper starts a copy of it
-//! with DOT_FAKE_CLI_LOG set, `main` serves the SDK's JSON-RPC protocol instead of running tests.
-
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::io::{FromRawHandle, OwnedHandle};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, ExitCode, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::ptr;
+use std::sync::OnceLock;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, sync_channel};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,152 +16,15 @@ use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_INBOUND;
 use windows_sys::Win32::System::Pipes::{CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT};
 
+#[path = "fixtures/common.rs"]
+mod fake;
+
 const FAKE_LOG_VARIABLE: &str = "DOT_FAKE_CLI_LOG";
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 const STARTUP_TIMEOUT_VARIABLE: &str = "DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS";
-const TEST_THREADS: usize = 4;
-
-type Test = (&'static str, fn());
-
-const TESTS: &[Test] = &[
-    ("auth_status_is_reported", auth_status_is_reported),
-    ("cancel_correlation", cancel_correlation),
-    (
-        "cancel_during_send_startup_is_rejected",
-        cancel_during_send_startup_is_rejected,
-    ),
-    ("cancel_pending_rejects_send", cancel_pending_rejects_send),
-    ("cli_status_timeout_reports_unknown", cli_status_timeout_reports_unknown),
-    (
-        "closed_stdin_finishes_starting_turn",
-        closed_stdin_finishes_starting_turn,
-    ),
-    (
-        "closed_stdin_rejects_unacknowledged_send",
-        closed_stdin_rejects_unacknowledged_send,
-    ),
-    ("closed_stdin_stops_child", closed_stdin_stops_child),
-    ("closed_stream_fails_turn", closed_stream_fails_turn),
-    (
-        "cmd_wrapper_mismatch_stops_lingering_cli",
-        cmd_wrapper_mismatch_stops_lingering_cli,
-    ),
-    ("cmd_wrapper_runs_turn", cmd_wrapper_runs_turn),
-    (
-        "discovery_ignores_malformed_pathext_entries",
-        discovery_ignores_malformed_pathext_entries,
-    ),
-    (
-        "discovery_selects_first_successful_handshake",
-        discovery_selects_first_successful_handshake,
-    ),
-    (
-        "discovery_skips_relative_path_entries",
-        discovery_skips_relative_path_entries,
-    ),
-    ("empty_turn_id_is_rejected", empty_turn_id_is_rejected),
-    ("failed_abort_is_rejected", failed_abort_is_rejected),
-    ("fatal_shutdown_fails_turn", fatal_shutdown_fails_turn),
-    ("invalid_requests_are_reported", invalid_requests_are_reported),
-    ("items_match_sdk_serialization", items_match_sdk_serialization),
-    ("lagged_stream_fails_turn", lagged_stream_fails_turn),
-    ("missing_cli_reports_not_found", missing_cli_reports_not_found),
-    ("permission_request_is_denied", permission_request_is_denied),
-    (
-        "protocol_mismatch_omits_unanswered_version",
-        protocol_mismatch_omits_unanswered_version,
-    ),
-    ("protocol_mismatch_reports_version", protocol_mismatch_reports_version),
-    ("rejected_send_emits_no_turn_ended", rejected_send_emits_no_turn_ended),
-    (
-        "session_create_failure_reports_start_failed",
-        session_create_failure_reports_start_failed,
-    ),
-    (
-        "session_error_before_send_ack_fails_turn",
-        session_error_before_send_ack_fails_turn,
-    ),
-    ("session_error_fails_turn_at_idle", session_error_fails_turn_at_idle),
-    ("shutdown_answers_pending_cancel", shutdown_answers_pending_cancel),
-    (
-        "shutdown_before_send_ack_fails_turn",
-        shutdown_before_send_ack_fails_turn,
-    ),
-    ("shutdown_finishes_active_turn", shutdown_finishes_active_turn),
-    ("shutdown_rejects_unanswered_cancel", shutdown_rejects_unanswered_cancel),
-    ("shutdown_request_stops_child", shutdown_request_stops_child),
-    ("startup_failures_report_candidates", startup_failures_report_candidates),
-    ("startup_items_follow_ready", startup_items_follow_ready),
-    ("stdin_read_error_fails_turn", stdin_read_error_fails_turn),
-    (
-        "stdout_failure_is_reported_on_stderr",
-        stdout_failure_is_reported_on_stderr,
-    ),
-    ("sub_agent_events_do_not_end_turn", sub_agent_events_do_not_end_turn),
-    (
-        "terminal_before_send_ack_holds_turn_ended",
-        terminal_before_send_ack_holds_turn_ended,
-    ),
-    ("terminal_evidence_sets_outcome", terminal_evidence_sets_outcome),
-    ("trailing_idle_never_ends_next_turn", trailing_idle_never_ends_next_turn),
-    (
-        "uncorrelated_start_waits_for_shutdown",
-        uncorrelated_start_waits_for_shutdown,
-    ),
-    (
-        "unproven_boundary_rejects_next_send",
-        unproven_boundary_rejects_next_send,
-    ),
-];
-
-fn main() -> ExitCode {
-    if let Some(log) = std::env::var_os(FAKE_LOG_VARIABLE) {
-        fake::run(PathBuf::from(log));
-    }
-    let filters: Vec<String> = std::env::args().skip(1).filter(|arg| !arg.starts_with('-')).collect();
-    let selected: Vec<Test> = TESTS
-        .iter()
-        .copied()
-        .filter(|(name, _)| filters.is_empty() || filters.iter().any(|filter| name.contains(filter.as_str())))
-        .collect();
-    println!("running {} tests", selected.len());
-    let failures = Arc::new(Mutex::new(Vec::new()));
-    let queue = Arc::new(Mutex::new(selected.clone().into_iter()));
-    thread::scope(|scope| {
-        for _ in 0..TEST_THREADS {
-            let failures = Arc::clone(&failures);
-            let queue = Arc::clone(&queue);
-            scope.spawn(move || {
-                loop {
-                    let next = queue.lock().unwrap().next();
-                    let Some((name, test)) = next else {
-                        break;
-                    };
-                    let passed = catch_unwind(AssertUnwindSafe(test)).is_ok();
-                    println!("test {name} ... {}", if passed { "ok" } else { "FAILED" });
-                    if !passed {
-                        failures.lock().unwrap().push(name);
-                    }
-                }
-            });
-        }
-    });
-    let failures = failures.lock().unwrap();
-    let passed = selected.len() - failures.len();
-    if failures.is_empty() {
-        println!("\ntest result: ok. {passed} passed; 0 failed");
-        ExitCode::SUCCESS
-    } else {
-        println!(
-            "\nfailures: {failures:?}\ntest result: FAILED. {passed} passed; {} failed",
-            failures.len()
-        );
-        ExitCode::FAILURE
-    }
-}
-
 // SDK event forwarding
 
+#[test]
 fn items_match_sdk_serialization() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -191,6 +50,7 @@ fn items_match_sdk_serialization() {
 
 // Startup and terminal ordering
 
+#[test]
 fn startup_items_follow_ready() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -220,6 +80,7 @@ fn startup_items_follow_ready() {
     assert_eq!(items(&records, "lifecycle").len(), 1);
 }
 
+#[test]
 fn terminal_before_send_ack_holds_turn_ended() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -239,6 +100,7 @@ fn terminal_before_send_ack_holds_turn_ended() {
     );
 }
 
+#[test]
 fn rejected_send_emits_no_turn_ended() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -259,6 +121,7 @@ fn rejected_send_emits_no_turn_ended() {
 
 // Send and cancel correlation
 
+#[test]
 fn cancel_correlation() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -306,6 +169,7 @@ fn cancel_correlation() {
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
 }
 
+#[test]
 fn cancel_during_send_startup_is_rejected() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -322,6 +186,7 @@ fn cancel_during_send_startup_is_rejected() {
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 0);
 }
 
+#[test]
 fn cancel_pending_rejects_send() {
     let fixture = Fixture::with_scenario("idle_before_abort");
     let mut helper = fixture.helper();
@@ -358,12 +223,88 @@ fn cancel_pending_rejects_send() {
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 2);
 }
 
+#[test]
+fn all_cancels_must_finish_before_reuse() {
+    let fixture = Fixture::with_scenario("two_aborts");
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "hold");
+    helper.until_type("send_accepted");
+    helper.cancel("c1", "msg-1");
+    fixture.wait_for_log(|entry| entry["method"] == "session.abort");
+    helper.cancel("c2", "msg-1");
+    while !helper.records.iter().any(|r| r["type"] == "turn_ended")
+        || !helper.records.iter().any(|r| r["type"] == "cancel_acknowledged")
+    {
+        helper.next();
+    }
+    helper.send("blocked", "complete");
+    assert_rejection(&helper.until_type("send_rejected"), "blocked", "cancel_pending");
+    fixture.release();
+    assert_eq!(helper.until_type("cancel_acknowledged")["request_id"], "c2");
+    helper.send("t2", "complete");
+    assert_eq!(helper.until_turn_ended("t2").last().unwrap()["outcome"], "completed");
+    assert_eq!(helper.shutdown().0, 0);
+    assert_eq!(rpc_count(&fixture.log(), "session.send"), 2);
+}
+
+#[test]
+fn queued_control_is_served_before_sdk_backlog_drains() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "control_backlog");
+    helper.until_type("send_accepted");
+    fixture.release();
+    fixture.wait_for_log(|entry| entry["event"] == "backlog_ready");
+    helper.cancel("c1", "wrong-id");
+    assert_rejection(&helper.until_type("cancel_rejected"), "c1", "turn_mismatch");
+    helper.until(|r| item(r).is_some_and(|e| e["data"]["deltaContent"] == "last"));
+    assert_eq!(helper.shutdown().0, 0);
+}
+
+#[test]
+fn shutdown_dominates_buffered_idle_before_ack() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "buffered_idle");
+    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    helper.request(json!({"type": "shutdown", "request_id": "stop"}));
+    thread::sleep(Duration::from_millis(500));
+    fixture.release();
+    let (code, records) = helper.drain();
+    assert_eq!(code, 0);
+    assert_eq!(
+        replies(&records),
+        vec![
+            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+        ]
+    );
+}
+
+#[test]
+fn unattributed_early_failure_does_not_allow_reuse() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "session_error_uncorrelated");
+    assert_eq!(helper.until_turn_ended("t1").last().unwrap()["outcome"], "failed");
+    helper.send("t2", "hold");
+    assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
+    assert_eq!(helper.shutdown().0, 0);
+    assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
+}
+
+#[test]
 fn empty_turn_id_is_rejected() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
     helper.expect_ready();
     helper.send("t1", "empty_id");
     assert_rejection(&helper.until_type("send_rejected"), "t1", "empty_turn_id");
+    fixture.release();
     helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
     helper.send("t2", "complete");
     assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
@@ -375,6 +316,7 @@ fn empty_turn_id_is_rejected() {
 
 // Turn attribution and errors
 
+#[test]
 fn trailing_idle_never_ends_next_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -407,6 +349,7 @@ fn trailing_idle_never_ends_next_turn() {
     assert_eq!(idles, 5);
 }
 
+#[test]
 fn uncorrelated_start_waits_for_shutdown() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -429,6 +372,7 @@ fn uncorrelated_start_waits_for_shutdown() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn session_error_fails_turn_at_idle() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -455,6 +399,7 @@ fn session_error_fails_turn_at_idle() {
     assert!(records.iter().all(|record| record["type"] != "error"));
 }
 
+#[test]
 fn session_error_before_send_ack_fails_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -478,6 +423,7 @@ fn session_error_before_send_ack_fails_turn() {
     );
 }
 
+#[test]
 fn lagged_stream_fails_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -497,6 +443,7 @@ fn lagged_stream_fails_turn() {
     assert_eq!(turn_ended(&records).len(), 1);
 }
 
+#[test]
 fn closed_stream_fails_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -512,6 +459,7 @@ fn closed_stream_fails_turn() {
     assert_eq!(turn_ended(&records).len(), 1);
 }
 
+#[test]
 fn fatal_shutdown_fails_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -529,6 +477,7 @@ fn fatal_shutdown_fails_turn() {
     assert_eq!(turn_ended(&records).len(), 1);
 }
 
+#[test]
 fn shutdown_before_send_ack_fails_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -558,6 +507,7 @@ fn shutdown_before_send_ack_fails_turn() {
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
 }
 
+#[test]
 fn unproven_boundary_rejects_next_send() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -573,6 +523,7 @@ fn unproven_boundary_rejects_next_send() {
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
 }
 
+#[test]
 fn failed_abort_is_rejected() {
     let fixture = Fixture::with_scenario("abort_error");
     let mut helper = fixture.helper();
@@ -582,6 +533,8 @@ fn failed_abort_is_rejected() {
     helper.cancel("c1", "msg-1");
     let before_shutdown = helper.until(|record| record["type"] == "cancel_rejected");
     assert_rejection(before_shutdown.last().unwrap(), "c1", "abort_failed");
+    helper.send("t2", "complete");
+    assert_rejection(&helper.until_type("send_rejected"), "t2", "turn_active");
     let (code, records) = helper.shutdown();
     assert_eq!(code, 0);
     assert!(records.iter().all(|record| record["type"] != "cancel_acknowledged"));
@@ -601,6 +554,7 @@ fn failed_abort_is_rejected() {
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 1);
 }
 
+#[test]
 fn sub_agent_events_do_not_end_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -629,56 +583,9 @@ fn sub_agent_events_do_not_end_turn() {
     );
 }
 
-fn terminal_evidence_sets_outcome() {
-    let cases = [
-        ("abort_plain_idle", "aborted", 1, true),
-        ("aborted_idle", "aborted", 1, true),
-        ("assistant_start", "completed", 1, true),
-        ("autopilot:", "failed", 0, false),
-        ("autopilot:aborted", "aborted", 0, false),
-        ("autopilot:background_timeout", "failed", 0, false),
-        ("autopilot:error", "failed", 0, false),
-        ("autopilot_idle", "completed", 2, true),
-        ("foreign_autopilot", "completed", 1, true),
-        ("malformed_idle", "failed", 1, false),
-        ("malformed_idle_unstarted", "completed", 2, true),
-        ("policy_blocked", "completed", 1, true),
-        ("session_error_abort", "aborted", 1, true),
-        ("session_error_foreign", "completed", 1, true),
-        ("session_error_uncorrelated", "failed", 1, true),
-        ("session_error_unstarted", "failed", 1, true),
-        ("stale_abort", "completed", 1, true),
-    ];
-    for (prompt, outcome, idles, reusable) in cases {
-        let fixture = Fixture::new();
-        let mut helper = fixture.helper();
-        helper.expect_ready();
-        helper.send("t1", prompt);
-        let turn = helper.until_turn_ended("t1");
-        assert_eq!(turn.last().unwrap()["outcome"], outcome, "{prompt}");
-        let seen_idles = turn
-            .iter()
-            .filter(|record| item_type(record).as_deref() == Some("session.idle"))
-            .count();
-        assert_eq!(seen_idles, idles, "{prompt}");
-        helper.send("t2", "complete");
-        if reusable {
-            assert_eq!(
-                helper.until_turn_ended("t2").last().unwrap()["outcome"],
-                "completed",
-                "{prompt}"
-            );
-        } else {
-            assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
-        }
-        let (code, records) = helper.shutdown();
-        assert_eq!(code, 0, "{prompt}");
-        assert_eq!(turn_ended(&records).len(), if reusable { 2 } else { 1 }, "{prompt}");
-    }
-}
-
 // Permission, auth, and shutdown behavior
 
+#[test]
 fn permission_request_is_denied() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -691,6 +598,11 @@ fn permission_request_is_denied() {
     let log = fixture.log();
     let create = rpc_params(&log, "session.create");
     assert_eq!(create[0]["permissions"]["request"], true);
+    assert_eq!(create[0]["events"]["streaming"], true);
+    assert_eq!(
+        Path::new(create[0]["workingDirectory"].as_str().unwrap()),
+        fixture.root.path()
+    );
     let answers = rpc_params(&log, "session.permissions.handlePendingPermissionRequest");
     assert_eq!(answers.len(), 1);
     assert_eq!(answers[0]["requestId"], "perm-1");
@@ -700,6 +612,7 @@ fn permission_request_is_denied() {
     assert_eq!(starts[0]["telemetry_disabled"], "true");
 }
 
+#[test]
 fn auth_status_is_reported() {
     let cases = [
         ("auth_error", "unknown", Some("auth unavailable")),
@@ -725,6 +638,7 @@ fn auth_status_is_reported() {
     }
 }
 
+#[test]
 fn shutdown_request_stops_child() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -735,6 +649,7 @@ fn shutdown_request_stops_child() {
     assert_eq!(rpc_count(&fixture.log(), "runtime.shutdown"), 1);
 }
 
+#[test]
 fn closed_stdin_stops_child() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -744,6 +659,7 @@ fn closed_stdin_stops_child() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn stdout_failure_is_reported_on_stderr() {
     let fixture = Fixture::empty();
     let stdout = fixture.root.path().join("stdout.txt");
@@ -762,6 +678,7 @@ fn stdout_failure_is_reported_on_stderr() {
     assert!(stderr.starts_with("dot_copilot_helper: "), "{stderr}");
 }
 
+#[test]
 fn stdin_read_error_fails_turn() {
     let fixture = Fixture::new();
     let (mut client, server) = fixture.message_pipe();
@@ -793,12 +710,13 @@ fn stdin_read_error_fails_turn() {
 
 // Discovery behavior
 
+#[test]
 fn discovery_selects_first_successful_handshake() {
     let fixture = Fixture::empty();
     let first = fixture.dir("first");
     let second = fixture.dir("second");
     let third = fixture.dir("third");
-    fixture.install(&first, "copilot.com", "exit");
+    fixture.install(&first, "copilot.com", "protocol3");
     fixture.install(&first, "copilot.txt", "ok");
     fixture.install(&second, "copilot.exe", "ok");
     fixture.install(&third, "copilot.exe", "ok");
@@ -814,6 +732,7 @@ fn discovery_selects_first_successful_handshake() {
     );
 }
 
+#[test]
 fn protocol_mismatch_reports_version() {
     let fixture = Fixture::with_scenario("protocol3");
     let helper = fixture.helper();
@@ -837,6 +756,7 @@ fn protocol_mismatch_reports_version() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn protocol_mismatch_omits_unanswered_version() {
     let fixture = Fixture::with_scenario("protocol3_silent");
     let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
@@ -854,6 +774,7 @@ fn protocol_mismatch_omits_unanswered_version() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn cmd_wrapper_mismatch_stops_lingering_cli() {
     let fixture = Fixture::empty();
     fixture.install_cmd(&fixture.bin, "protocol3_linger");
@@ -873,6 +794,7 @@ fn cmd_wrapper_mismatch_stops_lingering_cli() {
     assert_eq!(records.len(), 1);
 }
 
+#[test]
 fn cmd_wrapper_runs_turn() {
     let fixture = Fixture::empty();
     fixture.install_cmd(&fixture.bin, "ok");
@@ -888,6 +810,7 @@ fn cmd_wrapper_runs_turn() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn missing_cli_reports_not_found() {
     let fixture = Fixture::empty();
     let first = fixture.dir("first");
@@ -904,6 +827,7 @@ fn missing_cli_reports_not_found() {
     assert!(fixture.log().is_empty());
 }
 
+#[test]
 fn startup_failures_report_candidates() {
     let fixture = Fixture::empty();
     let first = fixture.dir("first");
@@ -938,6 +862,7 @@ fn startup_failures_report_candidates() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn cli_status_timeout_reports_unknown() {
     let fixture = Fixture::with_scenario("hang:auth.getStatus,status.get");
     let mut helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
@@ -954,6 +879,7 @@ fn cli_status_timeout_reports_unknown() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn discovery_skips_relative_path_entries() {
     let fixture = Fixture::empty();
     let relative = fixture.dir("relative");
@@ -974,6 +900,7 @@ fn discovery_skips_relative_path_entries() {
     assert_eq!(started, vec![json!(absolute.join("copilot.exe"))]);
 }
 
+#[test]
 fn discovery_ignores_malformed_pathext_entries() {
     let fixture = Fixture::empty();
     let first = fixture.dir("first");
@@ -989,6 +916,7 @@ fn discovery_ignores_malformed_pathext_entries() {
     assert_eq!(started_exes(&fixture.log()), vec![second.join("copilot.exe")]);
 }
 
+#[test]
 fn session_create_failure_reports_start_failed() {
     let cases = [
         ("create_error", "create failed"),
@@ -1010,6 +938,7 @@ fn session_create_failure_reports_start_failed() {
 
 // Request parsing and exit during a turn
 
+#[test]
 fn invalid_requests_are_reported() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -1035,6 +964,7 @@ fn invalid_requests_are_reported() {
     assert_eq!(turn.last().unwrap()["outcome"], "completed");
 }
 
+#[test]
 fn shutdown_finishes_active_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -1054,6 +984,7 @@ fn shutdown_finishes_active_turn() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn shutdown_answers_pending_cancel() {
     let fixture = Fixture::with_scenario("idle_before_abort");
     let mut helper = fixture.helper();
@@ -1079,6 +1010,7 @@ fn shutdown_answers_pending_cancel() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn shutdown_rejects_unanswered_cancel() {
     let fixture = Fixture::with_scenario("hang:session.abort");
     let mut helper = fixture.helper();
@@ -1105,6 +1037,7 @@ fn shutdown_rejects_unanswered_cancel() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn closed_stdin_finishes_starting_turn() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -1126,6 +1059,7 @@ fn closed_stdin_finishes_starting_turn() {
     fixture.assert_children_exited();
 }
 
+#[test]
 fn closed_stdin_rejects_unacknowledged_send() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -1144,6 +1078,29 @@ fn closed_stdin_rejects_unacknowledged_send() {
 }
 
 // Harness
+
+fn fake_executable() -> &'static Path {
+    static EXE: OnceLock<PathBuf> = OnceLock::new();
+    EXE.get_or_init(|| {
+        // A targeted `cargo test --test` does not build examples.
+        let output = Command::new(env!("CARGO"))
+            .args(["build", "--locked", "--example", "fake_cli", "--message-format=json"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .find_map(|msg| {
+                (msg["target"]["name"] == "fake_cli")
+                    .then(|| msg["executable"].as_str().map(PathBuf::from))
+                    .flatten()
+            })
+            .expect("cargo did not report the fake CLI executable")
+    })
+}
 
 struct Fixture {
     bin: PathBuf,
@@ -1178,10 +1135,10 @@ impl Fixture {
     }
 
     fn install(&self, dir: &Path, name: &str, scenario: &str) {
-        let exe = std::env::current_exe().unwrap();
+        let exe = fake_executable();
         let target = dir.join(name);
-        if std::fs::hard_link(&exe, &target).is_err() {
-            std::fs::copy(&exe, &target).unwrap();
+        if std::fs::hard_link(exe, &target).is_err() {
+            std::fs::copy(exe, &target).unwrap();
         }
         std::fs::write(fake::scenario_path(&target), scenario).unwrap();
     }
@@ -1517,481 +1474,11 @@ fn process_alive(pid: u64) -> bool {
         .args(["/FI", &filter, "/FO", "CSV", "/NH"])
         .output()
         .unwrap();
+    assert!(
+        output.status.success() && output.stderr.is_empty(),
+        "tasklist exited {}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
     String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
-}
-
-mod fake {
-    use super::*;
-
-    pub const LEGACY_VERSION: &str = "3.0.0-fake";
-    pub const LINGER: Duration = Duration::from_secs(60);
-    pub const VERSION: &str = "9.9.9-fake";
-
-    const BURST_EVENTS: usize = 3000;
-
-    pub fn scenario_path(exe: &Path) -> PathBuf {
-        let mut path = exe.as_os_str().to_owned();
-        path.push(".scenario");
-        PathBuf::from(path)
-    }
-
-    pub fn release_path(log: &Path) -> PathBuf {
-        let mut path = log.as_os_str().to_owned();
-        path.push(".release");
-        PathBuf::from(path)
-    }
-
-    pub fn run(log: PathBuf) -> ! {
-        let exe = std::env::current_exe().unwrap();
-        let scenario = std::fs::read_to_string(scenario_path(&exe)).unwrap_or_default();
-        let mut fake = Fake {
-            connected: false,
-            event_count: 0,
-            log,
-            message_count: 0,
-            scenario: scenario.trim().to_owned(),
-            session_id: String::new(),
-            stdout: std::io::stdout(),
-            waiting_for_abort: false,
-            waiting_for_permission: false,
-        };
-        fake.record(json!({
-            "args": std::env::args().skip(1).collect::<Vec<_>>(),
-            "event": "start",
-            "exe": exe,
-            "pid": std::process::id(),
-            "telemetry_disabled": std::env::var("COPILOT_TELEMETRY_DISABLED").ok(),
-        }));
-        if fake.scenario == "exit" {
-            fake.exit();
-        }
-        let mut stdin = BufReader::new(std::io::stdin());
-        while let Some(message) = read_frame(&mut stdin) {
-            fake.handle(&message);
-        }
-        // Only the version probe skips connect, so this outlives the probe unless the helper stops its process tree.
-        if fake.scenario == "protocol3_linger" && !fake.connected {
-            thread::sleep(LINGER);
-        }
-        fake.exit();
-    }
-
-    fn read_frame(reader: &mut impl BufRead) -> Option<Value> {
-        let mut length = None;
-        loop {
-            let mut header = String::new();
-            if reader.read_line(&mut header).ok()? == 0 {
-                return None;
-            }
-            let header = header.trim_end();
-            if header.is_empty() {
-                break;
-            }
-            if let Some(value) = header.strip_prefix("Content-Length:") {
-                length = value.trim().parse::<usize>().ok();
-            }
-        }
-        let mut body = vec![0; length?];
-        reader.read_exact(&mut body).ok()?;
-        serde_json::from_slice(&body).ok()
-    }
-
-    struct Fake {
-        connected: bool,
-        event_count: usize,
-        log: PathBuf,
-        message_count: usize,
-        scenario: String,
-        session_id: String,
-        stdout: std::io::Stdout,
-        waiting_for_abort: bool,
-        waiting_for_permission: bool,
-    }
-
-    impl Fake {
-        fn record(&self, entry: Value) {
-            let mut file = OpenOptions::new().append(true).create(true).open(&self.log).unwrap();
-            file.write_all(format!("{entry}\n").as_bytes()).unwrap();
-        }
-
-        fn exit(&self) -> ! {
-            self.record(json!({"event": "exit", "pid": std::process::id()}));
-            std::process::exit(0);
-        }
-
-        fn write(&mut self, message: &Value) {
-            let body = message.to_string();
-            let mut stdout = self.stdout.lock();
-            write!(stdout, "Content-Length: {}\r\n\r\n{body}", body.len()).unwrap();
-            stdout.flush().unwrap();
-        }
-
-        fn reply(&mut self, id: &Value, result: Value) {
-            self.write(&json!({"jsonrpc": "2.0", "id": id, "result": result}));
-        }
-
-        fn reply_error(&mut self, id: &Value, code: i64, message: &str) {
-            self.write(&json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}));
-        }
-
-        fn event(&mut self, kind: &str, data: Value) {
-            self.agent_event(None, kind, data);
-        }
-
-        fn agent_event(&mut self, agent_id: Option<&str>, kind: &str, data: Value) {
-            self.event_count += 1;
-            let mut event = json!({
-                "data": data,
-                "id": format!("evt-{}", self.event_count),
-                "parentId": null,
-                "timestamp": "2026-01-01T00:00:00.000Z",
-                "type": kind,
-            });
-            if let Some(agent_id) = agent_id {
-                event["agentId"] = json!(agent_id);
-            }
-            self.record(json!({"event": "sent", "item": event, "source": "session"}));
-            let params = json!({"event": event, "sessionId": self.session_id});
-            self.write(&json!({"jsonrpc": "2.0", "method": "session.event", "params": params}));
-        }
-
-        fn lifecycle(&mut self, kind: &str) {
-            let params = json!({"sessionId": self.session_id, "type": kind});
-            self.record(json!({"event": "sent", "item": params, "source": "lifecycle"}));
-            self.write(&json!({"jsonrpc": "2.0", "method": "session.lifecycle", "params": params}));
-        }
-
-        fn delta(&mut self, content: &str) {
-            self.event(
-                "assistant.message_delta",
-                json!({"deltaContent": content, "messageId": "reply"}),
-            );
-        }
-
-        fn idle(&mut self) {
-            self.event("session.idle", json!({}));
-        }
-
-        fn session_error(&mut self, originating_message_id: Option<&str>) {
-            let mut data = json!({"errorType": "query", "message": "request failed"});
-            if let Some(originating_message_id) = originating_message_id {
-                data["originatingMessageId"] = json!(originating_message_id);
-            }
-            self.event("session.error", data);
-        }
-
-        fn wait_for_release(&self) {
-            let release = release_path(&self.log);
-            while !release.exists() {
-                thread::sleep(Duration::from_millis(10));
-            }
-        }
-
-        fn user(&mut self, message_id: &str) {
-            self.event("user.message", json!({"content": "prompt", "messageId": message_id}));
-        }
-
-        fn complete(&mut self, message_id: &str) {
-            self.user(message_id);
-            self.delta("Hello");
-            self.delta(", world");
-            self.event(
-                "assistant.message",
-                json!({"content": "Hello, world", "messageId": "reply", "originatingMessageId": message_id}),
-            );
-            self.idle();
-        }
-
-        fn handle(&mut self, message: &Value) {
-            let Some(method) = message["method"].as_str() else {
-                return;
-            };
-            let id = &message["id"];
-            let params = &message["params"];
-            self.record(json!({"event": "rpc", "method": method, "params": params}));
-            self.connected |= method == "connect";
-            let hung = self
-                .scenario
-                .strip_prefix("hang:")
-                .is_some_and(|methods| methods.split(',').any(|hung| hung == method));
-            if id.is_null() || self.scenario == "hang" || hung {
-                return;
-            }
-            match method {
-                "auth.getStatus" if self.scenario == "auth_error" => self.reply_error(id, -32603, "auth unavailable"),
-                "auth.getStatus" if self.scenario == "signed_out" => self.reply(id, json!({"isAuthenticated": false})),
-                "auth.getStatus" => self.reply(id, json!({"isAuthenticated": true})),
-                "connect" if self.scenario == "no_protocol" => self.reply_error(id, -32601, "method not found"),
-                "connect" if self.scenario.starts_with("protocol3") => {
-                    self.reply(id, json!({"ok": true, "protocolVersion": 3, "version": LEGACY_VERSION}))
-                }
-                "connect" => self.reply(id, json!({"ok": true, "protocolVersion": 4, "version": VERSION})),
-                "ping" => self.reply(id, json!({"message": "pong", "timestamp": "1970-01-01T00:00:00Z"})),
-                "session.abort" if self.scenario == "abort_error" => self.reply_error(id, -32000, "abort failed"),
-                "session.abort" if self.scenario == "idle_before_abort" => {
-                    if std::mem::take(&mut self.waiting_for_abort) {
-                        self.idle();
-                    }
-                    self.wait_for_release();
-                    self.reply(id, json!({}));
-                }
-                "session.abort" => {
-                    self.reply(id, json!({}));
-                    if std::mem::take(&mut self.waiting_for_abort) {
-                        self.wait_for_release();
-                        self.event("abort", json!({"reason": "user initiated"}));
-                        self.event("session.idle", json!({"aborted": true}));
-                    }
-                }
-                "session.create" if self.scenario == "create_error" => self.reply_error(id, -32000, "create failed"),
-                "session.create" => {
-                    self.session_id = params["sessionId"].as_str().unwrap_or("fake-session").to_owned();
-                    self.lifecycle("session.created");
-                    self.event("session.start", json!({"sessionId": self.session_id}));
-                    self.event(
-                        "session.info",
-                        json!({"infoType": "notification", "message": "fake ready"}),
-                    );
-                    let session_id = self.session_id.clone();
-                    self.reply(id, json!({"sessionId": session_id, "workspacePath": "workspace"}));
-                }
-                "session.permissions.handlePendingPermissionRequest" => {
-                    self.reply(id, json!({}));
-                    if std::mem::take(&mut self.waiting_for_permission) {
-                        self.event("permission.completed", json!({"requestId": "perm-1"}));
-                        self.idle();
-                    }
-                }
-                "session.send" => self.send(id, params["prompt"].as_str().unwrap_or_default()),
-                "status.get" if self.scenario == "protocol3_silent" => {}
-                "status.get" if self.scenario.starts_with("protocol3") => {
-                    self.reply(id, json!({"protocolVersion": 3, "version": LEGACY_VERSION}))
-                }
-                "status.get" => self.reply(id, json!({"protocolVersion": 4, "version": VERSION})),
-                _ => self.reply(id, json!({})),
-            }
-        }
-
-        fn send(&mut self, id: &Value, prompt: &str) {
-            self.message_count += 1;
-            let message_id = format!("msg-{}", self.message_count);
-            let accepted = json!({"messageId": message_id});
-            match prompt {
-                "abort_plain_idle" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event("abort", json!({"reason": "user initiated"}));
-                    self.idle();
-                }
-                "aborted_idle" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event("session.idle", json!({"aborted": true}));
-                }
-                "assistant_start" => {
-                    self.reply(id, accepted);
-                    self.event(
-                        "assistant.message",
-                        json!({"content": "Hello", "messageId": "reply", "originatingMessageId": message_id}),
-                    );
-                    self.idle();
-                }
-                "autopilot" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.delta("working");
-                    self.event(
-                        "session.autopilot_stopped",
-                        json!({"reason": "task_complete", "requestId": message_id}),
-                    );
-                }
-                "autopilot_idle" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event("session.idle", json!({"mode": "autopilot"}));
-                    self.delta("continuing");
-                    self.idle();
-                }
-                _ if prompt.starts_with("autopilot:") => {
-                    let reason = &prompt["autopilot:".len()..];
-                    let data = match reason {
-                        "" => json!({"requestId": message_id}),
-                        _ => json!({"reason": reason, "requestId": message_id}),
-                    };
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event("session.autopilot_stopped", data);
-                }
-                "close" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.delta("partial");
-                    self.exit();
-                }
-                "complete_stray" => {
-                    self.reply(id, accepted);
-                    self.complete(&message_id);
-                    self.idle();
-                }
-                "early_terminal" => {
-                    self.complete(&message_id);
-                    self.reply(id, accepted);
-                }
-                "empty_id" => {
-                    self.reply(id, json!({"messageId": ""}));
-                    self.complete(&message_id);
-                }
-                "fatal_shutdown" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event(
-                        "session.shutdown",
-                        json!({"errorReason": "crash", "shutdownType": "error"}),
-                    );
-                }
-                "foreign_autopilot" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event(
-                        "session.autopilot_stopped",
-                        json!({"reason": "aborted", "requestId": "msg-other"}),
-                    );
-                    self.idle();
-                }
-                "hold" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.delta("thinking");
-                    self.waiting_for_abort = true;
-                }
-                "lag" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    let content = "x".repeat(1000);
-                    for _ in 0..BURST_EVENTS {
-                        self.delta(&content);
-                    }
-                    self.idle();
-                    self.record(json!({"event": "burst_done"}));
-                }
-                "malformed_idle" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event("session.idle", json!({"aborted": "yes"}));
-                }
-                "malformed_idle_unstarted" => {
-                    self.reply(id, accepted);
-                    self.event("session.idle", json!({"aborted": "yes"}));
-                    self.complete(&message_id);
-                }
-                "permission" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.event(
-                        "permission.requested",
-                        json!({"permissionRequest": {"kind": "shell"}, "requestId": "perm-1"}),
-                    );
-                    self.waiting_for_permission = true;
-                }
-                "policy_blocked" => {
-                    self.reply(id, accepted);
-                    let warning = json!({
-                        "message": "blocked",
-                        "originatingMessageId": message_id,
-                        "warningType": "policy_blocked",
-                    });
-                    self.event("session.warning", warning);
-                    self.idle();
-                }
-                "send_error" => self.reply_error(id, -32000, "send failed"),
-                "session_error" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.session_error(None);
-                    self.delta("recovered");
-                    self.idle();
-                }
-                "session_error_abort" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.session_error(Some(&message_id));
-                    self.event("session.idle", json!({"aborted": true}));
-                }
-                "session_error_before_ack" => {
-                    self.user(&message_id);
-                    self.session_error(Some(&message_id));
-                    self.idle();
-                    self.wait_for_release();
-                    self.reply(id, accepted);
-                }
-                "session_error_foreign" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.session_error(Some("msg-other"));
-                    self.idle();
-                }
-                "session_error_uncorrelated" => {
-                    self.reply(id, accepted);
-                    self.session_error(None);
-                    self.idle();
-                }
-                "session_error_unstarted" => {
-                    self.reply(id, accepted);
-                    self.session_error(Some(&message_id));
-                    self.idle();
-                }
-                "shutdown_before_ack" => {
-                    self.user(&message_id);
-                    self.event(
-                        "session.shutdown",
-                        json!({"errorReason": "crash", "shutdownType": "error"}),
-                    );
-                    self.wait_for_release();
-                    self.reply(id, accepted);
-                }
-                "slow_ack" => {
-                    self.wait_for_release();
-                    self.reply(id, accepted);
-                    self.complete(&message_id);
-                }
-                "slow_hold" => {
-                    self.wait_for_release();
-                    self.reply(id, accepted);
-                }
-                "stale_abort" => {
-                    self.reply(id, accepted);
-                    self.event("abort", json!({"reason": "user initiated"}));
-                    self.user(&message_id);
-                    self.idle();
-                }
-                "sub_agent" => {
-                    self.reply(id, accepted);
-                    self.user(&message_id);
-                    self.agent_event(
-                        Some("agent-1"),
-                        "assistant.message",
-                        json!({"content": "sub", "messageId": "sub-reply", "originatingMessageId": message_id}),
-                    );
-                    self.agent_event(Some("agent-1"), "session.idle", json!({}));
-                    self.delta("root");
-                    self.idle();
-                }
-                "trailing" => {
-                    self.idle();
-                    self.reply(id, accepted);
-                    self.idle();
-                    self.complete(&message_id);
-                }
-                "uncorrelated_start" => {
-                    self.reply(id, accepted);
-                    self.event("user.message", json!({"content": "prompt"}));
-                    self.idle();
-                }
-                _ => {
-                    self.reply(id, accepted);
-                    self.complete(&message_id);
-                }
-            }
-        }
-    }
 }

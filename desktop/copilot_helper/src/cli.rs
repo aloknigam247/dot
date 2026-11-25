@@ -52,32 +52,28 @@ pub async fn resolve_cli(cwd: &Path, limit: Duration) -> Result<(Client, CliReso
     let mut reports = Vec::new();
     let path = std::env::var_os("PATH");
     let pathext = std::env::var_os("PATHEXT");
-    let candidates = path_candidates(path.as_deref(), pathext.as_deref());
-    if candidates.is_empty() {
-        return Err(ResolveError::NotFound);
-    }
-    for candidate in candidates {
-        match handshake_candidate(&candidate, cwd, limit).await {
-            Ok(resolved) => return Ok(resolved),
-            Err(report) => reports.push(report),
-        }
-    }
-    Err(ResolveError::Unusable(reports))
-}
-
-fn path_candidates(path: Option<&OsStr>, pathext: Option<&OsStr>) -> Vec<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    let extensions = executable_extensions(pathext);
+    let extensions = executable_extensions(pathext.as_deref());
     // Relative PATH entries would make discovery depend on the working directory.
-    for dir in std::env::split_paths(path.unwrap_or_default()).filter(|dir| dir.is_absolute()) {
+    for dir in std::env::split_paths(path.as_deref().unwrap_or_default()).filter(|dir| dir.is_absolute()) {
         for extension in &extensions {
             let candidate = dir.join(format!("{CLI_NAME}{extension}"));
-            if candidate.is_file() && !candidates.contains(&candidate) {
-                candidates.push(candidate);
+            if candidate.is_file() && !reports.iter().any(|r: &CandidateReport| r.path == candidate) {
+                match handshake_candidate(&candidate, cwd, limit).await {
+                    Ok(resolved) => return Ok(resolved),
+                    Err(report) => reports.push(report),
+                }
             }
         }
     }
-    candidates
+    if reports.is_empty() {
+        return Err(ResolveError::NotFound);
+    }
+    for report in &mut reports {
+        if matches!(report.outcome, CandidateOutcome::ProtocolMismatch) {
+            report.cli_version = probe_version(&report.path, cwd, limit).await;
+        }
+    }
+    Err(ResolveError::Unusable(reports))
 }
 
 fn executable_extensions(pathext: Option<&OsStr>) -> Vec<String> {
@@ -108,7 +104,7 @@ async fn handshake_candidate(
             return Err(match error.kind() {
                 ErrorKind::Protocol(ProtocolErrorKind::VersionMismatch { server, .. }) => CandidateReport {
                     cli_protocol: Some(*server),
-                    cli_version: probe_version(path, cwd, limit).await,
+                    cli_version: None,
                     message: error.to_string(),
                     outcome: CandidateOutcome::ProtocolMismatch,
                     path: path.to_path_buf(),

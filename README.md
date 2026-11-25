@@ -151,7 +151,8 @@ CLI's version is available.
   A cancel acknowledgement never ends a turn. Turn correlation follows the SDK's `send_and_wait`: start and end events
   that omit their correlation IDs are ignored, so such a turn stays active until `shutdown`. A root `session.error`
   whose `originatingMessageId` is absent or names the turn makes that turn end `failed`, unless aborted, at its next
-  end event.
+  end event. An unattributed error followed by idle does not permit reuse without a matching start. Malformed
+  IDs do not identify a turn.
 - Sends are rejected with `cancel_pending` until every cancel has its `cancel_acknowledged` or `cancel_rejected`.
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
