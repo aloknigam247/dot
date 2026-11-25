@@ -176,6 +176,12 @@ private slots:
         QTest::newRow("invalid lead C0") << QByteArray("\xC0\x80"
                                                        "a")
                                          << replacement.repeated(2) + u'a';
+        QTest::newRow("invalid lead C1") << QByteArray("\xC1\x80"
+                                                       "a")
+                                         << replacement.repeated(2) + u'a';
+        QTest::newRow("bad second continuation") << QByteArray("\xE4\xB8"
+                                                               "a")
+                                                 << replacement.repeated(2) + u'a';
         QTest::newRow("invalid lead F5") << QByteArray("\xF5"
                                                        "a")
                                          << replacement + u'a';
@@ -198,10 +204,13 @@ private slots:
         }
     }
 
-    void validThreeByteUtf8DecodesAsOneUnit_data() {
+    void validUtf8DecodesAsOneCodePoint_data() {
         QTest::addColumn<QByteArray>("bytes");
         QTest::addColumn<QString>("character");
 
+        QTest::newRow("U+0080 lowest two-byte") << QByteArray("\xC2\x80") << QString(QChar(0x0080));
+        QTest::newRow("U+07FF highest two-byte")
+            << QByteArray("\xDF\xBF") << QString(QChar(0x07FF));
         QTest::newRow("U+0800 lowest") << QByteArray("\xE0\xA0\x80") << QString(QChar(0x0800));
         QTest::newRow("U+4E2D CJK") << QByteArray("\xE4\xB8\xAD") << QString(QChar(0x4E2D));
         QTest::newRow("U+D7FF below surrogates")
@@ -209,24 +218,34 @@ private slots:
         QTest::newRow("U+E000 above surrogates")
             << QByteArray("\xEE\x80\x80") << QString(QChar(0xE000));
         QTest::newRow("U+FFFF highest") << QByteArray("\xEF\xBF\xBF") << QString(QChar(0xFFFF));
+        QTest::newRow("U+10000 lowest four-byte")
+            << QByteArray("\xF0\x90\x80\x80") << QString(u"\U00010000");
+        QTest::newRow("U+F0001 F3 lead")
+            << QByteArray("\xF3\xB0\x80\x81") << QString(u"\U000F0001");
+        QTest::newRow("U+10FFFF highest four-byte")
+            << QByteArray("\xF4\x8F\xBF\xBF") << QString(u"\U0010FFFF");
     }
 
-    void validThreeByteUtf8DecodesAsOneUnit() {
+    void validUtf8DecodesAsOneCodePoint() {
         QFETCH(QByteArray, bytes);
         QFETCH(QString, character);
         NvimConnector conn;
-        dispatch(conn, showEvent(Line{ { 0, "a" + bytes.toStdString() + "b", 0 } }, 5, ":", 1));
+        const auto end = static_cast<int>(bytes.size()) + 2;
+        dispatch(conn, showEvent(Line{ { 0, "a" + bytes.toStdString() + "b", 0 } }, end, ":", 1));
 
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, u'a' + character + u'b', 0) });
-        const std::vector<std::pair<int, int>> boundaries{ { 0, 0 }, { 1, 1 }, { 4, 2 }, { 5, 3 } };
+        const auto units = static_cast<int>(character.size());
+        const std::vector<std::pair<int, int>> boundaries{
+            { 0, 0 }, { 1, 1 }, { end - 1, units + 1 }, { end, units + 2 }
+        };
         for(const auto &[byteOffset, textOffset]: boundaries) {
             dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
         }
 
-        for(const int interior: { 2, 3 }) {
-            dispatch(conn, redrawEvent("cmdline_pos", 5, 1));
+        for(int interior = 2; interior < end - 1; ++interior) {
+            dispatch(conn, redrawEvent("cmdline_pos", end, 1));
             dispatch(conn, redrawEvent("cmdline_pos", interior, 1));
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         }
