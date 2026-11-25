@@ -13,7 +13,7 @@
 1. Neovim's `nvim --embed` stream enters [MsgpackRpc](src/MsgpackRpc.cpp), which owns the process/socket transport and
    emits decoded notifications. Arena-lifetime rules are in the [C++ guide](src/AGENTS.md#behavior-and-performance).
 2. [NvimConnector](src/NvimConnector.cpp) routes `onNotification` through `handleRedraw`. It owns the transport,
-   `GridModel`, `HighlightTable`, `ModeInfo`, `ImageModel`, `ColorPalette`, and `ResizeCoalescer`.
+   `GridModel`, `HighlightTable`, `ModeInfo`, `ImageModel`, `ColorPalette`, `ResizeCoalescer`, and `CmdlineModel`.
 3. Redraw events update [GridModel](include/GridModel.h) and the companion models; the connector publishes `flush`.
 4. [GridItem](src/GridItem.cpp) consumes dirty cell state on flush and renders through `updatePaintNode`, using
    `GridRuns` and scene-graph node pools. `CursorItem` renders cursor activity independently of cell content.
