@@ -26,7 +26,7 @@ The design is not a claim of native implementation parity.
 | `android\` | Android application, shared JVM chat client, and Gradle build |
 | `common\` | Shared artwork, release tooling, and patch-coverage checker |
 | `desktop\` | C++/QML client, build configuration, tests, and desktop tooling |
-| `desktop\copilot_helper\` | Rust [Copilot CLI helper](#copilot-cli-helper) |
+| `desktop\copilot_bridge\` | Rust [Copilot CLI bridge](#copilot-cli-bridge) |
 | `docs\` | Repository-wide design documentation |
 
 ## Versioning
@@ -116,17 +116,17 @@ Images follow actual grid scrolling, not buffer/extmark positions. Plugins must 
 changes; a successful `set` restores scroll-clipped content. Invalid input and exhausted
 [resource limits](desktop/include/ImageModel.h) raise a Lua error without silently evicting existing images.
 
-## Copilot CLI helper
+## Copilot CLI bridge
 
-`dot_copilot_helper` is a standalone process for dot chat; dot does not launch it yet. It connects to the installed
+`dot_copilot_bridge` is a standalone process for dot chat; dot does not launch it yet. It connects to the installed
 GitHub Copilot CLI through the official `copilot-sdk` crate and never downloads or bundles a CLI. It uses the first
 `copilot` executable on `PATH` (with `PATHEXT` extensions) that completes a protocol 4 SDK handshake. Each handshake
-and session creation must finish within `DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS` milliseconds (default 30000); a status
+and session creation must finish within `DOT_COPILOT_BRIDGE_STARTUP_TIMEOUT_MS` milliseconds (default 30000); a status
 or auth query that exceeds it reports a `null` `version` or `unknown` `auth`.
-The helper runs one session in its working directory, denies every permission request, disables client telemetry, and
-leaves credentials with the CLI. Build and test it as described in [SETUP.md](SETUP.md#10-copilot-cli-helper).
+The bridge runs one session in its working directory, denies every permission request, disables client telemetry, and
+leaves credentials with the CLI. Build and test it as described in [SETUP.md](SETUP.md#10-copilot-cli-bridge).
 
-The helper exchanges one JSON object per line on stdin and stdout. Helper protocol version 1 records:
+The bridge exchanges one JSON object per line on stdin and stdout. Bridge protocol version 1 records:
 
 | Direction | `type` | Fields |
 | --- | --- | --- |
@@ -146,7 +146,7 @@ Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `pro
 `timed_out`), and `path`; a protocol mismatch adds `cli_protocol` and `required_protocol`, plus `cli_version` when the
 CLI's version is available.
 
-- `ready` precedes every `item`. A startup `error` is the only record before the helper exits with code 1.
+- `ready` precedes every `item`. A startup `error` is the only record before the bridge exits with code 1.
 - At most one turn is active. `send_accepted` precedes exactly one `turn_ended` for that turn; a rejected send has none.
   A cancel acknowledgement never ends a turn. Turn correlation follows the SDK's `send_and_wait`: start and end events
   that omit their correlation IDs are ignored, so such a turn stays active until `shutdown`. A root `session.error`
@@ -156,13 +156,13 @@ CLI's version is available.
   active turn `failed` without a safe boundary.
 - Sends are rejected with `cancel_pending` until every cancel has its `cancel_acknowledged` or `cancel_rejected`.
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
-  `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
+  `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the bridge
   restarts.
 - `event_stream_lagged` means an SDK subscription overflowed its buffer (512 session events, 256 lifecycle events)
-  before the helper read it. Each record is written to stdout before the next event is handled, so a parent that stops
+  before the bridge read it. Each record is written to stdout before the next event is handled, so a parent that stops
   reading stdout can cause this.
 - A `shutdown` request or closed stdin ends any active turn as `failed`, stops the CLI, and exits with code 0. A stdin
-  read error does the same but exits with code 1. An I/O error that stops the helper is written to stderr.
+  read error does the same but exits with code 1. An I/O error that stops the bridge is written to stderr.
 
 ## Architecture
 

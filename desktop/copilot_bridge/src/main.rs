@@ -10,16 +10,16 @@ use copilot_sdk::Client;
 use tokio::sync::mpsc;
 
 use crate::cli::ResolveError;
-use crate::protocol::{ErrorKind, HelperMessage, Output, PROTOCOL_VERSION};
+use crate::protocol::{BridgeMessage, ErrorKind, Output, PROTOCOL_VERSION};
 use crate::session::{SdkSession, SessionController};
 
 const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
-const STARTUP_TIMEOUT_VARIABLE: &str = "DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS";
+const STARTUP_TIMEOUT_VARIABLE: &str = "DOT_COPILOT_BRIDGE_STARTUP_TIMEOUT_MS";
 
 #[tokio::main]
 async fn main() -> ExitCode {
     run_stdio().await.unwrap_or_else(|error| {
-        eprintln!("dot_copilot_helper: {error}");
+        eprintln!("dot_copilot_bridge: {error}");
         ExitCode::FAILURE
     })
 }
@@ -40,7 +40,7 @@ async fn run_stdio() -> std::io::Result<ExitCode> {
         Ok(sdk) => sdk,
         Err(message) => {
             let emitted = out
-                .emit(&HelperMessage::startup_error(
+                .emit(&BridgeMessage::startup_error(
                     ErrorKind::SessionStartFailed,
                     message,
                     None,
@@ -50,7 +50,7 @@ async fn run_stdio() -> std::io::Result<ExitCode> {
             return emitted.map(|()| ExitCode::FAILURE);
         }
     };
-    out.emit(&HelperMessage::Ready {
+    out.emit(&BridgeMessage::Ready {
         cli: resolution,
         protocol: PROTOCOL_VERSION,
     })
@@ -60,14 +60,14 @@ async fn run_stdio() -> std::io::Result<ExitCode> {
     result.map(|()| ExitCode::SUCCESS)
 }
 
-fn resolve_error_message(error: ResolveError) -> HelperMessage {
+fn resolve_error_message(error: ResolveError) -> BridgeMessage {
     match error {
-        ResolveError::NotFound => HelperMessage::startup_error(
+        ResolveError::NotFound => BridgeMessage::startup_error(
             ErrorKind::CliNotFound,
             "no copilot executable was found on PATH",
             Some(Vec::new()),
         ),
-        ResolveError::Unusable(candidates) => HelperMessage::startup_error(
+        ResolveError::Unusable(candidates) => BridgeMessage::startup_error(
             ErrorKind::CliUnusable,
             format!(
                 "no copilot candidate completed a protocol {} handshake",

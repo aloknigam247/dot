@@ -93,7 +93,7 @@ pub enum TurnOutcome {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum HelperMessage {
+pub enum BridgeMessage {
     CancelAcknowledged {
         request_id: String,
         turn_id: String,
@@ -137,7 +137,7 @@ pub enum HelperMessage {
     },
 }
 
-impl HelperMessage {
+impl BridgeMessage {
     pub fn error(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self::Error {
             candidates: None,
@@ -163,14 +163,14 @@ impl HelperMessage {
     }
 }
 
-pub fn parse_request(line: &[u8]) -> Result<ControlRequest, HelperMessage> {
+pub fn parse_request(line: &[u8]) -> Result<ControlRequest, BridgeMessage> {
     let value: serde_json::Value = serde_json::from_slice(line)
-        .map_err(|error| HelperMessage::error(ErrorKind::InvalidRequest, format!("invalid JSON: {error}")))?;
+        .map_err(|error| BridgeMessage::error(ErrorKind::InvalidRequest, format!("invalid JSON: {error}")))?;
     let request_id = value
         .get("request_id")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned);
-    serde_json::from_value(value).map_err(|error| HelperMessage::Error {
+    serde_json::from_value(value).map_err(|error| BridgeMessage::Error {
         candidates: None,
         kind: ErrorKind::InvalidRequest,
         message: error.to_string(),
@@ -188,7 +188,7 @@ impl<W: AsyncWrite + Unpin> Output<W> {
         Self { writer }
     }
 
-    pub async fn emit(&mut self, message: &HelperMessage) -> std::io::Result<()> {
+    pub async fn emit(&mut self, message: &BridgeMessage) -> std::io::Result<()> {
         let mut line = serde_json::to_string(message)?;
         line.push('\n');
         self.writer.write_all(line.as_bytes()).await?;

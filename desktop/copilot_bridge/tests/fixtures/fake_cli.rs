@@ -42,7 +42,7 @@ fn main() {
     while let Some(message) = read_frame(&mut stdin) {
         fake.handle(&message);
     }
-    // Only the version probe skips connect, so this outlives the probe unless the helper stops its process tree.
+    // Only the version probe skips connect, so this outlives the probe unless the bridge stops its process tree.
     if fake.scenario == "protocol3_linger" && !fake.connected {
         thread::sleep(LINGER);
     }

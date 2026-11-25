@@ -245,7 +245,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dot_copilot_helper"
+name = "dot_copilot_bridge"
 version = "0.1.0"
 dependencies = [
  "copilot-sdk",

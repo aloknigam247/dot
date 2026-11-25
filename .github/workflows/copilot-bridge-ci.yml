@@ -1,29 +1,29 @@
-name: Copilot helper CI
+name: Copilot bridge CI
 
 on:
   pull_request:
     paths:
-      - ".github/workflows/copilot-helper-ci.yml"
-      - "desktop/copilot_helper/**"
+      - ".github/workflows/copilot-bridge-ci.yml"
+      - "desktop/copilot_bridge/**"
   push:
     branches: [main]
     paths:
-      - ".github/workflows/copilot-helper-ci.yml"
-      - "desktop/copilot_helper/**"
+      - ".github/workflows/copilot-bridge-ci.yml"
+      - "desktop/copilot_bridge/**"
 
 concurrency:
-  group: copilot-helper-ci-${{ github.ref }}
+  group: copilot-bridge-ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  copilot-helper:
+  copilot-bridge:
     defaults:
       run:
-        working-directory: desktop/copilot_helper
-    name: copilot-helper
+        working-directory: desktop/copilot_bridge
+    name: copilot-bridge
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -34,7 +34,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop/copilot_helper
+          workspaces: desktop/copilot_bridge
 
       - name: Check formatting
         shell: pwsh

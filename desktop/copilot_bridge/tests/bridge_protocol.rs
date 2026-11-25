@@ -26,17 +26,17 @@ mod fake;
 
 const FAKE_LOG_VARIABLE: &str = "DOT_FAKE_CLI_LOG";
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
-const STARTUP_TIMEOUT_VARIABLE: &str = "DOT_COPILOT_HELPER_STARTUP_TIMEOUT_MS";
+const STARTUP_TIMEOUT_VARIABLE: &str = "DOT_COPILOT_BRIDGE_STARTUP_TIMEOUT_MS";
 // SDK event forwarding
 
 #[test]
 fn items_match_sdk_serialization() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "complete");
-    let turn = helper.until_turn_ended("t1");
-    let (code, records) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "complete");
+    let turn = bridge.until_turn_ended("t1");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(items(&records, "session"), expected_items(&fixture.log(), "session"));
     assert_eq!(
@@ -58,8 +58,8 @@ fn items_match_sdk_serialization() {
 #[test]
 fn startup_items_follow_ready() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    let ready = helper.next();
+    let mut bridge = fixture.bridge();
+    let ready = bridge.next();
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["protocol"], 1);
     assert_eq!(
@@ -73,9 +73,9 @@ fn startup_items_follow_ready() {
     );
     // Shutdown competes with buffered events, so it is sent only once the startup items have been forwarded.
     for _ in 0..3 {
-        assert_eq!(helper.next()["type"], "item");
+        assert_eq!(bridge.next()["type"], "item");
     }
-    let (code, records) = helper.shutdown();
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(records.iter().filter(|record| record["type"] == "ready").count(), 1);
     assert!(records[1..].iter().all(|record| record["type"] == "item"));
@@ -92,19 +92,19 @@ fn startup_items_follow_ready() {
 #[test]
 fn terminal_before_send_ack_holds_turn_ended() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "buffered_idle");
-    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "buffered_idle");
+    bridge.until(|record| item_type(record).as_deref() == Some("session.idle"));
     assert!(
-        !helper
+        !bridge
             .records
             .iter()
             .any(|record| matches!(record["type"].as_str(), Some("send_accepted" | "turn_ended")))
     );
     fixture.release();
-    helper.until_turn_ended("t1");
-    let (code, records) = helper.shutdown();
+    bridge.until_turn_ended("t1");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(items(&records, "session"), expected_items(&fixture.log(), "session"));
     let accepted = position(&records, |record| record["type"] == "send_accepted");
@@ -120,17 +120,17 @@ fn terminal_before_send_ack_holds_turn_ended() {
 #[test]
 fn rejected_send_emits_no_turn_ended() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "send_error");
-    let rejected = helper.until(|record| record["type"] == "send_rejected");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "send_error");
+    let rejected = bridge.until(|record| record["type"] == "send_rejected");
     assert_eq!(rejected.last().unwrap()["kind"], "send_failed");
     assert_eq!(rejected.last().unwrap()["request_id"], "t1");
-    helper.send("t2", "complete");
-    let rejected = helper.until(|record| record["type"] == "send_rejected");
+    bridge.send("t2", "complete");
+    let rejected = bridge.until(|record| record["type"] == "send_rejected");
     assert_eq!(rejected.last().unwrap()["kind"], "reuse_rejected");
     assert_eq!(rejected.last().unwrap()["request_id"], "t2");
-    let (code, records) = helper.shutdown();
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert!(turn_ended(&records).is_empty(), "{records:?}");
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
@@ -141,34 +141,34 @@ fn rejected_send_emits_no_turn_ended() {
 #[test]
 fn cancel_correlation() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.cancel("c0", "msg-1");
-    assert_rejection(&helper.until_type("cancel_rejected"), "c0", "no_active_turn");
-    helper.send("t1", "hold");
-    let accepted = helper.until_type("send_accepted");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.cancel("c0", "msg-1");
+    assert_rejection(&bridge.until_type("cancel_rejected"), "c0", "no_active_turn");
+    bridge.send("t1", "hold");
+    let accepted = bridge.until_type("send_accepted");
     assert_eq!(accepted["turn_id"], "msg-1");
-    helper.cancel("c1", "msg-other");
-    assert_rejection(&helper.until_type("cancel_rejected"), "c1", "turn_mismatch");
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "turn_active");
+    bridge.cancel("c1", "msg-other");
+    assert_rejection(&bridge.until_type("cancel_rejected"), "c1", "turn_mismatch");
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "turn_active");
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 0);
-    helper.cancel("c2", "msg-1");
+    bridge.cancel("c2", "msg-1");
     assert_eq!(
-        helper.until_type("cancel_acknowledged"),
+        bridge.until_type("cancel_acknowledged"),
         json!({"type": "cancel_acknowledged", "request_id": "c2", "turn_id": "msg-1"})
     );
     // The fake holds the abort's terminal events, so the acknowledgement alone must leave the turn active.
-    helper.send("t3", "complete");
-    let rejected = helper.until(|record| record["type"] == "send_rejected");
+    bridge.send("t3", "complete");
+    let rejected = bridge.until(|record| record["type"] == "send_rejected");
     assert!(turn_ended(&rejected).is_empty(), "{rejected:?}");
     assert_rejection(rejected.last().unwrap(), "t3", "turn_active");
     fixture.release();
-    let records = helper.until_turn_ended("t1");
+    let records = bridge.until_turn_ended("t1");
     assert_eq!(records.last().unwrap()["outcome"], "aborted");
-    helper.cancel("c3", "msg-1");
-    assert_rejection(&helper.until_type("cancel_rejected"), "c3", "no_active_turn");
-    let (code, records) = helper.shutdown();
+    bridge.cancel("c3", "msg-1");
+    assert_rejection(&bridge.until_type("cancel_rejected"), "c3", "no_active_turn");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     let acknowledged: Vec<&Value> = records
         .iter()
@@ -189,16 +189,16 @@ fn cancel_correlation() {
 #[test]
 fn cancel_during_send_startup_is_rejected() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "slow_ack");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "slow_ack");
     fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.send");
-    helper.cancel("c1", "msg-1");
-    assert_rejection(&helper.until_type("cancel_rejected"), "c1", "turn_starting");
+    bridge.cancel("c1", "msg-1");
+    assert_rejection(&bridge.until_type("cancel_rejected"), "c1", "turn_starting");
     fixture.release();
-    let records = helper.until_turn_ended("t1");
+    let records = bridge.until_turn_ended("t1");
     assert_eq!(records.last().unwrap()["outcome"], "completed");
-    let (code, _) = helper.shutdown();
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(rpc_count(&fixture.log(), "session.abort"), 0);
 }
@@ -206,20 +206,20 @@ fn cancel_during_send_startup_is_rejected() {
 #[test]
 fn cancel_pending_rejects_send() {
     let fixture = Fixture::with_scenario("idle_before_abort");
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "hold");
-    helper.until_type("send_accepted");
-    helper.cancel("c1", "msg-1");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "hold");
+    bridge.until_type("send_accepted");
+    bridge.cancel("c1", "msg-1");
     // The fake ends the turn on its own and then holds the abort reply.
-    helper.until_turn_ended("t1");
-    helper.send("t2", "complete");
-    helper.until_type("send_rejected");
+    bridge.until_turn_ended("t1");
+    bridge.send("t2", "complete");
+    bridge.until_type("send_rejected");
     fixture.release();
-    helper.until_type("cancel_acknowledged");
-    helper.send("t3", "complete");
-    helper.until_turn_ended("t3");
-    let (code, records) = helper.shutdown();
+    bridge.until_type("cancel_acknowledged");
+    bridge.send("t3", "complete");
+    bridge.until_turn_ended("t3");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -243,68 +243,68 @@ fn cancel_pending_rejects_send() {
 #[test]
 fn all_cancels_must_finish_before_reuse() {
     let fixture = Fixture::with_scenario("two_aborts");
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "hold");
-    helper.until_type("send_accepted");
-    helper.cancel("c1", "msg-1");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "hold");
+    bridge.until_type("send_accepted");
+    bridge.cancel("c1", "msg-1");
     fixture.wait_for_log(|entry| entry["method"] == "session.abort");
-    helper.cancel("c2", "msg-1");
-    while !helper.records.iter().any(|r| r["type"] == "turn_ended")
-        || !helper.records.iter().any(|r| r["type"] == "cancel_acknowledged")
+    bridge.cancel("c2", "msg-1");
+    while !bridge.records.iter().any(|r| r["type"] == "turn_ended")
+        || !bridge.records.iter().any(|r| r["type"] == "cancel_acknowledged")
     {
-        helper.next();
+        bridge.next();
     }
-    helper.send("blocked", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "blocked", "cancel_pending");
+    bridge.send("blocked", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "blocked", "cancel_pending");
     fixture.release();
-    assert_eq!(helper.until_type("cancel_acknowledged")["request_id"], "c2");
-    helper.send("t2", "complete");
-    assert_eq!(helper.until_turn_ended("t2").last().unwrap()["outcome"], "completed");
-    assert_eq!(helper.shutdown().0, 0);
+    assert_eq!(bridge.until_type("cancel_acknowledged")["request_id"], "c2");
+    bridge.send("t2", "complete");
+    assert_eq!(bridge.until_turn_ended("t2").last().unwrap()["outcome"], "completed");
+    assert_eq!(bridge.shutdown().0, 0);
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 2);
 }
 
 #[test]
 fn queued_control_is_served_before_sdk_backlog_drains() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "control_backlog");
-    helper.until_type("send_accepted");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "control_backlog");
+    bridge.until_type("send_accepted");
     fixture.release();
     fixture.wait_for_log(|entry| entry["event"] == "backlog_ready");
-    helper.cancel("c1", "wrong-id");
-    assert_rejection(&helper.until_type("cancel_rejected"), "c1", "turn_mismatch");
-    helper.until(|r| item(r).is_some_and(|e| e["data"]["deltaContent"] == "last"));
-    assert_eq!(helper.shutdown().0, 0);
+    bridge.cancel("c1", "wrong-id");
+    assert_rejection(&bridge.until_type("cancel_rejected"), "c1", "turn_mismatch");
+    bridge.until(|r| item(r).is_some_and(|e| e["data"]["deltaContent"] == "last"));
+    assert_eq!(bridge.shutdown().0, 0);
 }
 
 #[test]
 fn unattributed_early_failure_does_not_allow_reuse() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "session_error_uncorrelated");
-    assert_eq!(helper.until_turn_ended("t1").last().unwrap()["outcome"], "failed");
-    helper.send("t2", "hold");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
-    assert_eq!(helper.shutdown().0, 0);
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "session_error_uncorrelated");
+    assert_eq!(bridge.until_turn_ended("t1").last().unwrap()["outcome"], "failed");
+    bridge.send("t2", "hold");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "reuse_rejected");
+    assert_eq!(bridge.shutdown().0, 0);
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
 }
 
 #[test]
 fn empty_turn_id_is_rejected() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "empty_id");
-    assert_rejection(&helper.until_type("send_rejected"), "t1", "empty_turn_id");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "empty_id");
+    assert_rejection(&bridge.until_type("send_rejected"), "t1", "empty_turn_id");
     fixture.release();
-    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
-    let (code, records) = helper.shutdown();
+    bridge.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "reuse_rejected");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert!(turn_ended(&records).is_empty(), "{records:?}");
     assert_eq!(items(&records, "session"), expected_items(&fixture.log(), "session"));
@@ -315,13 +315,13 @@ fn empty_turn_id_is_rejected() {
 #[test]
 fn trailing_idle_never_ends_next_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("a", "complete_stray");
-    helper.until_turn_ended("a");
-    helper.send("b", "trailing");
-    let turn_b = helper.until_turn_ended("b");
-    let (code, records) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("a", "complete_stray");
+    bridge.until_turn_ended("a");
+    bridge.send("b", "trailing");
+    let turn_b = bridge.until_turn_ended("b");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     let user_b = position(&turn_b, |record| {
         item(record).is_some_and(|event| event["type"] == "user.message" && event["data"]["messageId"] == "msg-2")
@@ -348,14 +348,14 @@ fn trailing_idle_never_ends_next_turn() {
 #[test]
 fn uncorrelated_start_waits_for_shutdown() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "uncorrelated_start");
-    let turn = helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "uncorrelated_start");
+    let turn = bridge.until(|record| item_type(record).as_deref() == Some("session.idle"));
     let types = item_types(&turn);
     assert_eq!(types[types.len() - 2..], ["user.message", "session.idle"]);
     assert!(turn_ended(&turn).is_empty(), "{turn:?}");
-    let (code, records) = helper.shutdown();
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -371,13 +371,13 @@ fn uncorrelated_start_waits_for_shutdown() {
 #[test]
 fn session_error_fails_turn_at_idle() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "session_error");
-    let turn = helper.until_turn_ended("t1");
-    helper.send("t2", "complete");
-    helper.until_turn_ended("t2");
-    let (code, records) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "session_error");
+    let turn = bridge.until_turn_ended("t1");
+    bridge.send("t2", "complete");
+    bridge.until_turn_ended("t2");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     let error = position(&turn, |record| item_type(record).as_deref() == Some("session.error"));
     let delta = turn
@@ -398,15 +398,15 @@ fn session_error_fails_turn_at_idle() {
 #[test]
 fn session_error_before_send_ack_fails_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "session_error_before_ack");
-    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "session_error_before_ack");
+    bridge.until(|record| item_type(record).as_deref() == Some("session.idle"));
     fixture.release();
-    helper.until_turn_ended("t1");
-    helper.send("t2", "complete");
-    helper.until_turn_ended("t2");
-    let (code, records) = helper.shutdown();
+    bridge.until_turn_ended("t1");
+    bridge.send("t2", "complete");
+    bridge.until_turn_ended("t2");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -422,21 +422,21 @@ fn session_error_before_send_ack_fails_turn() {
 #[test]
 fn lagged_stream_fails_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "lag");
-    // The helper blocks on its full stdout pipe while the burst overflows the SDK's bounded event buffer.
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "lag");
+    // The bridge blocks on its full stdout pipe while the burst overflows the SDK's bounded event buffer.
     fixture.wait_for_log(|entry| entry["event"] == "burst_done");
-    let records = helper.until(|record| record["type"] == "turn_ended");
+    let records = bridge.until(|record| record["type"] == "turn_ended");
     assert_eq!(records.last().unwrap()["outcome"], "failed");
     let errors: Vec<&Value> = records.iter().filter(|record| record["type"] == "error").collect();
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0]["kind"], "event_stream_lagged");
     // A lag drops only the oldest buffered events, so newer ones are still forwarded.
-    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "session_failed");
-    let (code, records) = helper.shutdown();
+    bridge.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "session_failed");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(turn_ended(&records).len(), 1);
 }
@@ -444,11 +444,11 @@ fn lagged_stream_fails_turn() {
 #[test]
 fn lagged_lifecycle_stream_fails_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "lifecycle_lag");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "lifecycle_lag");
     fixture.wait_for_log(|entry| entry["event"] == "lifecycle_burst_done");
-    let records = helper.until(|record| record["type"] == "turn_ended");
+    let records = bridge.until(|record| record["type"] == "turn_ended");
     assert_eq!(records.last().unwrap()["outcome"], "failed");
     let errors: Vec<&Value> = records.iter().filter(|record| record["type"] == "error").collect();
     assert_eq!(errors.len(), 1);
@@ -457,20 +457,20 @@ fn lagged_lifecycle_stream_fails_turn() {
         errors[0]["message"].as_str().unwrap().contains("lifecycle"),
         "{errors:?}"
     );
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "session_failed");
-    assert_eq!(helper.shutdown().0, 0);
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "session_failed");
+    assert_eq!(bridge.shutdown().0, 0);
 }
 
 #[test]
 fn closed_stream_fails_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "close");
-    let records = helper.until(|record| record["type"] == "turn_ended");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "close");
+    let records = bridge.until(|record| record["type"] == "turn_ended");
     assert_eq!(records.last().unwrap()["outcome"], "failed");
-    let (code, records) = helper.shutdown();
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     let errors: Vec<&Value> = records.iter().filter(|record| record["type"] == "error").collect();
     assert_eq!(errors.len(), 1);
@@ -481,17 +481,17 @@ fn closed_stream_fails_turn() {
 #[test]
 fn fatal_shutdown_fails_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "fatal_shutdown");
-    let records = helper.until(|record| record["type"] == "turn_ended");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "fatal_shutdown");
+    let records = bridge.until(|record| record["type"] == "turn_ended");
     assert_eq!(records.last().unwrap()["outcome"], "failed");
     let errors: Vec<&Value> = records.iter().filter(|record| record["type"] == "error").collect();
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0]["kind"], "session_shutdown");
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "session_failed");
-    let (code, records) = helper.shutdown();
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "session_failed");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(turn_ended(&records).len(), 1);
 }
@@ -499,15 +499,15 @@ fn fatal_shutdown_fails_turn() {
 #[test]
 fn shutdown_before_send_ack_fails_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "shutdown_before_ack");
-    helper.until_type("error");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "shutdown_before_ack");
+    bridge.until_type("error");
     fixture.release();
-    helper.until_turn_ended("t1");
-    helper.send("t2", "complete");
-    helper.until_type("send_rejected");
-    let (code, records) = helper.shutdown();
+    bridge.until_turn_ended("t1");
+    bridge.send("t2", "complete");
+    bridge.until_type("send_rejected");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -518,7 +518,7 @@ fn shutdown_before_send_ack_fails_turn() {
             json!({
                 "type": "send_rejected",
                 "kind": "session_failed",
-                "message": "the session failed; restart the helper",
+                "message": "the session failed; restart the bridge",
                 "request_id": "t2",
             }),
         ]
@@ -529,14 +529,14 @@ fn shutdown_before_send_ack_fails_turn() {
 #[test]
 fn unproven_boundary_rejects_next_send() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "autopilot");
-    let turn = helper.until_turn_ended("t1");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "autopilot");
+    let turn = bridge.until_turn_ended("t1");
     assert_eq!(turn.last().unwrap()["outcome"], "completed");
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "reuse_rejected");
-    let (code, records) = helper.shutdown();
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "reuse_rejected");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(turn_ended(&records).len(), 1);
     assert_eq!(rpc_count(&fixture.log(), "session.send"), 1);
@@ -545,16 +545,16 @@ fn unproven_boundary_rejects_next_send() {
 #[test]
 fn failed_abort_is_rejected() {
     let fixture = Fixture::with_scenario("abort_error");
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "hold");
-    helper.until_type("send_accepted");
-    helper.cancel("c1", "msg-1");
-    let before_shutdown = helper.until(|record| record["type"] == "cancel_rejected");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "hold");
+    bridge.until_type("send_accepted");
+    bridge.cancel("c1", "msg-1");
+    let before_shutdown = bridge.until(|record| record["type"] == "cancel_rejected");
     assert_rejection(before_shutdown.last().unwrap(), "c1", "abort_failed");
-    helper.send("t2", "complete");
-    assert_rejection(&helper.until_type("send_rejected"), "t2", "turn_active");
-    let (code, records) = helper.shutdown();
+    bridge.send("t2", "complete");
+    assert_rejection(&bridge.until_type("send_rejected"), "t2", "turn_active");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert!(records.iter().all(|record| record["type"] != "cancel_acknowledged"));
     assert_eq!(
@@ -576,11 +576,11 @@ fn failed_abort_is_rejected() {
 #[test]
 fn sub_agent_events_do_not_end_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "sub_agent");
-    let turn = helper.until_turn_ended("t1");
-    let (code, records) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "sub_agent");
+    let turn = bridge.until_turn_ended("t1");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     let events: Vec<(Value, Value)> = turn
         .iter()
@@ -607,12 +607,12 @@ fn sub_agent_events_do_not_end_turn() {
 #[test]
 fn permission_request_is_denied() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "permission");
-    let turn = helper.until_turn_ended("t1");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "permission");
+    let turn = bridge.until_turn_ended("t1");
     assert_eq!(turn.last().unwrap()["outcome"], "completed");
-    let (code, _) = helper.shutdown();
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     let log = fixture.log();
     let create = rpc_params(&log, "session.create");
@@ -639,8 +639,8 @@ fn auth_status_is_reported() {
     ];
     for (scenario, auth, auth_error) in cases {
         let fixture = Fixture::with_scenario(scenario);
-        let mut helper = fixture.helper();
-        let ready = helper.next();
+        let mut bridge = fixture.bridge();
+        let ready = bridge.next();
         assert_eq!(ready["type"], "ready", "{scenario}");
         assert_eq!(ready["cli"]["auth"], auth, "{scenario}");
         match auth_error {
@@ -652,7 +652,7 @@ fn auth_status_is_reported() {
             ),
             None => assert!(ready["cli"].get("auth_error").is_none(), "{ready}"),
         }
-        let (code, _) = helper.shutdown();
+        let (code, _) = bridge.shutdown();
         assert_eq!(code, 0, "{scenario}");
     }
 }
@@ -660,9 +660,9 @@ fn auth_status_is_reported() {
 #[test]
 fn shutdown_request_stops_child() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    let (code, _) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     fixture.assert_children_exited();
     assert_eq!(rpc_count(&fixture.log(), "runtime.shutdown"), 1);
@@ -671,9 +671,9 @@ fn shutdown_request_stops_child() {
 #[test]
 fn closed_stdin_stops_child() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    let (code, _) = helper.finish();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    let (code, _) = bridge.finish();
     assert_eq!(code, 0);
     fixture.assert_children_exited();
 }
@@ -693,7 +693,7 @@ fn stdout_failure_at_ready_stops_child() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.starts_with("dot_copilot_helper: "), "{stderr}");
+    assert!(stderr.starts_with("dot_copilot_bridge: "), "{stderr}");
     assert_eq!(rpc_count(&fixture.log(), "session.create"), 1);
     fixture.assert_children_exited();
 }
@@ -708,7 +708,7 @@ fn stdout_failure_during_turn_stops_child() {
     let mut stderr = child.stderr.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let (closed_tx, closed) = sync_channel(1);
-    // Closing stdout once the held turn is quiet makes the helper's next record fail to write.
+    // Closing stdout once the held turn is quiet makes the bridge's next record fail to write.
     thread::spawn(move || {
         let mut accepted = false;
         let mut started = false;
@@ -735,13 +735,13 @@ fn stdout_failure_during_turn_stops_child() {
         if let Some(status) = child.try_wait().unwrap() {
             break status;
         }
-        assert!(Instant::now() < deadline, "helper did not exit");
+        assert!(Instant::now() < deadline, "bridge did not exit");
         thread::sleep(Duration::from_millis(20));
     };
     assert_eq!(status.code(), Some(1));
     let mut message = String::new();
     stderr.read_to_string(&mut message).unwrap();
-    assert!(message.starts_with("dot_copilot_helper: "), "{message}");
+    assert!(message.starts_with("dot_copilot_bridge: "), "{message}");
     assert_eq!(rpc_count(&fixture.log(), "runtime.shutdown"), 1);
     fixture.assert_children_exited();
 }
@@ -752,15 +752,15 @@ fn stdin_read_error_fails_turn() {
     let (mut client, server) = fixture.message_pipe();
     let mut command = fixture.command(&[&fixture.bin], Some(".EXE"), None);
     command.stderr(Stdio::piped()).stdin(server);
-    let mut helper = Helper::spawn(command);
-    let mut stderr = helper.child.stderr.take().unwrap();
-    helper.expect_ready();
+    let mut bridge = Bridge::spawn(command);
+    let mut stderr = bridge.child.stderr.take().unwrap();
+    bridge.expect_ready();
     let send = json!({"type": "send", "request_id": "t1", "prompt": "hold"});
     client.write_all(format!("{send}\n").as_bytes()).unwrap();
-    helper.until_type("send_accepted");
-    // One message larger than the helper's stdin buffer fails its read with ERROR_MORE_DATA instead of reaching EOF.
+    bridge.until_type("send_accepted");
+    // One message larger than the bridge's stdin buffer fails its read with ERROR_MORE_DATA instead of reaching EOF.
     client.write_all(&[b' '; 16 * 1024]).unwrap();
-    let (code, records) = helper.finish();
+    let (code, records) = bridge.finish();
     assert_eq!(code, 1);
     assert_eq!(
         replies(&records),
@@ -773,7 +773,7 @@ fn stdin_read_error_fails_turn() {
     fixture.assert_children_exited();
     let mut text = String::new();
     stderr.read_to_string(&mut text).unwrap();
-    assert!(text.starts_with("dot_copilot_helper: "), "{text}");
+    assert!(text.starts_with("dot_copilot_bridge: "), "{text}");
 }
 
 // Discovery behavior
@@ -788,11 +788,11 @@ fn discovery_selects_first_successful_handshake() {
     fixture.install(&first, "copilot.txt", "ok");
     fixture.install(&second, "copilot.exe", "ok");
     fixture.install(&third, "copilot.exe", "ok");
-    let mut helper = fixture.helper_with(&[&first, &second, &third], Some(".COM;.EXE"), None);
-    let ready = helper.next();
+    let mut bridge = fixture.bridge_with(&[&first, &second, &third], Some(".COM;.EXE"), None);
+    let ready = bridge.next();
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["cli"]["path"], json!(second.join("copilot.exe")));
-    let (code, _) = helper.shutdown();
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         started_exes(&fixture.log()),
@@ -803,8 +803,8 @@ fn discovery_selects_first_successful_handshake() {
 #[test]
 fn protocol_mismatch_reports_version() {
     let fixture = Fixture::with_scenario("protocol3");
-    let helper = fixture.helper();
-    let (code, records) = helper.finish();
+    let bridge = fixture.bridge();
+    let (code, records) = bridge.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
     let error = &records[0];
@@ -827,8 +827,8 @@ fn protocol_mismatch_reports_version() {
 #[test]
 fn protocol_mismatch_omits_unanswered_version() {
     let fixture = Fixture::with_scenario("protocol3_silent");
-    let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
-    let (code, records) = helper.finish();
+    let bridge = fixture.bridge_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+    let (code, records) = bridge.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
     let candidates = records[0]["candidates"].as_array().unwrap();
@@ -846,8 +846,8 @@ fn protocol_mismatch_omits_unanswered_version() {
 fn cmd_wrapper_mismatch_stops_lingering_cli() {
     let fixture = Fixture::empty();
     fixture.install_cmd(&fixture.bin, "protocol3_linger");
-    let mut helper = fixture.helper_with(&[&fixture.bin], Some(".CMD"), None);
-    let error = helper.next();
+    let mut bridge = fixture.bridge_with(&[&fixture.bin], Some(".CMD"), None);
+    let error = bridge.next();
     assert_eq!(error["kind"], "cli_unusable");
     let candidates = error["candidates"].as_array().unwrap();
     assert_eq!(candidates.len(), 1);
@@ -867,10 +867,10 @@ fn cmd_wrapper_mismatch_stops_lingering_cli() {
     assert_eq!(probe["args"], json!(["--server", "--stdio", "--no-auto-update"]));
     assert_eq!(probe["telemetry_disabled"], "true");
     // Both waits together stay below LINGER, so a probe CLI left running fails here rather than exiting on its own.
-    assert_eq!(helper.wait(), 1);
+    assert_eq!(bridge.wait(), 1);
     fixture.assert_children_exit_within(fake::LINGER / 3);
     assert_eq!(rpc_count(&fixture.log(), "status.get"), 1);
-    let (_, records) = helper.finish();
+    let (_, records) = bridge.finish();
     assert_eq!(records.len(), 1);
 }
 
@@ -878,13 +878,13 @@ fn cmd_wrapper_mismatch_stops_lingering_cli() {
 fn cmd_wrapper_runs_turn() {
     let fixture = Fixture::empty();
     fixture.install_cmd(&fixture.bin, "ok");
-    let mut helper = fixture.helper_with(&[&fixture.bin], Some(".CMD"), None);
-    let ready = helper.next();
+    let mut bridge = fixture.bridge_with(&[&fixture.bin], Some(".CMD"), None);
+    let ready = bridge.next();
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["cli"]["path"], json!(fixture.bin.join("copilot.cmd")));
-    helper.send("t1", "complete");
-    assert_eq!(helper.until_turn_ended("t1").last().unwrap()["outcome"], "completed");
-    let (code, _) = helper.shutdown();
+    bridge.send("t1", "complete");
+    assert_eq!(bridge.until_turn_ended("t1").last().unwrap()["outcome"], "completed");
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(started_exes(&fixture.log()), vec![fixture.bin.join("fake_cli.exe")]);
     fixture.assert_children_exited();
@@ -896,8 +896,8 @@ fn missing_cli_reports_not_found() {
     let first = fixture.dir("first");
     let second = fixture.dir("second");
     fixture.install(&first, "copilot.txt", "ok");
-    let helper = fixture.helper_with(&[&first, &second], Some(".COM;.EXE"), None);
-    let (code, records) = helper.finish();
+    let bridge = fixture.bridge_with(&[&first, &second], Some(".COM;.EXE"), None);
+    let (code, records) = bridge.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["type"], "error");
@@ -916,8 +916,8 @@ fn startup_failures_report_candidates() {
     fixture.install(&first, "copilot.exe", "exit");
     fixture.install(&second, "copilot.exe", "no_protocol");
     fixture.install(&third, "copilot.exe", "hang");
-    let helper = fixture.helper_with(&[&first, &first, &second, &third], Some(".EXE"), Some(2000));
-    let (code, records) = helper.finish();
+    let bridge = fixture.bridge_with(&[&first, &first, &second, &third], Some(".EXE"), Some(2000));
+    let (code, records) = bridge.finish();
     assert_eq!(code, 1);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["kind"], "cli_unusable");
@@ -945,13 +945,13 @@ fn startup_failures_report_candidates() {
 #[test]
 fn cli_status_timeout_reports_unknown() {
     let fixture = Fixture::with_scenario("hang:auth.getStatus,status.get");
-    let mut helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
-    let ready = helper.next();
+    let mut bridge = fixture.bridge_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+    let ready = bridge.next();
     assert_eq!(ready["type"], "ready", "{ready}");
     assert_eq!(ready["cli"]["auth"], "unknown");
     assert_eq!(ready["cli"]["auth_error"], "no auth status within 2000 ms");
     assert_eq!(ready["cli"].get("version"), Some(&Value::Null));
-    let (code, _) = helper.shutdown();
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     let log = fixture.log();
     assert_eq!(rpc_count(&log, "auth.getStatus"), 1);
@@ -967,9 +967,9 @@ fn discovery_skips_relative_path_entries() {
     fixture.install(&relative, "copilot.exe", "ok");
     fixture.install(&absolute, "copilot.exe", "ok");
     // Without PATHEXT, only the default executable extensions can find copilot.exe.
-    let mut helper = fixture.helper_with(&[Path::new("relative"), &absolute], None, None);
-    assert_eq!(helper.next()["cli"]["path"], json!(absolute.join("copilot.exe")));
-    let (code, _) = helper.shutdown();
+    let mut bridge = fixture.bridge_with(&[Path::new("relative"), &absolute], None, None);
+    assert_eq!(bridge.next()["cli"]["path"], json!(absolute.join("copilot.exe")));
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     let started: Vec<Value> = fixture
         .log()
@@ -988,10 +988,10 @@ fn discovery_ignores_malformed_pathext_entries() {
     fixture.install(&first, "copilot", "ok");
     fixture.install(&first, "copilotexe", "ok");
     fixture.install(&second, "copilot.exe", "ok");
-    let mut helper = fixture.helper_with(&[&first, &second], Some(";.EXE;;EXE;."), None);
-    let ready = helper.next();
+    let mut bridge = fixture.bridge_with(&[&first, &second], Some(";.EXE;;EXE;."), None);
+    let ready = bridge.next();
     assert_eq!(ready["cli"]["path"], json!(second.join("copilot.exe")), "{ready}");
-    let (code, _) = helper.shutdown();
+    let (code, _) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(started_exes(&fixture.log()), vec![second.join("copilot.exe")]);
 }
@@ -1004,8 +1004,8 @@ fn session_create_failure_reports_start_failed() {
     ];
     for (scenario, message) in cases {
         let fixture = Fixture::with_scenario(scenario);
-        let helper = fixture.helper_with(&[&fixture.bin], Some(".EXE"), Some(2000));
-        let (code, records) = helper.finish();
+        let bridge = fixture.bridge_with(&[&fixture.bin], Some(".EXE"), Some(2000));
+        let (code, records) = bridge.finish();
         assert_eq!(code, 1, "{scenario}");
         assert_eq!(records.len(), 1, "{records:?}");
         assert_eq!(records[0]["type"], "error");
@@ -1021,15 +1021,15 @@ fn session_create_failure_reports_start_failed() {
 #[test]
 fn invalid_requests_are_reported() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.write_raw(b"\r\n");
-    helper.write_raw(b"{not json\n");
-    helper.write_raw(b"{\"type\": \"pause\", \"request_id\": \"p1\"}\n");
-    helper.write_raw(b"\xff\xfe\n");
-    helper.send("t1", "complete");
-    let turn = helper.until_turn_ended("t1");
-    let (code, records) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.write_raw(b"\r\n");
+    bridge.write_raw(b"{not json\n");
+    bridge.write_raw(b"{\"type\": \"pause\", \"request_id\": \"p1\"}\n");
+    bridge.write_raw(b"\xff\xfe\n");
+    bridge.send("t1", "complete");
+    let turn = bridge.until_turn_ended("t1");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     let errors: Vec<(&Value, Option<&Value>)> = records
         .iter()
@@ -1047,11 +1047,11 @@ fn invalid_requests_are_reported() {
 #[test]
 fn shutdown_finishes_active_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "hold");
-    helper.until_type("send_accepted");
-    let (code, records) = helper.shutdown();
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "hold");
+    bridge.until_type("send_accepted");
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -1067,13 +1067,13 @@ fn shutdown_finishes_active_turn() {
 #[test]
 fn shutdown_rejects_unanswered_cancel() {
     let fixture = Fixture::with_scenario("hang:session.abort");
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "hold");
-    helper.until_type("send_accepted");
-    helper.cancel("c1", "msg-1");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "hold");
+    bridge.until_type("send_accepted");
+    bridge.cancel("c1", "msg-1");
     fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.abort");
-    let (code, records) = helper.shutdown();
+    let (code, records) = bridge.shutdown();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -1082,7 +1082,7 @@ fn shutdown_rejects_unanswered_cancel() {
             json!({
                 "type": "cancel_rejected",
                 "kind": "abort_failed",
-                "message": "the helper stopped before the abort finished",
+                "message": "the bridge stopped before the abort finished",
                 "request_id": "c1",
             }),
             json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
@@ -1094,13 +1094,13 @@ fn shutdown_rejects_unanswered_cancel() {
 #[test]
 fn closed_stdin_finishes_starting_turn() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "slow_hold");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "slow_hold");
     fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.send");
-    helper.close_stdin();
+    bridge.close_stdin();
     fixture.release();
-    let (code, records) = helper.finish();
+    let (code, records) = bridge.finish();
     assert_eq!(code, 0);
     assert_eq!(
         replies(&records),
@@ -1116,15 +1116,15 @@ fn closed_stdin_finishes_starting_turn() {
 #[test]
 fn closed_stdin_rejects_unacknowledged_send() {
     let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "slow_hold");
+    let mut bridge = fixture.bridge();
+    bridge.expect_ready();
+    bridge.send("t1", "slow_hold");
     fixture.wait_for_log(|entry| entry["event"] == "rpc" && entry["method"] == "session.send");
-    helper.close_stdin();
-    assert_rejection(&helper.until_type("send_rejected"), "t1", "send_failed");
-    // The fake acknowledges only after the helper gave up, so the late result cannot produce a turn.
+    bridge.close_stdin();
+    assert_rejection(&bridge.until_type("send_rejected"), "t1", "send_failed");
+    // The fake acknowledges only after the bridge gave up, so the late result cannot produce a turn.
     fixture.release();
-    let (code, records) = helper.finish();
+    let (code, records) = bridge.finish();
     assert_eq!(code, 0);
     assert_eq!(replies(&records).len(), 1, "{records:?}");
     assert!(turn_ended(&records).is_empty());
@@ -1174,7 +1174,7 @@ impl Fixture {
 
     fn empty() -> Self {
         let root = tempfile::Builder::new()
-            .prefix("helper")
+            .prefix("bridge")
             .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
             .unwrap();
         let bin = root.path().join("bin");
@@ -1237,18 +1237,18 @@ impl Fixture {
         }
     }
 
-    fn helper(&self) -> Helper {
-        self.helper_with(&[&self.bin], Some(".EXE"), None)
+    fn bridge(&self) -> Bridge {
+        self.bridge_with(&[&self.bin], Some(".EXE"), None)
     }
 
-    fn helper_with(&self, dirs: &[&Path], pathext: Option<&str>, timeout_ms: Option<u64>) -> Helper {
+    fn bridge_with(&self, dirs: &[&Path], pathext: Option<&str>, timeout_ms: Option<u64>) -> Bridge {
         let mut command = self.command(dirs, pathext, timeout_ms);
         command.stdin(Stdio::piped());
-        Helper::spawn(command)
+        Bridge::spawn(command)
     }
 
     fn command(&self, dirs: &[&Path], pathext: Option<&str>, timeout_ms: Option<u64>) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_dot_copilot_helper"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_dot_copilot_bridge"));
         command
             .current_dir(self.root.path())
             .env("PATH", std::env::join_paths(dirs).unwrap())
@@ -1270,7 +1270,7 @@ impl Fixture {
 
     fn message_pipe(&self) -> (std::fs::File, OwnedHandle) {
         let unique = self.root.path().file_name().unwrap().to_string_lossy().into_owned();
-        let name = format!(r"\\.\pipe\dot_helper_{}_{unique}", std::process::id());
+        let name = format!(r"\\.\pipe\dot_bridge_{}_{unique}", std::process::id());
         let wide: Vec<u16> = name.encode_utf16().chain([0]).collect();
         let mode = PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT;
         // SAFETY: wide is a live, nul-terminated name, and null security attributes are allowed.
@@ -1278,7 +1278,7 @@ impl Fixture {
         assert_ne!(handle, INVALID_HANDLE_VALUE, "{}", std::io::Error::last_os_error());
         // SAFETY: CreateNamedPipeW returned a new handle that nothing else owns.
         let server = unsafe { OwnedHandle::from_raw_handle(handle) };
-        // Reading a server end that no client has connected to fails, so the client connects before the helper starts.
+        // Reading a server end that no client has connected to fails, so the client connects before the bridge starts.
         let client = OpenOptions::new().write(true).open(&name).unwrap();
         (client, server)
     }
@@ -1319,14 +1319,14 @@ impl Drop for Fixture {
     }
 }
 
-struct Helper {
+struct Bridge {
     child: Child,
     lines: Receiver<String>,
     records: Vec<Value>,
     stdin: Option<ChildStdin>,
 }
 
-impl Helper {
+impl Bridge {
     fn spawn(mut command: Command) -> Self {
         let mut child = command.spawn().unwrap();
         let stdin = child.stdin.take();
@@ -1352,7 +1352,7 @@ impl Helper {
     }
 
     fn next(&mut self) -> Value {
-        let line = self.lines.recv_timeout(READ_TIMEOUT).expect("helper output timed out");
+        let line = self.lines.recv_timeout(READ_TIMEOUT).expect("bridge output timed out");
         let record: Value = serde_json::from_str(&line).unwrap();
         self.records.push(record.clone());
         record
@@ -1408,7 +1408,7 @@ impl Helper {
 
     fn shutdown(mut self) -> (i32, Vec<Value>) {
         self.request(json!({"type": "shutdown", "request_id": "stop"}));
-        // Stdin stays open until the helper exits, so end of input cannot stand in for the shutdown request.
+        // Stdin stays open until the bridge exits, so end of input cannot stand in for the shutdown request.
         self.drain()
     }
 
@@ -1422,7 +1422,7 @@ impl Helper {
             match self.lines.recv_timeout(READ_TIMEOUT) {
                 Ok(line) => self.records.push(serde_json::from_str(&line).unwrap()),
                 Err(RecvTimeoutError::Disconnected) => break,
-                Err(RecvTimeoutError::Timeout) => panic!("helper did not close stdout"),
+                Err(RecvTimeoutError::Timeout) => panic!("bridge did not close stdout"),
             }
         }
         let code = self.wait();
@@ -1435,13 +1435,13 @@ impl Helper {
             if let Some(status) = self.child.try_wait().unwrap() {
                 return status.code().unwrap();
             }
-            assert!(Instant::now() < deadline, "helper did not exit");
+            assert!(Instant::now() < deadline, "bridge did not exit");
             thread::sleep(Duration::from_millis(20));
         }
     }
 }
 
-impl Drop for Helper {
+impl Drop for Bridge {
     fn drop(&mut self) {
         let _ = self.child.kill();
     }

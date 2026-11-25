@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Instant, timeout, timeout_at};
 
 use crate::protocol::{
-    CancelRejectKind, ControlRequest, ErrorKind, HelperMessage, ItemSource, Output, RequestKind, SendRejectKind,
+    BridgeMessage, CancelRejectKind, ControlRequest, ErrorKind, ItemSource, Output, RequestKind, SendRejectKind,
     TurnOutcome, parse_request,
 };
 
@@ -232,7 +232,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W, SdkSession> {
 
     async fn handle_send(&mut self, request_id: String, prompt: String) -> std::io::Result<()> {
         let rejection = if self.session_failed {
-            Some((SendRejectKind::SessionFailed, "the session failed; restart the helper"))
+            Some((SendRejectKind::SessionFailed, "the session failed; restart the bridge"))
         } else if !self.pending_cancels.is_empty() {
             // A turn can end on its own before its abort runs, and that abort would then cancel the next turn.
             Some((SendRejectKind::CancelPending, "a cancellation is still in progress"))
@@ -241,7 +241,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W, SdkSession> {
         } else if !self.reuse_safe {
             Some((
                 SendRejectKind::ReuseRejected,
-                "the previous turn boundary is unproven; restart the helper",
+                "the previous turn boundary is unproven; restart the bridge",
             ))
         } else {
             None
@@ -249,7 +249,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W, SdkSession> {
         if let Some((kind, message)) = rejection {
             return self
                 .out
-                .emit(&HelperMessage::SendRejected {
+                .emit(&BridgeMessage::SendRejected {
                     kind,
                     message: message.to_owned(),
                     request_id,
@@ -284,7 +284,7 @@ impl<W: AsyncWrite + Unpin> SessionController<W, SdkSession> {
         if let Some((kind, message)) = rejection {
             return self
                 .out
-                .emit(&HelperMessage::CancelRejected {
+                .emit(&BridgeMessage::CancelRejected {
                     kind,
                     message: message.to_owned(),
                     request_id,
@@ -335,18 +335,18 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
         }
         if let Some(turn) = self.active_turn.take_if(|turn| turn.sdk_id.is_none()) {
             self.out
-                .emit(&HelperMessage::SendRejected {
+                .emit(&BridgeMessage::SendRejected {
                     kind: SendRejectKind::SendFailed,
-                    message: "the helper stopped before the send was acknowledged".to_owned(),
+                    message: "the bridge stopped before the send was acknowledged".to_owned(),
                     request_id: turn.request_id,
                 })
                 .await?;
         }
         for request_id in std::mem::take(&mut self.pending_cancels) {
             self.out
-                .emit(&HelperMessage::CancelRejected {
+                .emit(&BridgeMessage::CancelRejected {
                     kind: CancelRejectKind::AbortFailed,
-                    message: "the helper stopped before the abort finished".to_owned(),
+                    message: "the bridge stopped before the abort finished".to_owned(),
                     request_id,
                 })
                 .await?;
@@ -365,8 +365,8 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
                     self.pending_cancels.remove(index);
                 }
                 let message = match result {
-                    Ok(()) => HelperMessage::CancelAcknowledged { request_id, turn_id },
-                    Err(message) => HelperMessage::CancelRejected {
+                    Ok(()) => BridgeMessage::CancelAcknowledged { request_id, turn_id },
+                    Err(message) => BridgeMessage::CancelRejected {
                         kind: CancelRejectKind::AbortFailed,
                         message,
                         request_id,
@@ -394,7 +394,7 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
                     turn.observe(evidence);
                 }
                 self.out
-                    .emit(&HelperMessage::SendAccepted {
+                    .emit(&BridgeMessage::SendAccepted {
                         request_id,
                         turn_id: sdk_id,
                     })
@@ -407,7 +407,7 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
         self.active_turn = None;
         self.reuse_safe = false;
         self.out
-            .emit(&HelperMessage::SendRejected {
+            .emit(&BridgeMessage::SendRejected {
                 kind,
                 message,
                 request_id,
@@ -452,7 +452,7 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
             return Ok(());
         }
         self.session_failed = true;
-        self.out.emit(&HelperMessage::error(kind, message)).await?;
+        self.out.emit(&BridgeMessage::error(kind, message)).await?;
         if let Some(turn) = self.active_turn.as_mut() {
             turn.fail();
         }
@@ -480,7 +480,7 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
         let request_id = turn.request_id.clone();
         self.active_turn = None;
         self.out
-            .emit(&HelperMessage::TurnEnded {
+            .emit(&BridgeMessage::TurnEnded {
                 outcome,
                 request_id,
                 turn_id: sdk_id,
@@ -490,7 +490,7 @@ impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
 
     async fn emit_item(&mut self, source: ItemSource, item: &impl Serialize) -> std::io::Result<()> {
         let item = serde_json::to_string(item)?;
-        self.out.emit(&HelperMessage::Item { item, source }).await
+        self.out.emit(&BridgeMessage::Item { item, source }).await
     }
 }
 
