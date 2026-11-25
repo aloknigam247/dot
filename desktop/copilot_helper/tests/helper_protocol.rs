@@ -641,6 +641,7 @@ fn terminal_evidence_sets_outcome() {
         ("autopilot_idle", "completed", 2, true),
         ("foreign_autopilot", "completed", 1, true),
         ("malformed_idle", "failed", 1, false),
+        ("malformed_idle_unstarted", "completed", 2, true),
         ("policy_blocked", "completed", 1, true),
         ("session_error_abort", "aborted", 1, true),
         ("session_error_foreign", "completed", 1, true),
@@ -1877,6 +1878,11 @@ mod fake {
                     self.reply(id, accepted);
                     self.user(&message_id);
                     self.event("session.idle", json!({"aborted": "yes"}));
+                }
+                "malformed_idle_unstarted" => {
+                    self.reply(id, accepted);
+                    self.event("session.idle", json!({"aborted": "yes"}));
+                    self.complete(&message_id);
                 }
                 "permission" => {
                     self.reply(id, accepted);
