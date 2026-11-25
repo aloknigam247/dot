@@ -281,10 +281,6 @@ impl Fake {
                 self.complete(&message_id);
                 self.idle();
             }
-            "early_terminal" => {
-                self.complete(&message_id);
-                self.reply(id, accepted);
-            }
             "empty_id" => {
                 self.reply(id, json!({"messageId": ""}));
                 self.wait_for_release();

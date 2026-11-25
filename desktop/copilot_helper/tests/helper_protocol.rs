@@ -677,15 +677,14 @@ fn closed_stdin_stops_child() {
 }
 
 #[test]
-fn stdout_failure_is_reported_on_stderr() {
-    let fixture = Fixture::empty();
+fn stdout_failure_at_ready_stops_child() {
+    let fixture = Fixture::new();
     let stdout = fixture.root.path().join("stdout.txt");
     std::fs::write(&stdout, "").unwrap();
-    // A read-only handle makes writing the cli_not_found record fail.
-    let output = Command::new(env!("CARGO_BIN_EXE_dot_copilot_helper"))
-        .current_dir(fixture.root.path())
-        .env("PATH", "")
-        .env_remove("COPILOT_CLI_PATH")
+    // A read-only handle makes writing the ready record fail after the CLI session has started.
+    let output = fixture
+        .command(&[&fixture.bin], Some(".EXE"), None)
+        .stderr(Stdio::piped())
         .stdin(Stdio::null())
         .stdout(std::fs::File::open(&stdout).unwrap())
         .output()
@@ -693,6 +692,56 @@ fn stdout_failure_is_reported_on_stderr() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.starts_with("dot_copilot_helper: "), "{stderr}");
+    assert_eq!(rpc_count(&fixture.log(), "session.create"), 1);
+    fixture.assert_children_exited();
+}
+
+#[test]
+fn stdout_failure_during_turn_stops_child() {
+    let fixture = Fixture::new();
+    let mut command = fixture.command(&[&fixture.bin], Some(".EXE"), None);
+    command.stderr(Stdio::piped()).stdin(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (closed_tx, closed) = sync_channel(1);
+    // Closing stdout once the held turn is quiet makes the helper's next record fail to write.
+    thread::spawn(move || {
+        let mut accepted = false;
+        let mut started = false;
+        for line in BufReader::new(stdout).lines() {
+            let record: Value = serde_json::from_str(&line.unwrap()).unwrap();
+            accepted |= record["type"] == "send_accepted";
+            started |= item_type(&record).as_deref() == Some("assistant.message_delta");
+            if accepted && started {
+                break;
+            }
+        }
+        closed_tx.send(accepted && started).unwrap();
+    });
+    writeln!(
+        stdin,
+        "{}",
+        json!({"type": "send", "request_id": "t1", "prompt": "hold"})
+    )
+    .unwrap();
+    assert_eq!(closed.recv_timeout(READ_TIMEOUT), Ok(true));
+    writeln!(stdin, "not json").unwrap();
+    let deadline = Instant::now() + READ_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "helper did not exit");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(1));
+    let mut message = String::new();
+    stderr.read_to_string(&mut message).unwrap();
+    assert!(message.starts_with("dot_copilot_helper: "), "{message}");
+    assert_eq!(rpc_count(&fixture.log(), "runtime.shutdown"), 1);
+    fixture.assert_children_exited();
 }
 
 #[test]
