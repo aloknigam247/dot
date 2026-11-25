@@ -18,7 +18,6 @@ use crate::protocol::{
 };
 
 const SEND_RESULT_WAIT: Duration = Duration::from_secs(5);
-const MAX_EVENTS_BEFORE_CONTROL: usize = 32;
 
 pub struct SdkSession {
     events: EventSubscription,
@@ -175,40 +174,21 @@ pub struct SessionController<W, S> {
 
 impl<W: AsyncWrite + Unpin> SessionController<W, SdkSession> {
     pub async fn run_session(mut self, mut requests: mpsc::Receiver<std::io::Result<Vec<u8>>>) -> std::io::Result<()> {
-        let mut event_count = 0;
         let mut events_open = true;
         let mut lifecycle_open = true;
         loop {
-            // Drain short SDK bursts in order without letting a sustained stream starve a queued control.
-            if event_count >= MAX_EVENTS_BEFORE_CONTROL {
-                event_count = 0;
-                let line = match requests.try_recv() {
-                    Ok(line) => Some(line),
-                    Err(mpsc::error::TryRecvError::Disconnected) => None,
-                    Err(mpsc::error::TryRecvError::Empty) => continue,
-                };
-                if !self.handle_line(line).await? {
-                    return Ok(());
-                }
-            }
+            // Unbiased selection keeps a sustained event stream from starving a queued control.
             tokio::select! {
                 Some(internal) = self.internal_rx.recv() => self.handle_internal(internal).await?,
                 event = self.sdk.events.recv(), if events_open => match event {
-                    Ok(event) => {
-                        event_count += 1;
-                        self.handle_event(event).await?;
-                    }
+                    Ok(event) => self.handle_event(event).await?,
                     Err(error) => events_open = self.handle_recv_error(&error, "session").await?,
                 },
                 event = self.sdk.lifecycle.recv(), if lifecycle_open => match event {
-                    Ok(event) => {
-                        event_count += 1;
-                        self.emit_item(ItemSource::Lifecycle, &event).await?;
-                    }
+                    Ok(event) => self.emit_item(ItemSource::Lifecycle, &event).await?,
                     Err(error) => lifecycle_open = self.handle_recv_error(&error, "lifecycle").await?,
                 },
                 line = requests.recv() => {
-                    event_count = 0;
                     if !self.handle_line(line).await? {
                         return Ok(());
                     }
