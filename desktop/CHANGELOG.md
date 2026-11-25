@@ -1,3 +1,13 @@
+## [1.5.0](https://github.com/aloknigam247/dot/compare/dot-v1.4.0...dot-v1.5.0) (2026-11-25)
+
+### Added
+
+* **ui:** ship neutral chip and button controls ([#288](https://github.com/aloknigam247/dot/issues/288)) ([a96f8bd](https://github.com/aloknigam247/dot/commit/a96f8bdb42b4d51cbd5de59840800d25765e4b43)), closes [#104](https://github.com/aloknigam247/dot/issues/104)
+
+### Fixed
+
+* **ci:** pin clang-tidy to c++23 parsing ([#281](https://github.com/aloknigam247/dot/issues/281)) ([e9231e8](https://github.com/aloknigam247/dot/commit/e9231e8e89a31da5c700d1c60d11a0fc1265a930))
+
 ## [1.4.0](https://github.com/aloknigam247/dot/compare/dot-v1.3.0...dot-v1.4.0) (2026-11-19)
 
 ### Added
