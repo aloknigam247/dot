@@ -14,10 +14,11 @@ class TestResizeSmoothness : public QObject {
 private slots:
     void burstResizeProducesFewRpcsAndConvergesToFinal() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(80, 24));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         // Tighten the debounce so the test runs quickly but still exercises
         // the coalescer's "swallow burst → emit final" behaviour.

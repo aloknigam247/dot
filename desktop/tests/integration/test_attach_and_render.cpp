@@ -9,10 +9,11 @@ class TestAttachAndRender : public QObject {
 private slots:
     void attachProducesGrid() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(80, 24));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
         QCOMPARE(conn.grid()->cols(), 80);
         QCOMPARE(conn.grid()->rows(), 24);
     }

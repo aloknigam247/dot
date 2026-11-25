@@ -87,13 +87,13 @@ struct Scene {
 
 // Loads Main against a live Neovim and waits until the grid owns focus.
 void startScene(NvimConnector &conn, QQmlApplicationEngine &engine, Scene &scene) {
-    QSignalSpy flushSpy(&conn, &NvimConnector::flush);
+    FlushLatch initialFlush(&conn);
     QVERIFY(startTestNvim(conn));
     scene.window = loadMainQml(engine, &conn);
     QVERIFY2(scene.window, "Main.qml failed to load");
     QVERIFY(QTest::qWaitForWindowExposed(scene.window));
     QVERIFY(waitForAttach(&conn));
-    QVERIFY(waitUntil([&] { return !flushSpy.isEmpty(); }, 5000));
+    QVERIFY(initialFlush.wait());
     scene.grid = scene.window->findChild<GridItem *>();
     scene.input = scene.window->findChild<QQuickItem *>(QStringLiteral("chatInput"));
     scene.panel = scene.window->findChild<QQuickItem *>(QStringLiteral("chatPanel"));
@@ -127,7 +127,7 @@ private slots:
             QStringLiteral("set guifont=Cascadia\\ Code:h12 linespace=0");
         QFETCH(bool, restart);
         NvimConnector conn;
-        QSignalSpy flushSpy(&conn, &NvimConnector::flush);
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
 
         QQmlApplicationEngine engine;
@@ -135,7 +135,7 @@ private slots:
         QVERIFY2(window, "Main.qml failed to load");
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitUntil([&] { return !flushSpy.isEmpty(); }, 5000));
+        QVERIFY(initialFlush.wait());
 
         auto *toggle = window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
         auto *panel = window->findChild<QQuickItem *>(QStringLiteral("chatPanel"));

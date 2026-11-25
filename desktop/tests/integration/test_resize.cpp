@@ -9,10 +9,11 @@ class TestResize : public QObject {
 private slots:
     void resizeReachesGridModel() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(40, 10));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         conn.tryResize(60, 15);
         for(int i = 0; i < 5; ++i) waitForFlush(&conn, 1000);

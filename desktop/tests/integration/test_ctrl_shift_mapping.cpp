@@ -31,10 +31,11 @@ private:
 private slots:
     void ctrlShiftIFiresMapping() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(40, 10));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         conn.command(QStringLiteral("nnoremap <C-S-i> ihit<Esc>"));
         waitForFlush(&conn, 1000);
@@ -51,10 +52,11 @@ private slots:
 
     void plainCtrlIDoesNotFireMapping() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(40, 10));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         conn.command(QStringLiteral("nnoremap <C-S-i> ihit<Esc>"));
         waitForFlush(&conn, 1000);

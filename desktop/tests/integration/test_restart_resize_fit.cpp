@@ -69,10 +69,11 @@ private slots:
 
     void correctiveResizeSurvivesStaleModelGuard() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(80, 24));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         constexpr qreal kLargePt = 18.0;
         constexpr qreal kSmallPt = 14.0;

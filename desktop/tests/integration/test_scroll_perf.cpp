@@ -60,6 +60,7 @@ private slots:
 
     void holdingJStaysSnappy() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
 
         QQmlApplicationEngine engine;
@@ -67,7 +68,7 @@ private slots:
         QVERIFY2(window, "Main.qml failed to load");
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         conn.tryResize(200, 60);
         QVERIFY(waitUntil([&] { return conn.grid()->cols() == 200 && conn.grid()->rows() >= 58; },
