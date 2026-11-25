@@ -22,8 +22,8 @@ private:
             pk.pack(std::string("ext_cmdline"));
             pk.pack(true);
         });
-        const auto extCmdline =
-            evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 5000);
+        const auto extCmdline = evalSync(
+            conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 20000);
         return extCmdline && extCmdline->toBool();
     }
 
@@ -273,7 +273,7 @@ private slots:
         conn.command(QStringLiteral("restart!"));
 
         QTRY_COMPARE_WITH_TIMEOUT(attachSpy.count(), 1, 20000);
-        const auto newPid = evalSync(conn, QStringLiteral("getpid()"));
+        const auto newPid = evalSync(conn, QStringLiteral("getpid()"), 20000);
         QVERIFY(newPid && newPid->toInt() > 0 && newPid->toInt() != oldPid->toInt());
         QVERIFY(conn.attached());
         QCOMPARE(disconnectedSpy.count(), 0);

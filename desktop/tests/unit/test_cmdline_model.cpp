@@ -175,6 +175,9 @@ private slots:
         QTest::newRow("surrogate ED") << QByteArray("\xED\xA0\x80"
                                                     "a")
                                       << replacement.repeated(3) + u'a';
+        QTest::newRow("overlong F0") << QByteArray("\xF0\x80\x80\x80"
+                                                   "a")
+                                     << replacement.repeated(4) + u'a';
         QTest::newRow("above U+10FFFF") << QByteArray("\xF4\x90\x80\x80"
                                                       "a")
                                         << replacement.repeated(4) + u'a';
@@ -425,6 +428,13 @@ private slots:
             << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), 0, 1,
                            std::string("-1"))
             << showShape;
+        QTest::newRow("show pos string") << redrawEvent("cmdline_show", valid, std::string("1"),
+                                                        std::string(":"), std::string(), 0, 1, -1)
+                                         << showShape;
+        QTest::newRow("show level string")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), 0,
+                           std::string("1"), -1)
+            << showShape;
         QTest::newRow("show negative cursor")
             << showEvent(valid, -1, ":", 1)
             << QStringLiteral(
@@ -451,6 +461,14 @@ private slots:
             << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
         QTest::newRow("special shift integer")
             << redrawEvent("cmdline_special_char", std::string("^"), 1, 1)
+            << QStringLiteral(
+                   "Invalid cmdline_special_char: expected character, shift flag, and level");
+        QTest::newRow("special character integer")
+            << redrawEvent("cmdline_special_char", 94, true, 1)
+            << QStringLiteral(
+                   "Invalid cmdline_special_char: expected character, shift flag, and level");
+        QTest::newRow("special missing level")
+            << redrawEvent("cmdline_special_char", std::string("^"), true)
             << QStringLiteral(
                    "Invalid cmdline_special_char: expected character, shift flag, and level");
         QTest::newRow("special invisible level")
