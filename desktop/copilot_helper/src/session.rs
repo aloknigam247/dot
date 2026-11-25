@@ -56,8 +56,8 @@ enum Evidence {
     AutopilotStopped { outcome: TurnOutcome, request_id: String },
     Error(Option<String>),
     Idle { aborted: bool },
+    MalformedId,
     MalformedIdle,
-    MalformedError,
     Started(String),
 }
 
@@ -140,7 +140,7 @@ impl ActiveTurn {
                 self.error_seen = true;
                 self.started |= id.is_some();
             }
-            Evidence::MalformedError => self.fail(),
+            Evidence::MalformedId => self.fail(),
             Evidence::Idle { aborted } if self.started || self.error_seen => {
                 let outcome = if aborted || self.abort_seen {
                     TurnOutcome::Aborted
@@ -529,12 +529,19 @@ fn evidence(event: &SessionEvent) -> Option<Evidence> {
                 Some("task_complete") => TurnOutcome::Completed,
                 _ => TurnOutcome::Failed,
             };
-            text("requestId").map(|request_id| Evidence::AutopilotStopped { outcome, request_id })
+            match event.data.get("requestId") {
+                None => None,
+                Some(Value::String(id)) if !id.is_empty() => Some(Evidence::AutopilotStopped {
+                    outcome,
+                    request_id: id.clone(),
+                }),
+                _ => Some(Evidence::MalformedId),
+            }
         }
         "session.error" => match event.data.get("originatingMessageId") {
             None => Some(Evidence::Error(None)),
             Some(Value::String(id)) if !id.is_empty() => Some(Evidence::Error(Some(id.clone()))),
-            _ => Some(Evidence::MalformedError),
+            _ => Some(Evidence::MalformedId),
         },
         "session.idle" => match event.typed_data::<SessionIdleData>() {
             Some(data) => (data.mode != Some(SessionMode::Autopilot)).then(|| Evidence::Idle {
@@ -588,6 +595,15 @@ mod tests {
                 vec![event("session.autopilot_stopped", json!({"requestId": "id"}))],
                 Failed,
                 false,
+            ),
+            (
+                vec![
+                    user.clone(),
+                    event("session.autopilot_stopped", json!({"reason": "error"})),
+                    idle.clone(),
+                ],
+                Completed,
+                true,
             ),
             (
                 vec![
@@ -658,20 +674,30 @@ mod tests {
     }
 
     #[test]
-    fn malformed_error_id_fails_active_turn_without_proving_boundary() {
+    fn malformed_correlation_id_fails_active_turn_without_proving_boundary() {
         for id in [json!(""), json!(null), json!(false), json!(7), json!([])] {
-            let mut turn = ActiveTurn::new("request".into());
-            turn.sdk_id = Some("id".into());
-            turn.observe(Evidence::Started("id".into()));
-            let error = event("session.error", json!({"originatingMessageId": id}));
-            turn.observe(evidence(&error).unwrap());
-            assert!(matches!(
-                turn.state,
-                TurnState::Ended {
-                    outcome: Failed,
-                    boundary_proven: false
-                }
-            ));
+            for malformed in [
+                event("session.error", json!({"originatingMessageId": id})),
+                event(
+                    "session.autopilot_stopped",
+                    json!({"reason": "task_complete", "requestId": id}),
+                ),
+            ] {
+                let mut turn = ActiveTurn::new("request".into());
+                turn.sdk_id = Some("id".into());
+                turn.observe(Evidence::Started("id".into()));
+                turn.observe(evidence(&malformed).unwrap());
+                assert!(
+                    matches!(
+                        turn.state,
+                        TurnState::Ended {
+                            outcome: Failed,
+                            boundary_proven: false
+                        }
+                    ),
+                    "{malformed:?}"
+                );
+            }
         }
     }
 

@@ -71,6 +71,10 @@ fn startup_items_follow_ready() {
             "version": fake::VERSION,
         })
     );
+    // Shutdown competes with buffered events, so it is sent only once the startup items have been forwarded.
+    for _ in 0..3 {
+        assert_eq!(helper.next()["type"], "item");
+    }
     let (code, records) = helper.shutdown();
     assert_eq!(code, 0);
     assert_eq!(records.iter().filter(|record| record["type"] == "ready").count(), 1);
