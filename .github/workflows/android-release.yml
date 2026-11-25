@@ -115,7 +115,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
+          $changelog = "https://github.com/$env:GITHUB_REPOSITORY/blob/$env:GITHUB_REF_NAME/android/CHANGELOG.md"
           $version = $env:GITHUB_REF_NAME.Substring("android-v".Length)
+          $notes = "Download dot.apk to install the signed Android app.`n`nChangelog: $changelog"
           gh release create $env:GITHUB_REF_NAME release/dot.apk --repo $env:GITHUB_REPOSITORY `
-            --verify-tag --latest=false --title "Android $version" `
-            --notes "Download dot.apk to install the signed Android app."
+            --verify-tag --latest=false --title "Android $version" --notes $notes
