@@ -107,6 +107,10 @@ static QString invisibleLevel(int level) {
     return QStringLiteral("level %1 is not visible").arg(level);
 }
 
+static QString nonPositiveLevel(int level) {
+    return QStringLiteral("level %1 is not positive").arg(level);
+}
+
 CmdlineModel::CmdlineModel(QObject *parent) : QAbstractListModel(parent) {}
 
 int CmdlineModel::rowCount(const QModelIndex &parent) const {
@@ -166,14 +170,16 @@ std::expected<void, QString> CmdlineModel::appendBlock(const CmdlineLine &line) 
     return {};
 }
 
-void CmdlineModel::hide(int level) {
+std::expected<void, QString> CmdlineModel::hide(int level) {
+    if(level < 1) return std::unexpected(nonPositiveLevel(level));
     const qsizetype row = rowForLevel(level);
-    if(row < 0) return;
+    if(row < 0) return {};
     const int previousActiveLevel = activeLevel();
     beginRemoveRows({}, static_cast<int>(row), static_cast<int>(row));
     m_levels.removeAt(row);
     endRemoveRows();
     if(activeLevel() != previousActiveLevel) emit activeLevelChanged();
+    return {};
 }
 
 void CmdlineModel::hideBlock() {
@@ -221,7 +227,7 @@ std::expected<void, QString> CmdlineModel::setSpecialCharacter(int level, const 
 }
 
 std::expected<void, QString> CmdlineModel::show(int level, const CmdlineSession &session) {
-    if(level < 1) return std::unexpected(QStringLiteral("level %1 is not positive").arg(level));
+    if(level < 1) return std::unexpected(nonPositiveLevel(level));
     Level next;
     next.chunks = chunkList(session.content, &next.textOffsets);
     const auto offset = textOffset(next.textOffsets, session.position);

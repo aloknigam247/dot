@@ -1165,7 +1165,8 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
             qWarning("Invalid cmdline_hide: expected level");
             return;
         }
-        m_cmdline->hide(*level);
+        if(const auto hidden = m_cmdline->hide(*level); !hidden)
+            qWarning().noquote() << "Invalid cmdline_hide:" << hidden.error();
         return;
     }
     if(name == "cmdline_pos") {

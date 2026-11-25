@@ -66,7 +66,7 @@ public:
     QVariantList blockLines() const { return m_blockLines; }
 
     std::expected<void, QString> appendBlock(const CmdlineLine &line);
-    void hide(int level);
+    std::expected<void, QString> hide(int level);
     void hideBlock();
     void reset();
     std::expected<void, QString> setPosition(int level, qsizetype position);

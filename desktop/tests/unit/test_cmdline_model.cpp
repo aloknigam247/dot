@@ -206,6 +206,46 @@ private slots:
         }
     }
 
+    void validThreeByteUtf8DecodesAsOneUnit_data() {
+        QTest::addColumn<QByteArray>("bytes");
+        QTest::addColumn<QString>("character");
+
+        QTest::newRow("U+0800 lowest") << QByteArray("\xE0\xA0\x80") << QString(QChar(0x0800));
+        QTest::newRow("U+4E2D CJK") << QByteArray("\xE4\xB8\xAD") << QString(QChar(0x4E2D));
+        QTest::newRow("U+D7FF below surrogates")
+            << QByteArray("\xED\x9F\xBF") << QString(QChar(0xD7FF));
+        QTest::newRow("U+E000 above surrogates")
+            << QByteArray("\xEE\x80\x80") << QString(QChar(0xE000));
+        QTest::newRow("U+FFFF highest") << QByteArray("\xEF\xBF\xBF") << QString(QChar(0xFFFF));
+    }
+
+    void validThreeByteUtf8DecodesAsOneUnit() {
+        QFETCH(QByteArray, bytes);
+        QFETCH(QString, character);
+        NvimConnector conn;
+        dispatch(conn, showEvent(Line{ { 0, "a" + bytes.toStdString() + "b", 0 } }, 5, ":", 1));
+
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, u'a' + character + u'b', 0) });
+        const std::vector<std::pair<int, int>> boundaries{ { 0, 0 }, { 1, 1 }, { 4, 2 }, { 5, 3 } };
+        for(const auto &[byteOffset, textOffset]: boundaries) {
+            dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), byteOffset);
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
+        }
+
+        for(const int interior: { 2, 3 }) {
+            const QString warning =
+                QStringLiteral(
+                    "Invalid cmdline_pos: cursor byte offset %1 is inside a UTF-8 sequence")
+                    .arg(interior);
+            QTest::ignoreMessage(QtWarningMsg, qPrintable(warning));
+            dispatch(conn, redrawEvent("cmdline_pos", interior, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 5);
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
+        }
+    }
+
     void positionOnlyKeepsChunks() {
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
@@ -477,6 +517,12 @@ private slots:
         QTest::newRow("hide missing level")
             << redrawEvent("cmdline_hide")
             << QStringLiteral("Invalid cmdline_hide: expected level");
+        QTest::newRow("hide level zero")
+            << redrawEvent("cmdline_hide", 0, true)
+            << QStringLiteral("Invalid cmdline_hide: level 0 is not positive");
+        QTest::newRow("hide negative level")
+            << redrawEvent("cmdline_hide", -1, true)
+            << QStringLiteral("Invalid cmdline_hide: level -1 is not positive");
         QTest::newRow("hide string level")
             << redrawEvent("cmdline_hide", std::string("1"), true)
             << QStringLiteral("Invalid cmdline_hide: expected level");
