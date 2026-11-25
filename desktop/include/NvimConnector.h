@@ -17,6 +17,7 @@
 #include <optional>
 #include <utility>
 
+#include "CmdlineModel.h"
 #include "ColorPalette.h"
 #include "GridModel.h"
 #include "HighlightTable.h"
@@ -62,6 +63,7 @@ class NvimConnector : public QObject {
     Q_PROPERTY(dot::ImageModel *images READ images CONSTANT)
     Q_PROPERTY(bool imagesAvailable READ imagesAvailable NOTIFY imagesAvailableChanged)
     Q_PROPERTY(dot::ColorPalette *colorPalette READ colorPalette CONSTANT)
+    Q_PROPERTY(dot::CmdlineModel *cmdline READ cmdline CONSTANT)
 
 public:
     explicit NvimConnector(QObject *parent = nullptr);
@@ -104,6 +106,7 @@ public:
     ImageModel *images() const { return m_images; }
     bool imagesAvailable() const { return m_imagesAvailable; }
     ColorPalette *colorPalette() const { return m_colorPalette; }
+    CmdlineModel *cmdline() const { return m_cmdline; }
 
     Q_INVOKABLE void input(const QString &keys);
     Q_INVOKABLE void inputMouse(const QString &button, const QString &action,
@@ -153,6 +156,8 @@ signals:
     void imagesAvailableChanged();
 
 private:
+    friend class TestCmdline;
+    friend class TestCmdlineModel;
     friend class TestImageApi;
 
     Q_SLOT void onNotification(const dot::Notification &note);
@@ -168,6 +173,7 @@ private:
     void showImageError(const QString &message);
     void handleRedraw(const msgpack::object &events);
     void dispatchEvent(const std::string &name, const msgpack::object &evt);
+    void dispatchCmdlineEvent(const std::string &name, const msgpack::object_array &a);
     // Drops all grid/highlight/mode/overlay state back to a fresh-attach baseline.
     // Called on :restart just before the new server's first redraw batch.
     void resetUiState();
@@ -228,6 +234,7 @@ private:
     bool m_colorRefreshPending = false;
     bool m_colorSnapshotBoundaryPending = false;
     bool m_colorSnapshotReceived = false;
+    CmdlineModel *m_cmdline = nullptr;
 };
 
 } // namespace dot

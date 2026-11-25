@@ -64,8 +64,8 @@ Desktop regression gates, hard assertions, and repetition requirements are in
 
 ## Conventions
 
-- **Documentation:** update `README.md` in the same change when its feature, architecture, version, or platform claims
-  change. Keep architecture details and operational rules in the scoped guides, not duplicated at the root.
+- **Documentation:** do not update `README.md` unless the user asks for it. Keep architecture details and operational
+  rules in the scoped guides, not duplicated at the root.
 - **Naming:** use lowercase `snake_case` for general-purpose files and directories. Preserve established C++
   `PascalCase` sources/headers and includes, QML component names, test/`.moc` names, Android framework/package paths,
   standard tool filenames, `.github` runtime paths, and vendored names. Never distinguish paths only by capitalization.

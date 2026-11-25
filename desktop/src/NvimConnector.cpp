@@ -36,12 +36,35 @@ static int64_t asInt(const msgpack::object &o, int64_t def = 0) {
     return def;
 }
 
-static std::optional<int> colorEventInteger(const msgpack::object &value) {
+static std::optional<int> eventInteger(const msgpack::object &value) {
     if(value.type == msgpack::type::POSITIVE_INTEGER && std::in_range<int>(value.via.u64))
         return static_cast<int>(value.via.u64);
     if(value.type == msgpack::type::NEGATIVE_INTEGER && std::in_range<int>(value.via.i64))
         return static_cast<int>(value.via.i64);
     return std::nullopt;
+}
+
+// [[attr_id, text, hl_id], ...]
+static std::optional<CmdlineLine> cmdlineLine(const msgpack::object &value) {
+    if(value.type != msgpack::type::ARRAY) return std::nullopt;
+    CmdlineLine line;
+    line.reserve(value.via.array.size);
+    for(uint32_t i = 0; i < value.via.array.size; ++i) {
+        const msgpack::object &chunk = value.via.array.ptr[i];
+        if(chunk.type != msgpack::type::ARRAY || chunk.via.array.size < 3) return std::nullopt;
+        const msgpack::object &text = chunk.via.array.ptr[1];
+        const auto attrId = eventInteger(chunk.via.array.ptr[0]);
+        const auto highlightId = eventInteger(chunk.via.array.ptr[2]);
+        if(!attrId || *attrId < 0 || !highlightId || *highlightId < 0 ||
+           text.type != msgpack::type::STR)
+            return std::nullopt;
+        line.append({
+            *attrId,
+            *highlightId,
+            QByteArray(text.via.str.ptr, static_cast<qsizetype>(text.via.str.size)),
+        });
+    }
+    return line;
 }
 
 // The single source of truth for the nvim_ui_attach option map. Initial attach
@@ -155,7 +178,8 @@ NvimConnector::NvimConnector(QObject *parent) :
     m_hl(new HighlightTable(this)), m_mode(new ModeInfo(this)),
     m_resizeCoalescer(new ResizeCoalescer(this)), m_restartTimer(new QTimer(this)),
     m_backendClientId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
-    m_images(new ImageModel(this)), m_colorPalette(new ColorPalette(*m_hl, *m_mode, this)) {
+    m_images(new ImageModel(this)), m_colorPalette(new ColorPalette(*m_hl, *m_mode, this)),
+    m_cmdline(new CmdlineModel(this)) {
     m_restartTimer->setSingleShot(true);
     connect(m_rpc, &MsgpackRpc::notification, this, &NvimConnector::onNotification);
     connect(m_rpc, &MsgpackRpc::transportClosed, this, &NvimConnector::onRpcDisconnected);
@@ -859,6 +883,7 @@ void NvimConnector::onRpcDisconnected() {
         m_rpc->connectToAddress(m_restartListenAddr);
         return;
     }
+    m_cmdline->reset();
     m_attached = false;
     emit attachedChanged();
     emit disconnected();
@@ -883,6 +908,7 @@ void NvimConnector::onRestartFailed() {
     if(!m_restartInProgress) return;
     m_restartInProgress = false;
     m_restartTimer->stop();
+    m_cmdline->reset();
     m_attached = false;
     emit attachedChanged();
     emit disconnected();
@@ -895,6 +921,7 @@ void NvimConnector::resetUiState() {
     m_mode->reset();
     m_sentUiSizes.clear();
     m_colorPalette->resetContent();
+    m_cmdline->reset();
 }
 
 void NvimConnector::handleRedraw(const msgpack::object &events) {
@@ -913,7 +940,11 @@ void NvimConnector::handleRedraw(const msgpack::object &events) {
 }
 
 void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object &evt) {
-    if(evt.type != msgpack::type::ARRAY) return;
+    if(evt.type != msgpack::type::ARRAY) {
+        if(name.starts_with("cmdline_"))
+            qWarning("Invalid %s: expected an argument array", name.c_str());
+        return;
+    }
     const auto &a = evt.via.array;
 
     if(name == "grid_resize") {
@@ -985,9 +1016,9 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             qWarning("Invalid default_colors_set: expected five color channels");
             return;
         }
-        const auto background = colorEventInteger(a.ptr[1]);
-        const auto foreground = colorEventInteger(a.ptr[0]);
-        const auto special = colorEventInteger(a.ptr[2]);
+        const auto background = eventInteger(a.ptr[1]);
+        const auto foreground = eventInteger(a.ptr[0]);
+        const auto special = eventInteger(a.ptr[2]);
         if(!background || !foreground || !special) {
             qWarning("Invalid default_colors_set: RGB channels must be integers");
             return;
@@ -1002,7 +1033,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             qWarning("Invalid hl_attr_define: expected id, RGB map, cterm map, and info array");
             return;
         }
-        const auto id = colorEventInteger(a.ptr[0]);
+        const auto id = eventInteger(a.ptr[0]);
         if(!id || *id < 0) {
             qWarning("Invalid hl_attr_define: highlight id must be a non-negative integer");
             return;
@@ -1016,7 +1047,7 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
             qWarning("Invalid hl_group_set: expected name and highlight id");
             return;
         }
-        const auto id = colorEventInteger(a.ptr[1]);
+        const auto id = eventInteger(a.ptr[1]);
         if(!id || *id < 0) {
             qWarning("Invalid hl_group_set: highlight id must be a non-negative integer");
             return;
@@ -1087,8 +1118,108 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         }
         return;
     }
+    if(name.starts_with("cmdline_")) {
+        dispatchCmdlineEvent(name, a);
+        return;
+    }
     // mouse_on, mouse_off, busy_start, busy_stop, set_icon, update_menu,
     // msg_set_pos, wildmenu_* — ignored in v0.
+}
+
+void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack::object_array &a) {
+    if(name == "cmdline_block_append") {
+        const auto line = a.size >= 1 ? cmdlineLine(a.ptr[0]) : std::nullopt;
+        if(!line) {
+            qWarning("Invalid cmdline_block_append: expected a chunk line");
+            return;
+        }
+        if(const auto appended = m_cmdline->appendBlock(*line); !appended)
+            qWarning().noquote() << "Invalid cmdline_block_append:" << appended.error();
+        return;
+    }
+    if(name == "cmdline_block_hide") {
+        m_cmdline->hideBlock();
+        return;
+    }
+    if(name == "cmdline_block_show") {
+        if(a.size < 1 || a.ptr[0].type != msgpack::type::ARRAY) {
+            qWarning("Invalid cmdline_block_show: expected an array of chunk lines");
+            return;
+        }
+        const auto &lines = a.ptr[0].via.array;
+        QList<CmdlineLine> block;
+        block.reserve(lines.size);
+        for(uint32_t i = 0; i < lines.size; ++i) {
+            auto line = cmdlineLine(lines.ptr[i]);
+            if(!line) {
+                qWarning("Invalid cmdline_block_show: expected an array of chunk lines");
+                return;
+            }
+            block.append(std::move(*line));
+        }
+        m_cmdline->showBlock(block);
+        return;
+    }
+    if(name == "cmdline_hide") {
+        const auto level = a.size >= 1 ? eventInteger(a.ptr[0]) : std::nullopt;
+        if(!level) {
+            qWarning("Invalid cmdline_hide: expected level");
+            return;
+        }
+        if(const auto hidden = m_cmdline->hide(*level); !hidden)
+            qWarning().noquote() << "Invalid cmdline_hide:" << hidden.error();
+        return;
+    }
+    if(name == "cmdline_pos") {
+        const auto position = a.size >= 2 ? eventInteger(a.ptr[0]) : std::nullopt;
+        const auto level = a.size >= 2 ? eventInteger(a.ptr[1]) : std::nullopt;
+        if(!position || !level) {
+            qWarning("Invalid cmdline_pos: expected cursor byte offset and level");
+            return;
+        }
+        if(const auto moved = m_cmdline->setPosition(*level, *position); !moved)
+            qWarning().noquote() << "Invalid cmdline_pos:" << moved.error();
+        return;
+    }
+    if(name == "cmdline_show") {
+        if(a.size < 7) {
+            qWarning("Invalid cmdline_show: expected content, pos, firstc, prompt, indent, level, "
+                     "and hl_id");
+            return;
+        }
+        const msgpack::object &prompt = a.ptr[3];
+        const auto content = cmdlineLine(a.ptr[0]);
+        const auto highlightId = eventInteger(a.ptr[6]);
+        const auto indent = eventInteger(a.ptr[4]);
+        const auto level = eventInteger(a.ptr[5]);
+        const auto position = eventInteger(a.ptr[1]);
+        const bool promptValid = prompt.type == msgpack::type::STR ||
+                                 (prompt.type == msgpack::type::BOOLEAN && !prompt.via.boolean);
+        if(!content || !position || a.ptr[2].type != msgpack::type::STR || !promptValid ||
+           !indent || *indent < 0 || !level || !highlightId) {
+            qWarning("Invalid cmdline_show: expected content, pos, firstc, prompt, indent, level, "
+                     "and hl_id");
+            return;
+        }
+        const CmdlineSession session{
+            *content, asQString(a.ptr[2]), *highlightId, *indent, *position, asQString(prompt),
+        };
+        if(const auto shown = m_cmdline->show(*level, session); !shown)
+            qWarning().noquote() << "Invalid cmdline_show:" << shown.error();
+        return;
+    }
+    if(name == "cmdline_special_char") {
+        const auto level = a.size >= 3 ? eventInteger(a.ptr[2]) : std::nullopt;
+        if(!level || a.ptr[0].type != msgpack::type::STR ||
+           a.ptr[1].type != msgpack::type::BOOLEAN) {
+            qWarning("Invalid cmdline_special_char: expected character, shift flag, and level");
+            return;
+        }
+        if(const auto marked =
+               m_cmdline->setSpecialCharacter(*level, asQString(a.ptr[0]), a.ptr[1].via.boolean);
+           !marked)
+            qWarning().noquote() << "Invalid cmdline_special_char:" << marked.error();
+    }
 }
 
 } // namespace dot

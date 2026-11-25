@@ -1,0 +1,614 @@
+// Tier-1 tests for command-line redraw decoding. Events go through the production
+// NvimConnector redraw parser into its owned CmdlineModel without starting Neovim.
+
+#include <QAbstractItemModelTester>
+#include <QRegularExpression>
+#include <QSignalSpy>
+#include <QtTest>
+
+#include "CmdlineModel.h"
+#include "NvimConnector.h"
+
+#include <msgpack.hpp>
+
+#include <string>
+#include <tuple>
+#include <vector>
+
+namespace dot {
+
+namespace {
+
+using Chunk = std::tuple<int, std::string, int>;
+using Line = std::vector<Chunk>;
+
+const std::string kUnicodeUtf8 = "a\xC3\xA9\xF0\x9F\x98\x80";
+
+QString unicodeText() { return QString(u"a\u00E9\U0001F600"); }
+
+template <typename T>
+QByteArray redrawInvocation(const char *name, const T &arguments) {
+    msgpack::sbuffer buffer;
+    msgpack::pack(buffer, std::make_tuple(std::make_tuple(std::string(name), arguments)));
+    return QByteArray(buffer.data(), static_cast<qsizetype>(buffer.size()));
+}
+
+template <typename... Args>
+QByteArray redrawEvent(const char *name, const Args &...args) {
+    return redrawInvocation(name, std::make_tuple(args...));
+}
+
+QByteArray showEvent(const Line &content, int position, const std::string &firstCharacter,
+                     int level, int indent = 0) {
+    return redrawEvent("cmdline_show", content, position, firstCharacter, std::string(), indent,
+                       level, -1);
+}
+
+QVariantMap chunkMap(int attrId, const QString &text, int highlightId) {
+    return {
+        { QStringLiteral("attrId"), attrId },
+        { QStringLiteral("highlightId"), highlightId },
+        { QStringLiteral("text"), text },
+    };
+}
+
+} // namespace
+
+class TestCmdlineModel : public QObject {
+    Q_OBJECT
+
+private:
+    static void dispatch(NvimConnector &conn, const QByteArray &batch) {
+        const msgpack::object_handle handle = msgpack::unpack(batch.constData(), batch.size());
+        conn.handleRedraw(handle.get());
+    }
+
+    static QVariant role(NvimConnector &conn, int row, int role) {
+        CmdlineModel *model = conn.cmdline();
+        return model->data(model->index(row), role);
+    }
+
+    static void verifyUnicodeSession(NvimConnector &conn) {
+        CmdlineModel *model = conn.cmdline();
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->activeLevel(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, unicodeText(), 0) });
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 4);
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
+        QCOMPARE(model->blockActive(), false);
+    }
+
+private slots:
+    void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_"))); }
+
+    void showDecodesAllFields() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QAbstractItemModelTester tester(model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 54, "1", 313 }, { 69, "+", 282 } }, 2,
+                                   std::string("="), std::string("Name: "), 2, 1, 7));
+
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->activeLevel(), 1);
+        QCOMPARE(activeLevelSpy.count(), 1);
+        const QVariantList expectedChunks{ chunkMap(54, QStringLiteral("1"), 313),
+                                           chunkMap(69, QStringLiteral("+"), 282) };
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(), expectedChunks);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral("="));
+        QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), 7);
+        QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialShiftRole).toBool(), false);
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+        QSignalSpy insertSpy(model, &CmdlineModel::rowsInserted);
+
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(":"), false,
+                                   0, 1, -1));
+        QCOMPARE(insertSpy.count(), 0);
+        QCOMPARE(dataSpy.count(), 1);
+        QCOMPARE(dataSpy.at(0).at(0).toModelIndex(), model->index(0));
+        QCOMPARE(dataSpy.at(0).at(1).toModelIndex(), model->index(0));
+        QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), QList<int>());
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, QString(), 0) });
+        QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), -1);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QString());
+        QCOMPARE(activeLevelSpy.count(), 1);
+    }
+
+    void unicodeCursorMapsBytesToText() {
+        NvimConnector conn;
+        dispatch(conn, showEvent(Line{ { 0, kUnicodeUtf8, 0 } }, 7, ":", 1));
+        verifyUnicodeSession(conn);
+
+        const std::vector<std::pair<int, int>> boundaries{ { 0, 0 }, { 1, 1 }, { 3, 2 }, { 7, 4 } };
+        for(const auto &[byteOffset, textOffset]: boundaries) {
+            dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
+        }
+
+        dispatch(conn, redrawEvent("cmdline_pos", 2, 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+        dispatch(conn, redrawEvent("cmdline_pos", 8, 1));
+        verifyUnicodeSession(conn);
+    }
+
+    void multiChunkUnicodeOffsetsAccumulateText() {
+        NvimConnector conn;
+        dispatch(conn,
+                 showEvent(Line{ { 0, "\xC3\xA9", 0 }, { 1, "\xF0\x9F\x98\x80x", 2 } }, 0, ":", 1));
+
+        const std::vector<std::pair<int, int>> boundaries{ { 2, 1 }, { 6, 3 }, { 7, 4 } };
+        for(const auto &[byteOffset, textOffset]: boundaries) {
+            dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
+        }
+
+        dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+    }
+
+    void invalidUtf8DecodesEachByteAsReplacement_data() {
+        QTest::addColumn<QByteArray>("bytes");
+        QTest::addColumn<QString>("text");
+
+        const QString replacement(QChar::ReplacementCharacter);
+        QTest::newRow("overlong E0") << QByteArray("\xE0\x80\x80"
+                                                   "a")
+                                     << replacement.repeated(3) + u'a';
+        QTest::newRow("surrogate ED") << QByteArray("\xED\xA0\x80"
+                                                    "a")
+                                      << replacement.repeated(3) + u'a';
+        QTest::newRow("overlong F0") << QByteArray("\xF0\x80\x80\x80"
+                                                   "a")
+                                     << replacement.repeated(4) + u'a';
+        QTest::newRow("above U+10FFFF") << QByteArray("\xF4\x90\x80\x80"
+                                                      "a")
+                                        << replacement.repeated(4) + u'a';
+        QTest::newRow("invalid lead C0") << QByteArray("\xC0\x80"
+                                                       "a")
+                                         << replacement.repeated(2) + u'a';
+        QTest::newRow("invalid lead C1") << QByteArray("\xC1\x80"
+                                                       "a")
+                                         << replacement.repeated(2) + u'a';
+        QTest::newRow("bad second continuation") << QByteArray("\xE4\xB8"
+                                                               "a")
+                                                 << replacement.repeated(2) + u'a';
+        QTest::newRow("invalid lead F5") << QByteArray("\xF5"
+                                                       "a")
+                                         << replacement + u'a';
+        QTest::newRow("truncated tail")
+            << QByteArray("a\xE2\x82") << u'a' + replacement.repeated(2);
+    }
+
+    void invalidUtf8DecodesEachByteAsReplacement() {
+        QFETCH(QByteArray, bytes);
+        QFETCH(QString, text);
+        NvimConnector conn;
+        dispatch(conn, showEvent(Line{ { 0, bytes.toStdString(), 0 } }, 0, ":", 1));
+
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, text, 0) });
+        // Every byte decodes to one UTF-16 unit, so each byte offset is also its text offset.
+        for(qsizetype offset = 0; offset <= bytes.size(); ++offset) {
+            dispatch(conn, redrawEvent("cmdline_pos", static_cast<int>(offset), 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), offset);
+        }
+    }
+
+    void validUtf8DecodesAsOneCodePoint_data() {
+        QTest::addColumn<QByteArray>("bytes");
+        QTest::addColumn<QString>("character");
+
+        QTest::newRow("U+0080 lowest two-byte") << QByteArray("\xC2\x80") << QString(QChar(0x0080));
+        QTest::newRow("U+07FF highest two-byte")
+            << QByteArray("\xDF\xBF") << QString(QChar(0x07FF));
+        QTest::newRow("U+0800 lowest") << QByteArray("\xE0\xA0\x80") << QString(QChar(0x0800));
+        QTest::newRow("U+4E2D CJK") << QByteArray("\xE4\xB8\xAD") << QString(QChar(0x4E2D));
+        QTest::newRow("U+D7FF below surrogates")
+            << QByteArray("\xED\x9F\xBF") << QString(QChar(0xD7FF));
+        QTest::newRow("U+E000 above surrogates")
+            << QByteArray("\xEE\x80\x80") << QString(QChar(0xE000));
+        QTest::newRow("U+FFFF highest") << QByteArray("\xEF\xBF\xBF") << QString(QChar(0xFFFF));
+        QTest::newRow("U+10000 lowest four-byte")
+            << QByteArray("\xF0\x90\x80\x80") << QString(u"\U00010000");
+        QTest::newRow("U+F0001 F3 lead")
+            << QByteArray("\xF3\xB0\x80\x81") << QString(u"\U000F0001");
+        QTest::newRow("U+10FFFF highest four-byte")
+            << QByteArray("\xF4\x8F\xBF\xBF") << QString(u"\U0010FFFF");
+    }
+
+    void validUtf8DecodesAsOneCodePoint() {
+        QFETCH(QByteArray, bytes);
+        QFETCH(QString, character);
+        NvimConnector conn;
+        const auto end = static_cast<int>(bytes.size()) + 2;
+        dispatch(conn, showEvent(Line{ { 0, "a" + bytes.toStdString() + "b", 0 } }, end, ":", 1));
+
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, u'a' + character + u'b', 0) });
+        const auto units = static_cast<int>(character.size());
+        const std::vector<std::pair<int, int>> boundaries{
+            { 0, 0 }, { 1, 1 }, { end - 1, units + 1 }, { end, units + 2 }
+        };
+        for(const auto &[byteOffset, textOffset]: boundaries) {
+            dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
+        }
+
+        for(int interior = 2; interior < end - 1; ++interior) {
+            dispatch(conn, redrawEvent("cmdline_pos", end, 1));
+            dispatch(conn, redrawEvent("cmdline_pos", interior, 1));
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+        }
+    }
+
+    void maskedCursorClampsToContent() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        // inputsecret() after typing "a\u00E9": one '*' per character, cursor in unmasked bytes.
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "**", 0 } }, 3, std::string(),
+                                   std::string("pw: "), 0, 1, 0));
+
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, QStringLiteral("**"), 0) });
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("pw: "));
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 5, 1));
+        QCOMPARE(dataSpy.count(), 0);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 1, 1));
+        QCOMPARE(dataSpy.count(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+    }
+
+    void positionOnlyKeepsChunks() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        dispatch(conn, showEvent(Line{ { 0, "ab", 0 }, { 1, "cd", 2 } }, 4, ":", 1));
+        const QVariant chunks = role(conn, 0, CmdlineModel::ChunksRole);
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+        QSignalSpy insertSpy(model, &CmdlineModel::rowsInserted);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
+
+        QCOMPARE(dataSpy.count(), 1);
+        const QList<int> cursorRoles{ CmdlineModel::CursorTextOffsetRole };
+        QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), cursorRoles);
+        QCOMPARE(insertSpy.count(), 0);
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole), chunks);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
+        QCOMPARE(dataSpy.count(), 1);
+    }
+
+    void nestedPromptRestoresOuterLevel() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QAbstractItemModelTester tester(model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+
+        // Neovim sends the inner level before redrawing the outer one.
+        dispatch(conn, showEvent(Line{ { 0, "1+1", 0 } }, 3, "=", 2));
+        QCOMPARE(activeLevelSpy.count(), 1);
+        dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
+
+        QCOMPARE(activeLevelSpy.count(), 1);
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(model->activeLevel(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 1);
+        QCOMPARE(role(conn, 1, CmdlineModel::LevelRole).toInt(), 2);
+        QCOMPARE(role(conn, 1, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral("="));
+
+        dispatch(conn, redrawEvent("cmdline_hide", 2, false));
+
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->activeLevel(), 1);
+        QCOMPARE(activeLevelSpy.count(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, QStringLiteral("abc"), 0) });
+        QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral(":"));
+    }
+
+    void hidingLowerLevelKeepsActiveLevel() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+
+        dispatch(conn, showEvent(Line{ { 0, "1+1", 0 } }, 3, "=", 2));
+        QCOMPARE(activeLevelSpy.count(), 1);
+        QCOMPARE(model->activeLevel(), 2);
+        dispatch(conn, showEvent(Line{ { 0, "1+2", 0 } }, 3, "=", 2));
+        QCOMPARE(activeLevelSpy.count(), 1);
+
+        dispatch(conn, redrawEvent("cmdline_hide", 1, false));
+
+        QCOMPARE(activeLevelSpy.count(), 1);
+        QCOMPARE(model->activeLevel(), 2);
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 2);
+    }
+
+    void specialCharacterClearedByShow() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        dispatch(conn, showEvent(Line{ { 0, "", 0 } }, 0, ":", 1));
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+
+        dispatch(conn, redrawEvent("cmdline_special_char", std::string("\""), true, 1));
+
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(),
+                 QStringLiteral("\""));
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialShiftRole).toBool(), true);
+        QCOMPARE(dataSpy.count(), 1);
+        const QList<int> specialRoles{ CmdlineModel::SpecialCharacterRole,
+                                       CmdlineModel::SpecialShiftRole };
+        QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), specialRoles);
+
+        dispatch(conn, redrawEvent("cmdline_special_char", std::string("\""), true, 1));
+        QCOMPARE(dataSpy.count(), 1);
+
+        dispatch(conn, showEvent(Line{ { 0, "2", 0 } }, 1, ":", 1));
+
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
+        QCOMPARE(role(conn, 0, CmdlineModel::SpecialShiftRole).toBool(), false);
+    }
+
+    void hideIgnoresInvisibleLevel() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
+        dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
+
+        dispatch(conn, redrawEvent("cmdline_hide", 3, true));
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(removedSpy.count(), 0);
+
+        dispatch(conn, redrawEvent("cmdline_hide", 1, true));
+
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(model->activeLevel(), 0);
+        QCOMPARE(activeLevelSpy.count(), 2);
+        QCOMPARE(removedSpy.count(), 1);
+    }
+
+    void blockAppendHideLifecycle() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: no block is visible");
+        dispatch(conn, redrawEvent("cmdline_block_append", Line{ { 0, "orphan", 0 } }));
+        QCOMPARE(model->blockActive(), false);
+        QCOMPARE(blockSpy.count(), 0);
+
+        dispatch(conn, redrawEvent("cmdline_block_show",
+                                   std::vector<Line>{ Line{ { 0, "function! Foo()", 0 } } }));
+        dispatch(conn, showEvent(Line{ { 0, "", 0 } }, 0, ":", 1, 2));
+        dispatch(conn, redrawEvent("cmdline_hide", 1, false));
+        dispatch(conn, redrawEvent("cmdline_block_append",
+                                   Line{ { 0, "  let x", 0 }, { 5, " = 1", 9 } }));
+
+        QCOMPARE(model->blockActive(), true);
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(blockSpy.count(), 2);
+        const QVariantList expectedBlock{
+            QVariantList{ chunkMap(0, QStringLiteral("function! Foo()"), 0) },
+            QVariantList{ chunkMap(0, QStringLiteral("  let x"), 0),
+                          chunkMap(5, QStringLiteral(" = 1"), 9) },
+        };
+        QCOMPARE(model->blockLines(), expectedBlock);
+
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
+        dispatch(conn, redrawEvent("cmdline_block_append",
+                                   std::vector<std::tuple<int, int, int>>{ { 0, 1, 0 } }));
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
+        dispatch(conn, redrawEvent("cmdline_block_append"));
+        QCOMPARE(model->blockLines(), expectedBlock);
+        QCOMPARE(blockSpy.count(), 2);
+
+        dispatch(conn, redrawEvent("cmdline_block_hide"));
+
+        QCOMPARE(model->blockActive(), false);
+        QCOMPARE(model->blockLines(), QVariantList());
+        QCOMPARE(blockSpy.count(), 3);
+    }
+
+    void blockReshowReplacesLines() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+
+        dispatch(conn,
+                 redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 0, "one", 0 } },
+                                                                      Line{ { 0, "two", 0 } } }));
+        dispatch(conn,
+                 redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 0, "three", 0 } } }));
+
+        QCOMPARE(model->blockActive(), true);
+        QCOMPARE(model->blockLines().size(), 1);
+        QCOMPARE(model->blockLines().at(0).toList(),
+                 QVariantList{ chunkMap(0, QStringLiteral("three"), 0) });
+        QCOMPARE(blockSpy.count(), 2);
+    }
+
+    void emptyResetAndBlockHideEmitNothing() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
+
+        conn.resetUiState();
+        dispatch(conn, redrawEvent("cmdline_block_hide"));
+
+        QCOMPARE(activeLevelSpy.count(), 0);
+        QCOMPARE(blockSpy.count(), 0);
+        QCOMPARE(resetSpy.count(), 0);
+    }
+
+    void malformedEventsKeepLastValidState_data() {
+        QTest::addColumn<QByteArray>("batch");
+        QTest::addColumn<QString>("warning");
+
+        const QString showShape = QStringLiteral(
+            "Invalid cmdline_show: expected content, pos, firstc, prompt, indent, level, and hl_id");
+        const Line valid{ { 0, "x", 0 } };
+        QTest::newRow("show arguments not array")
+            << redrawInvocation("cmdline_show", 1)
+            << QStringLiteral("Invalid cmdline_show: expected an argument array");
+        QTest::newRow("show missing hl_id")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), 0, 1)
+            << showShape;
+        QTest::newRow("show prompt true")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), true, 0, 1, -1) << showShape;
+        QTest::newRow("show chunk missing hl_id")
+            << redrawEvent("cmdline_show", std::vector<std::tuple<int, std::string>>{ { 0, "x" } },
+                           1, std::string(":"), std::string(), 0, 1, -1)
+            << showShape;
+        QTest::newRow("show chunk text integer")
+            << redrawEvent("cmdline_show", std::vector<std::tuple<int, int, int>>{ { 0, 1, 0 } }, 1,
+                           std::string(":"), std::string(), 0, 1, -1)
+            << showShape;
+        QTest::newRow("show negative indent")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), -1, 1, -1)
+            << showShape;
+        QTest::newRow("show chunk negative attr_id")
+            << showEvent(Line{ { -1, "x", 0 } }, 1, ":", 1) << showShape;
+        QTest::newRow("show chunk negative hl_id")
+            << showEvent(Line{ { 0, "x", -1 } }, 1, ":", 1) << showShape;
+        QTest::newRow("show firstc integer")
+            << redrawEvent("cmdline_show", valid, 1, 58, std::string(), 0, 1, -1) << showShape;
+        QTest::newRow("show hl_id string")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), 0, 1,
+                           std::string("-1"))
+            << showShape;
+        QTest::newRow("show pos string") << redrawEvent("cmdline_show", valid, std::string("1"),
+                                                        std::string(":"), std::string(), 0, 1, -1)
+                                         << showShape;
+        QTest::newRow("show level string")
+            << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), 0,
+                           std::string("1"), -1)
+            << showShape;
+        QTest::newRow("show negative cursor")
+            << showEvent(valid, -1, ":", 1)
+            << QStringLiteral("Invalid cmdline_show: cursor byte offset -1 is negative");
+        QTest::newRow("show level zero")
+            << showEvent(valid, 1, ":", 0)
+            << QStringLiteral("Invalid cmdline_show: level 0 is not positive");
+        QTest::newRow("pos invisible level")
+            << redrawEvent("cmdline_pos", 0, 3)
+            << QStringLiteral("Invalid cmdline_pos: level 3 is not visible");
+        QTest::newRow("pos negative offset")
+            << redrawEvent("cmdline_pos", -1, 1)
+            << QStringLiteral("Invalid cmdline_pos: cursor byte offset -1 is negative");
+        QTest::newRow("pos string offset")
+            << redrawEvent("cmdline_pos", std::string("0"), 1)
+            << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
+        QTest::newRow("pos missing level")
+            << redrawEvent("cmdline_pos", 0)
+            << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
+        QTest::newRow("special shift integer")
+            << redrawEvent("cmdline_special_char", std::string("^"), 1, 1)
+            << QStringLiteral(
+                   "Invalid cmdline_special_char: expected character, shift flag, and level");
+        QTest::newRow("special character integer")
+            << redrawEvent("cmdline_special_char", 94, true, 1)
+            << QStringLiteral(
+                   "Invalid cmdline_special_char: expected character, shift flag, and level");
+        QTest::newRow("special missing level")
+            << redrawEvent("cmdline_special_char", std::string("^"), true)
+            << QStringLiteral(
+                   "Invalid cmdline_special_char: expected character, shift flag, and level");
+        QTest::newRow("special invisible level")
+            << redrawEvent("cmdline_special_char", std::string("^"), true, 2)
+            << QStringLiteral("Invalid cmdline_special_char: level 2 is not visible");
+        QTest::newRow("hide missing level")
+            << redrawEvent("cmdline_hide")
+            << QStringLiteral("Invalid cmdline_hide: expected level");
+        QTest::newRow("hide level zero")
+            << redrawEvent("cmdline_hide", 0, true)
+            << QStringLiteral("Invalid cmdline_hide: level 0 is not positive");
+        QTest::newRow("hide negative level")
+            << redrawEvent("cmdline_hide", -1, true)
+            << QStringLiteral("Invalid cmdline_hide: level -1 is not positive");
+        QTest::newRow("hide string level")
+            << redrawEvent("cmdline_hide", std::string("1"), true)
+            << QStringLiteral("Invalid cmdline_hide: expected level");
+        QTest::newRow("block show argument not array")
+            << redrawEvent("cmdline_block_show", 1)
+            << QStringLiteral("Invalid cmdline_block_show: expected an array of chunk lines");
+        QTest::newRow("block show line not array")
+            << redrawEvent("cmdline_block_show", std::vector<int>{ 1 })
+            << QStringLiteral("Invalid cmdline_block_show: expected an array of chunk lines");
+    }
+
+    void malformedEventsKeepLastValidState() {
+        QFETCH(QByteArray, batch);
+        QFETCH(QString, warning);
+        NvimConnector conn;
+        dispatch(conn, showEvent(Line{ { 0, kUnicodeUtf8, 0 } }, 7, ":", 1));
+
+        QTest::ignoreMessage(QtWarningMsg, warning.toUtf8().constData());
+        dispatch(conn, batch);
+
+        verifyUnicodeSession(conn);
+    }
+
+    void resetClearsAllLevels_data() {
+        QTest::addColumn<int>("path");
+        QTest::newRow("disconnect") << 0;
+        QTest::newRow("restart failed") << 1;
+        QTest::newRow("ui state reset") << 2;
+    }
+
+    void resetClearsAllLevels() {
+        QFETCH(int, path);
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
+        dispatch(conn, showEvent(Line{ { 0, "1", 0 } }, 1, "=", 2));
+        dispatch(conn, redrawEvent("cmdline_block_show",
+                                   std::vector<Line>{ Line{ { 0, "function! Foo()", 0 } } }));
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
+
+        if(path == 0) {
+            conn.onRpcDisconnected();
+        } else if(path == 1) {
+            conn.m_restartInProgress = true;
+            conn.onRestartFailed();
+        } else {
+            conn.resetUiState();
+        }
+
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(model->activeLevel(), 0);
+        QCOMPARE(model->blockActive(), false);
+        QCOMPARE(model->blockLines(), QVariantList());
+        QCOMPARE(activeLevelSpy.count(), 1);
+        QCOMPARE(blockSpy.count(), 1);
+        QCOMPARE(resetSpy.count(), 1);
+    }
+};
+
+} // namespace dot
+
+QTEST_GUILESS_MAIN(dot::TestCmdlineModel)
+#include "test_cmdline_model.moc"
