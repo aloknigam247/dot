@@ -163,10 +163,6 @@ The cursor snaps to Neovim's position with no movement-animation option. Blink t
 independent per-image texture items between the grid's background/text layers. Image-only changes do not repaint
 the text grid.
 
-[`CmdlineModel`](desktop/include/CmdlineModel.h), exposed as `NvimConnector.cmdline`, decodes `cmdline_*` events into
-nesting levels, highlighted chunks, prompts, cursor offsets, and block lines. The desktop UI attaches without
-`ext_cmdline`, so Neovim sends no `cmdline_*` events and draws the command line in the grid.
-
 ### Input path (keyboard → nvim)
 
 ```
