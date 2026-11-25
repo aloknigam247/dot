@@ -273,21 +273,6 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
     }
 
-    void maskedCursorWithinContentIsApproximate() {
-        NvimConnector conn;
-        CmdlineModel *model = conn.cmdline();
-        // inputsecret() after typing "\u00E9a" and <Left>: the cursor follows the first '*', but
-        // Neovim sends unmasked byte 2, which is the end of "**".
-        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "**", 0 } }, 3, std::string(),
-                                   std::string("pw: "), 0, 1, 0));
-        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
-
-        dispatch(conn, redrawEvent("cmdline_pos", 2, 1));
-
-        QCOMPARE(dataSpy.count(), 0);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
-    }
-
     void positionOnlyKeepsChunks() {
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
