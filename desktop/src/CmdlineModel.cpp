@@ -15,22 +15,24 @@ struct CodePoint {
     char32_t value = QChar::ReplacementCharacter;
 };
 
+} // namespace
+
 // Malformed input decodes as U+FFFD consuming only the offending byte, so every byte that does
 // not continue a well-formed sequence is a cursor boundary.
-CodePoint decodeCodePoint(const QByteArray &bytes, qsizetype index) {
+static CodePoint decodeCodePoint(const QByteArray &bytes, qsizetype index) {
     const auto lead = static_cast<unsigned char>(bytes[index]);
     if(lead < 0x80) return { 1, lead };
     CodePoint decoded;
     unsigned char maximum = 0xBF;
     unsigned char minimum = 0x80;
     if(lead >= 0xC2 && lead <= 0xDF) {
-        decoded = { 2, static_cast<char32_t>(lead & 0x1Fu) };
+        decoded = { 2, static_cast<char32_t>(lead & 0x1FU) };
     } else if(lead >= 0xE0 && lead <= 0xEF) {
-        decoded = { 3, static_cast<char32_t>(lead & 0x0Fu) };
+        decoded = { 3, static_cast<char32_t>(lead & 0x0FU) };
         if(lead == 0xE0) minimum = 0xA0;
         if(lead == 0xED) maximum = 0x9F;
     } else if(lead >= 0xF0 && lead <= 0xF4) {
-        decoded = { 4, static_cast<char32_t>(lead & 0x07u) };
+        decoded = { 4, static_cast<char32_t>(lead & 0x07U) };
         if(lead == 0xF0) minimum = 0x90;
         if(lead == 0xF4) maximum = 0x8F;
     } else {
@@ -40,7 +42,7 @@ CodePoint decodeCodePoint(const QByteArray &bytes, qsizetype index) {
     for(qsizetype i = 1; i < decoded.length; ++i) {
         const auto byte = static_cast<unsigned char>(bytes[index + i]);
         if(byte < minimum || byte > maximum) return {};
-        decoded.value = (decoded.value << 6) | (byte & 0x3Fu);
+        decoded.value = (decoded.value << 6U) | (byte & 0x3FU);
         maximum = 0xBF;
         minimum = 0x80;
     }
@@ -48,7 +50,7 @@ CodePoint decodeCodePoint(const QByteArray &bytes, qsizetype index) {
 }
 
 // Appends the text offset of every byte in `bytes` to `offsets` when it is non-null.
-QString decodeUtf8(const QByteArray &bytes, qsizetype textBase, QList<qsizetype> *offsets) {
+static QString decodeUtf8(const QByteArray &bytes, qsizetype textBase, QList<qsizetype> *offsets) {
     QString text;
     text.reserve(bytes.size());
     qsizetype index = 0;
@@ -70,7 +72,7 @@ QString decodeUtf8(const QByteArray &bytes, qsizetype textBase, QList<qsizetype>
 }
 
 // The final entry of `offsets`, when requested, is the text offset of the end of the line.
-QVariantList chunkList(const CmdlineLine &line, QList<qsizetype> *offsets) {
+static QVariantList chunkList(const CmdlineLine &line, QList<qsizetype> *offsets) {
     QVariantList chunks;
     chunks.reserve(line.size());
     qsizetype textBase = 0;
@@ -87,7 +89,8 @@ QVariantList chunkList(const CmdlineLine &line, QList<qsizetype> *offsets) {
     return chunks;
 }
 
-std::expected<qsizetype, QString> textOffset(const QList<qsizetype> &offsets, qsizetype position) {
+static std::expected<qsizetype, QString> textOffset(const QList<qsizetype> &offsets,
+                                                    qsizetype position) {
     if(position < 0 || position >= offsets.size()) {
         return std::unexpected(QStringLiteral("cursor byte offset %1 is outside %2 content bytes")
                                    .arg(position)
@@ -100,9 +103,9 @@ std::expected<qsizetype, QString> textOffset(const QList<qsizetype> &offsets, qs
     return offsets[position];
 }
 
-QString invisibleLevel(int level) { return QStringLiteral("level %1 is not visible").arg(level); }
-
-} // namespace
+static QString invisibleLevel(int level) {
+    return QStringLiteral("level %1 is not visible").arg(level);
+}
 
 CmdlineModel::CmdlineModel(QObject *parent) : QAbstractListModel(parent) {}
 

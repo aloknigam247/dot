@@ -58,8 +58,11 @@ static std::optional<CmdlineLine> cmdlineLine(const msgpack::object &value) {
         if(!attrId || *attrId < 0 || !highlightId || *highlightId < 0 ||
            text.type != msgpack::type::STR)
             return std::nullopt;
-        line.append({ *attrId, *highlightId,
-                      QByteArray(text.via.str.ptr, static_cast<qsizetype>(text.via.str.size)) });
+        line.append({
+            *attrId,
+            *highlightId,
+            QByteArray(text.via.str.ptr, static_cast<qsizetype>(text.via.str.size)),
+        });
     }
     return line;
 }
@@ -1196,8 +1199,9 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
                      "and hl_id");
             return;
         }
-        const CmdlineSession session{ *content, asQString(a.ptr[2]), *highlightId,
-                                      *indent,  *position,           asQString(prompt) };
+        const CmdlineSession session{
+            *content, asQString(a.ptr[2]), *highlightId, *indent, *position, asQString(prompt),
+        };
         if(const auto shown = m_cmdline->show(*level, session); !shown)
             qWarning().noquote() << "Invalid cmdline_show:" << shown.error();
         return;
