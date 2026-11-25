@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/aloknigam247/dot/compare/android-v1.3.0...android-v1.3.1) (2026-11-25)
+
+### Fixed
+
+* **android:** stop release app crashing on launch ([#285](https://github.com/aloknigam247/dot/issues/285)) ([4f94457](https://github.com/aloknigam247/dot/commit/4f9445751ce278fc47450043b9d5d4b16f9d6689))
+
 ## [1.3.0](https://github.com/aloknigam247/dot/compare/android-v1.2.0...android-v1.3.0) (2026-11-19)
 
 ### Added
