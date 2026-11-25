@@ -182,7 +182,7 @@ impl Fake {
         };
         let id = &message["id"];
         let params = &message["params"];
-        self.record(json!({"event": "rpc", "method": method, "params": params}));
+        self.record(json!({"event": "rpc", "method": method, "params": params, "pid": std::process::id()}));
         self.connected |= method == "connect";
         let hung = self
             .scenario
@@ -313,6 +313,14 @@ impl Fake {
                 }
                 self.delta("last");
                 self.record(json!({"event": "backlog_ready"}));
+            }
+            "lifecycle_lag" => {
+                self.reply(id, accepted);
+                self.user(&message_id);
+                for _ in 0..BURST_EVENTS {
+                    self.lifecycle("session.updated");
+                }
+                self.record(json!({"event": "lifecycle_burst_done"}));
             }
             "buffered_idle" => {
                 self.complete(&message_id);

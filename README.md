@@ -151,14 +151,15 @@ CLI's version is available.
   A cancel acknowledgement never ends a turn. Turn correlation follows the SDK's `send_and_wait`: start and end events
   that omit their correlation IDs are ignored, so such a turn stays active until `shutdown`. A root `session.error`
   whose `originatingMessageId` is absent or names the turn makes that turn end `failed`, unless aborted, at its next
-  end event. An unattributed error followed by idle does not permit reuse without a matching start. Malformed
-  IDs do not identify a turn.
+  end event. An unattributed error followed by idle does not permit reuse without a matching start. A malformed
+  `originatingMessageId` (empty or not a string) ends the active turn `failed` without a safe boundary.
 - Sends are rejected with `cancel_pending` until every cancel has its `cancel_acknowledged` or `cancel_rejected`.
 - After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
   `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the helper
   restarts.
-- Each record is written to stdout before the next event is handled, so `event_stream_lagged` means stdout went unread
-  while more events arrived than the SDK buffers (512 session events, 256 lifecycle events).
+- `event_stream_lagged` means an SDK subscription overflowed its buffer (512 session events, 256 lifecycle events)
+  before the helper read it. Each record is written to stdout before the next event is handled, so a parent that stops
+  reading stdout can cause this.
 - A `shutdown` request or closed stdin ends any active turn as `failed`, stops the CLI, and exits with code 0. A stdin
   read error does the same but exits with code 1. An I/O error that stops the helper is written to stderr.
 

@@ -57,6 +57,7 @@ enum Evidence {
     Error(Option<String>),
     Idle { aborted: bool },
     MalformedIdle,
+    MalformedError,
     Started(String),
 }
 
@@ -125,7 +126,9 @@ impl ActiveTurn {
                 // Autopilot stop is not session-wide idle, so trailing work may still follow it.
                 self.state = TurnState::Ended {
                     boundary_proven: false,
-                    outcome: if self.error_seen && outcome == TurnOutcome::Completed {
+                    outcome: if self.abort_seen {
+                        TurnOutcome::Aborted
+                    } else if self.error_seen && outcome == TurnOutcome::Completed {
                         TurnOutcome::Failed
                     } else {
                         outcome
@@ -137,6 +140,7 @@ impl ActiveTurn {
                 self.error_seen = true;
                 self.started |= id.is_some();
             }
+            Evidence::MalformedError => self.fail(),
             Evidence::Idle { aborted } if self.started || self.error_seen => {
                 let outcome = if aborted || self.abort_seen {
                     TurnOutcome::Aborted
@@ -157,32 +161,19 @@ impl ActiveTurn {
     }
 }
 
-pub struct SessionController<W> {
+// The SDK handle is generic so turn bookkeeping can be driven without a CLI.
+pub struct SessionController<W, S> {
     active_turn: Option<ActiveTurn>,
     internal_rx: mpsc::UnboundedReceiver<Internal>,
     internal_tx: mpsc::UnboundedSender<Internal>,
     out: Output<W>,
     pending_cancels: Vec<String>,
     reuse_safe: bool,
-    sdk: SdkSession,
+    sdk: S,
     session_failed: bool,
 }
 
-impl<W: AsyncWrite + Unpin> SessionController<W> {
-    pub fn new(sdk: SdkSession, out: Output<W>) -> Self {
-        let (internal_tx, internal_rx) = mpsc::unbounded_channel();
-        Self {
-            active_turn: None,
-            internal_rx,
-            internal_tx,
-            out,
-            pending_cancels: Vec::new(),
-            reuse_safe: true,
-            sdk,
-            session_failed: false,
-        }
-    }
-
+impl<W: AsyncWrite + Unpin> SessionController<W, SdkSession> {
     pub async fn run_session(mut self, mut requests: mpsc::Receiver<std::io::Result<Vec<u8>>>) -> std::io::Result<()> {
         let mut event_count = 0;
         let mut events_open = true;
@@ -201,7 +192,6 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
                 }
             }
             tokio::select! {
-                biased;
                 Some(internal) = self.internal_rx.recv() => self.handle_internal(internal).await?,
                 event = self.sdk.events.recv(), if events_open => match event {
                     Ok(event) => {
@@ -249,39 +239,6 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
         }
         self.finish_active_turn().await?;
         Ok(false)
-    }
-
-    // Every send and cancel gets exactly one reply and every accepted turn exactly one turn_ended, even on exit.
-    async fn finish_active_turn(&mut self) -> std::io::Result<()> {
-        let deadline = Instant::now() + SEND_RESULT_WAIT;
-        if let Some(turn) = self.active_turn.as_mut() {
-            turn.fail();
-        }
-        while self.active_turn.as_ref().is_some_and(|turn| turn.sdk_id.is_none()) || !self.pending_cancels.is_empty() {
-            match timeout_at(deadline, self.internal_rx.recv()).await {
-                Ok(Some(internal)) => self.handle_internal(internal).await?,
-                Ok(None) | Err(_) => break,
-            }
-        }
-        if let Some(turn) = self.active_turn.take_if(|turn| turn.sdk_id.is_none()) {
-            self.out
-                .emit(&HelperMessage::SendRejected {
-                    kind: SendRejectKind::SendFailed,
-                    message: "the helper stopped before the send was acknowledged".to_owned(),
-                    request_id: turn.request_id,
-                })
-                .await?;
-        }
-        for request_id in std::mem::take(&mut self.pending_cancels) {
-            self.out
-                .emit(&HelperMessage::CancelRejected {
-                    kind: CancelRejectKind::AbortFailed,
-                    message: "the helper stopped before the abort finished".to_owned(),
-                    request_id,
-                })
-                .await?;
-        }
-        self.emit_turn_ended().await
     }
 
     async fn handle_request(&mut self, request: ControlRequest) -> std::io::Result<bool> {
@@ -366,6 +323,55 @@ impl<W: AsyncWrite + Unpin> SessionController<W> {
             });
         });
         Ok(())
+    }
+}
+
+impl<W: AsyncWrite + Unpin, S> SessionController<W, S> {
+    pub fn new(sdk: S, out: Output<W>) -> Self {
+        let (internal_tx, internal_rx) = mpsc::unbounded_channel();
+        Self {
+            active_turn: None,
+            internal_rx,
+            internal_tx,
+            out,
+            pending_cancels: Vec::new(),
+            reuse_safe: true,
+            sdk,
+            session_failed: false,
+        }
+    }
+
+    // Every send and cancel gets exactly one reply and every accepted turn exactly one turn_ended, even on exit.
+    async fn finish_active_turn(&mut self) -> std::io::Result<()> {
+        let deadline = Instant::now() + SEND_RESULT_WAIT;
+        if let Some(turn) = self.active_turn.as_mut() {
+            turn.fail();
+        }
+        while self.active_turn.as_ref().is_some_and(|turn| turn.sdk_id.is_none()) || !self.pending_cancels.is_empty() {
+            match timeout_at(deadline, self.internal_rx.recv()).await {
+                Ok(Some(internal)) => self.handle_internal(internal).await?,
+                Ok(None) | Err(_) => break,
+            }
+        }
+        if let Some(turn) = self.active_turn.take_if(|turn| turn.sdk_id.is_none()) {
+            self.out
+                .emit(&HelperMessage::SendRejected {
+                    kind: SendRejectKind::SendFailed,
+                    message: "the helper stopped before the send was acknowledged".to_owned(),
+                    request_id: turn.request_id,
+                })
+                .await?;
+        }
+        for request_id in std::mem::take(&mut self.pending_cancels) {
+            self.out
+                .emit(&HelperMessage::CancelRejected {
+                    kind: CancelRejectKind::AbortFailed,
+                    message: "the helper stopped before the abort finished".to_owned(),
+                    request_id,
+                })
+                .await?;
+        }
+        self.emit_turn_ended().await
     }
 
     async fn handle_internal(&mut self, internal: Internal) -> std::io::Result<()> {
@@ -528,7 +534,7 @@ fn evidence(event: &SessionEvent) -> Option<Evidence> {
         "session.error" => match event.data.get("originatingMessageId") {
             None => Some(Evidence::Error(None)),
             Some(Value::String(id)) if !id.is_empty() => Some(Evidence::Error(Some(id.clone()))),
-            _ => None,
+            _ => Some(Evidence::MalformedError),
         },
         "session.idle" => match event.typed_data::<SessionIdleData>() {
             Some(data) => (data.mode != Some(SessionMode::Autopilot)).then(|| Evidence::Idle {
@@ -652,10 +658,47 @@ mod tests {
     }
 
     #[test]
-    fn malformed_error_ids_are_not_session_wide_errors() {
+    fn malformed_error_id_fails_active_turn_without_proving_boundary() {
         for id in [json!(""), json!(null), json!(false), json!(7), json!([])] {
-            assert!(evidence(&event("session.error", json!({"originatingMessageId": id}))).is_none());
+            let mut turn = ActiveTurn::new("request".into());
+            turn.sdk_id = Some("id".into());
+            turn.observe(Evidence::Started("id".into()));
+            let error = event("session.error", json!({"originatingMessageId": id}));
+            turn.observe(evidence(&error).unwrap());
+            assert!(matches!(
+                turn.state,
+                TurnState::Ended {
+                    outcome: Failed,
+                    boundary_proven: false
+                }
+            ));
         }
+    }
+
+    #[test]
+    fn another_turns_start_does_not_end_active_turn() {
+        let mut turn = ActiveTurn::new("request".into());
+        turn.sdk_id = Some("id".into());
+        for event in [
+            event("user.message", json!({"messageId": "other"})),
+            event("session.idle", json!({})),
+        ] {
+            turn.observe(evidence(&event).unwrap());
+        }
+        assert!(matches!(turn.state, TurnState::Running));
+        for event in [
+            event("user.message", json!({"messageId": "id"})),
+            event("session.idle", json!({})),
+        ] {
+            turn.observe(evidence(&event).unwrap());
+        }
+        assert!(matches!(
+            turn.state,
+            TurnState::Ended {
+                outcome: Completed,
+                boundary_proven: true
+            }
+        ));
     }
 
     #[test]
@@ -669,6 +712,94 @@ mod tests {
             turn.state,
             TurnState::Ended {
                 outcome: Failed,
+                boundary_proven: false
+            }
+        ));
+    }
+
+    fn controller(out: &mut Vec<u8>) -> SessionController<&mut Vec<u8>, ()> {
+        SessionController::new((), Output::new(out))
+    }
+
+    fn records(out: &[u8]) -> Vec<Value> {
+        out.split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn shutdown_fails_turn_whose_ack_arrives_while_waiting() {
+        let mut out = Vec::new();
+        let mut controller = controller(&mut out);
+        let mut turn = ActiveTurn::new("t1".into());
+        turn.observe(Evidence::Started("msg-1".into()));
+        turn.observe(Evidence::Idle { aborted: false });
+        controller.active_turn = Some(turn);
+        let internal_tx = controller.internal_tx.clone();
+        // The current-thread runtime runs this only once shutdown is blocked waiting for the acknowledgement.
+        tokio::spawn(async move {
+            let result = Ok("msg-1".into());
+            internal_tx
+                .send(Internal::SendDone {
+                    request_id: "t1".into(),
+                    result,
+                })
+                .unwrap();
+        });
+        controller.finish_active_turn().await.unwrap();
+        assert!(!controller.reuse_safe);
+        drop(controller);
+        assert_eq!(
+            records(&out),
+            vec![
+                json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
+                json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_answers_cancel_that_finishes_while_waiting() {
+        let mut out = Vec::new();
+        let mut controller = controller(&mut out);
+        controller.pending_cancels.push("c1".into());
+        let internal_tx = controller.internal_tx.clone();
+        tokio::spawn(async move {
+            let done = Internal::CancelDone {
+                request_id: "c1".into(),
+                result: Ok(()),
+                turn_id: "msg-1".into(),
+            };
+            internal_tx.send(done).unwrap();
+        });
+        controller.finish_active_turn().await.unwrap();
+        drop(controller);
+        assert_eq!(
+            records(&out),
+            vec![json!({"type": "cancel_acknowledged", "request_id": "c1", "turn_id": "msg-1"})]
+        );
+    }
+
+    #[test]
+    fn abort_precedes_error_at_autopilot_stop() {
+        let mut turn = ActiveTurn::new("request".into());
+        turn.sdk_id = Some("id".into());
+        for event in [
+            event("user.message", json!({"messageId": "id"})),
+            event("session.error", json!({"originatingMessageId": "id"})),
+            event("abort", json!({})),
+            event(
+                "session.autopilot_stopped",
+                json!({"reason": "task_complete", "requestId": "id"}),
+            ),
+        ] {
+            turn.observe(evidence(&event).unwrap());
+        }
+        assert!(matches!(
+            turn.state,
+            TurnState::Ended {
+                outcome: Aborted,
                 boundary_proven: false
             }
         ));

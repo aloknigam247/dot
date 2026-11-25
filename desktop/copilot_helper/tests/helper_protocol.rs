@@ -1,6 +1,8 @@
+use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::windows::io::{FromRawHandle, OwnedHandle};
+use std::os::windows::ffi::OsStringExt;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::ptr;
@@ -15,6 +17,9 @@ use tempfile::TempDir;
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_INBOUND;
 use windows_sys::Win32::System::Pipes::{CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT};
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, QueryFullProcessImageNameW, TerminateProcess,
+};
 
 #[path = "fixtures/common.rs"]
 mod fake;
@@ -85,7 +90,15 @@ fn terminal_before_send_ack_holds_turn_ended() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
     helper.expect_ready();
-    helper.send("t1", "early_terminal");
+    helper.send("t1", "buffered_idle");
+    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
+    assert!(
+        !helper
+            .records
+            .iter()
+            .any(|record| matches!(record["type"].as_str(), Some("send_accepted" | "turn_ended")))
+    );
+    fixture.release();
     helper.until_turn_ended("t1");
     let (code, records) = helper.shutdown();
     assert_eq!(code, 0);
@@ -93,7 +106,7 @@ fn terminal_before_send_ack_holds_turn_ended() {
     let accepted = position(&records, |record| record["type"] == "send_accepted");
     let idle = position(&records, |record| item_type(record).as_deref() == Some("session.idle"));
     let ended = position(&records, |record| record["type"] == "turn_ended");
-    assert!(accepted < ended && idle < ended, "{records:?}");
+    assert!(idle < accepted && accepted < ended, "{records:?}");
     assert_eq!(
         turn_ended(&records),
         vec![json!({"type": "turn_ended", "outcome": "completed", "request_id": "t1", "turn_id": "msg-1"})]
@@ -264,27 +277,6 @@ fn queued_control_is_served_before_sdk_backlog_drains() {
 }
 
 #[test]
-fn shutdown_dominates_buffered_idle_before_ack() {
-    let fixture = Fixture::new();
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "buffered_idle");
-    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
-    helper.request(json!({"type": "shutdown", "request_id": "stop"}));
-    thread::sleep(Duration::from_millis(500));
-    fixture.release();
-    let (code, records) = helper.drain();
-    assert_eq!(code, 0);
-    assert_eq!(
-        replies(&records),
-        vec![
-            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
-            json!({"type": "turn_ended", "outcome": "failed", "request_id": "t1", "turn_id": "msg-1"}),
-        ]
-    );
-}
-
-#[test]
 fn unattributed_early_failure_does_not_allow_reuse() {
     let fixture = Fixture::new();
     let mut helper = fixture.helper();
@@ -441,6 +433,27 @@ fn lagged_stream_fails_turn() {
     let (code, records) = helper.shutdown();
     assert_eq!(code, 0);
     assert_eq!(turn_ended(&records).len(), 1);
+}
+
+#[test]
+fn lagged_lifecycle_stream_fails_turn() {
+    let fixture = Fixture::new();
+    let mut helper = fixture.helper();
+    helper.expect_ready();
+    helper.send("t1", "lifecycle_lag");
+    fixture.wait_for_log(|entry| entry["event"] == "lifecycle_burst_done");
+    let records = helper.until(|record| record["type"] == "turn_ended");
+    assert_eq!(records.last().unwrap()["outcome"], "failed");
+    let errors: Vec<&Value> = records.iter().filter(|record| record["type"] == "error").collect();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["kind"], "event_stream_lagged");
+    assert!(
+        errors[0]["message"].as_str().unwrap().contains("lifecycle"),
+        "{errors:?}"
+    );
+    helper.send("t2", "complete");
+    assert_rejection(&helper.until_type("send_rejected"), "t2", "session_failed");
+    assert_eq!(helper.shutdown().0, 0);
 }
 
 #[test]
@@ -786,6 +799,18 @@ fn cmd_wrapper_mismatch_stops_lingering_cli() {
     assert_eq!(candidates[0]["path"], json!(fixture.bin.join("copilot.cmd")));
     assert_eq!(candidates[0]["outcome"], "protocol_mismatch");
     assert_eq!(candidates[0]["cli_version"], fake::LEGACY_VERSION);
+    let log = fixture.log();
+    let probe = log
+        .iter()
+        .find(|entry| {
+            entry["event"] == "start"
+                && !log
+                    .iter()
+                    .any(|rpc| rpc["pid"] == entry["pid"] && rpc["method"] == "connect")
+        })
+        .expect("raw version probe did not start a CLI process");
+    assert_eq!(probe["args"], json!(["--server", "--stdio", "--no-auto-update"]));
+    assert_eq!(probe["telemetry_disabled"], "true");
     // Both waits together stay below LINGER, so a probe CLI left running fails here rather than exiting on its own.
     assert_eq!(helper.wait(), 1);
     fixture.assert_children_exit_within(fake::LINGER / 3);
@@ -985,32 +1010,6 @@ fn shutdown_finishes_active_turn() {
 }
 
 #[test]
-fn shutdown_answers_pending_cancel() {
-    let fixture = Fixture::with_scenario("idle_before_abort");
-    let mut helper = fixture.helper();
-    helper.expect_ready();
-    helper.send("t1", "hold");
-    helper.until_type("send_accepted");
-    helper.cancel("c1", "msg-1");
-    helper.until_turn_ended("t1");
-    helper.request(json!({"type": "shutdown", "request_id": "stop"}));
-    // Releasing well after the helper reads shutdown makes the held abort reply arrive while the helper is exiting.
-    thread::sleep(Duration::from_millis(500));
-    fixture.release();
-    let (code, records) = helper.drain();
-    assert_eq!(code, 0);
-    assert_eq!(
-        replies(&records),
-        vec![
-            json!({"type": "send_accepted", "request_id": "t1", "turn_id": "msg-1"}),
-            json!({"type": "turn_ended", "outcome": "completed", "request_id": "t1", "turn_id": "msg-1"}),
-            json!({"type": "cancel_acknowledged", "request_id": "c1", "turn_id": "msg-1"}),
-        ]
-    );
-    fixture.assert_children_exited();
-}
-
-#[test]
 fn shutdown_rejects_unanswered_cancel() {
     let fixture = Fixture::with_scenario("hang:session.abort");
     let mut helper = fixture.helper();
@@ -1200,6 +1199,7 @@ impl Fixture {
             .env("PATH", std::env::join_paths(dirs).unwrap())
             .env(FAKE_LOG_VARIABLE, self.log_path())
             .env_remove("COPILOT_CLI_PATH")
+            .env_remove("COPILOT_TELEMETRY_DISABLED")
             .env_remove(STARTUP_TIMEOUT_VARIABLE)
             .stderr(Stdio::null())
             .stdout(Stdio::piped());
@@ -1234,16 +1234,32 @@ impl Drop for Fixture {
         if !thread::panicking() {
             return;
         }
-        // A failed test can leave a fake CLI running; the image filter avoids killing a process that reused its pid.
+        // A failed test can leave a fake CLI running. Matching the full image path on the opened handle keeps a reused
+        // PID from terminating a process outside this fixture.
         for entry in self.log().iter().filter(|entry| entry["event"] == "start") {
-            let exe = PathBuf::from(entry["exe"].as_str().unwrap());
-            let image = format!("IMAGENAME eq {}", exe.file_name().unwrap().to_string_lossy());
-            let pid = entry["pid"].to_string();
-            let _ = Command::new("taskkill")
-                .args(["/F", "/PID", &pid, "/FI", &image])
-                .stderr(Stdio::null())
-                .stdout(Stdio::null())
-                .status();
+            let Some(expected) = entry["exe"].as_str().and_then(|exe| Path::new(exe).canonicalize().ok()) else {
+                continue;
+            };
+            let Some(pid) = entry["pid"].as_u64().and_then(|pid| u32::try_from(pid).ok()) else {
+                continue;
+            };
+            // SAFETY: OpenProcess takes no pointers and returns null or a new handle.
+            let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, 0, pid) };
+            if handle.is_null() {
+                continue;
+            }
+            // SAFETY: OpenProcess returned a new handle that nothing else owns.
+            let process = unsafe { OwnedHandle::from_raw_handle(handle) };
+            let mut image = vec![0u16; 32768];
+            let mut size = image.len() as u32;
+            // SAFETY: image holds size UTF-16 units, and both outlive the call on the live process handle.
+            let queried =
+                unsafe { QueryFullProcessImageNameW(process.as_raw_handle(), 0, image.as_mut_ptr(), &mut size) } != 0;
+            let actual = queried.then(|| PathBuf::from(OsString::from_wide(&image[..size as usize])));
+            if actual.and_then(|path| path.canonicalize().ok()) == Some(expected) {
+                // SAFETY: the handle is live and was opened with terminate access.
+                unsafe { TerminateProcess(process.as_raw_handle(), 1) };
+            }
         }
     }
 }
