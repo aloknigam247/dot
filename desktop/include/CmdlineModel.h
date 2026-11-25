@@ -30,9 +30,9 @@ struct CmdlineSession {
 };
 
 // Neovim-owned command-line state from ext_cmdline redraw events. Rows are the visible nesting
-// levels in ascending level order; the last row is the active level. Cursor byte offsets index the
-// UTF-8 content Neovim sent, and cursor text offsets index the concatenated chunk texts. A position
-// past the content or inside a UTF-8 sequence clamps to the preceding boundary.
+// levels in ascending level order; the last row is the active level. Cursor text offsets index the
+// concatenated chunk texts. Neovim reports inputsecret() cursors against the unmasked input, so a
+// masked prompt's cursor is approximate.
 class CmdlineModel : public QAbstractListModel {
     Q_OBJECT
     QML_ELEMENT
@@ -45,7 +45,6 @@ class CmdlineModel : public QAbstractListModel {
 public:
     enum Roles {
         ChunksRole = Qt::UserRole + 1,
-        CursorByteOffsetRole,
         CursorTextOffsetRole,
         FirstCharacterRole,
         HighlightIdRole,
@@ -83,7 +82,6 @@ signals:
 private:
     struct Level {
         QVariantList chunks;
-        qsizetype cursorByteOffset = 0;
         qsizetype cursorTextOffset = 0;
         QString firstCharacter;
         int highlightId = -1;

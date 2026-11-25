@@ -74,7 +74,6 @@ private:
         QCOMPARE(model->activeLevel(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, unicodeText(), 0) });
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 7);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 4);
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
         QCOMPARE(model->blockActive(), false);
@@ -99,7 +98,6 @@ private slots:
         const QVariantList expectedChunks{ chunkMap(54, QStringLiteral("1"), 313),
                                            chunkMap(69, QStringLiteral("+"), 282) };
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(), expectedChunks);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral("="));
         QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), 7);
@@ -126,7 +124,7 @@ private slots:
         QCOMPARE(activeLevelSpy.count(), 1);
     }
 
-    void unicodeCursorPreservesByteAndTextDomains() {
+    void unicodeCursorMapsBytesToText() {
         NvimConnector conn;
         dispatch(conn, showEvent(Line{ { 0, kUnicodeUtf8, 0 } }, 7, ":", 1));
         verifyUnicodeSession(conn);
@@ -134,12 +132,10 @@ private slots:
         const std::vector<std::pair<int, int>> boundaries{ { 0, 0 }, { 1, 1 }, { 3, 2 }, { 7, 4 } };
         for(const auto &[byteOffset, textOffset]: boundaries) {
             dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
-            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), byteOffset);
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
         }
 
         dispatch(conn, redrawEvent("cmdline_pos", 2, 1));
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         dispatch(conn, redrawEvent("cmdline_pos", 8, 1));
         verifyUnicodeSession(conn);
@@ -157,7 +153,6 @@ private slots:
         }
 
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
     }
 
@@ -227,14 +222,12 @@ private slots:
         const std::vector<std::pair<int, int>> boundaries{ { 0, 0 }, { 1, 1 }, { 4, 2 }, { 5, 3 } };
         for(const auto &[byteOffset, textOffset]: boundaries) {
             dispatch(conn, redrawEvent("cmdline_pos", byteOffset, 1));
-            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), byteOffset);
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
         }
 
         for(const int interior: { 2, 3 }) {
             dispatch(conn, redrawEvent("cmdline_pos", 5, 1));
             dispatch(conn, redrawEvent("cmdline_pos", interior, 1));
-            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         }
     }
@@ -249,7 +242,6 @@ private slots:
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, QStringLiteral("**"), 0) });
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("pw: "));
         QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
@@ -259,8 +251,22 @@ private slots:
 
         dispatch(conn, redrawEvent("cmdline_pos", 1, 1));
         QCOMPARE(dataSpy.count(), 1);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+    }
+
+    void maskedCursorWithinContentIsApproximate() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        // inputsecret() after typing "\u00E9a" and <Left>: the cursor follows the first '*', but
+        // Neovim sends unmasked byte 2, which is the end of "**".
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "**", 0 } }, 3, std::string(),
+                                   std::string("pw: "), 0, 1, 0));
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 2, 1));
+
+        QCOMPARE(dataSpy.count(), 0);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
     }
 
     void positionOnlyKeepsChunks() {
@@ -274,12 +280,10 @@ private slots:
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
 
         QCOMPARE(dataSpy.count(), 1);
-        const QList<int> cursorRoles{ CmdlineModel::CursorByteOffsetRole,
-                                      CmdlineModel::CursorTextOffsetRole };
+        const QList<int> cursorRoles{ CmdlineModel::CursorTextOffsetRole };
         QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), cursorRoles);
         QCOMPARE(insertSpy.count(), 0);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole), chunks);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 3);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
 
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));

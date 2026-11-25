@@ -58,7 +58,7 @@ private slots:
         conn.input(QStringLiteral(":") + unicode);
 
         QTRY_COMPARE(model->rowCount(), 1);
-        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 7);
+        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 4);
         const QVariantList chunks{ QVariantMap{
             { QStringLiteral("attrId"), 0 },
             { QStringLiteral("highlightId"), 0 },
@@ -66,7 +66,6 @@ private slots:
         } };
         QCOMPARE(model->activeLevel(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(), chunks);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 4);
         QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral(":"));
         QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), -1);
         QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 0);
@@ -75,8 +74,7 @@ private slots:
 
         conn.input(QStringLiteral("<Left>"));
 
-        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 3);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
+        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(), chunks);
 
         conn.input(QStringLiteral("<Esc>"));
@@ -96,7 +94,7 @@ private slots:
 
             QTRY_COMPARE(text(conn, 0), QStringLiteral("foo"));
             QCOMPARE(model->rowCount(), 1);
-            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 3);
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
             QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), firstCharacter);
             QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QString());
 
@@ -115,7 +113,7 @@ private slots:
 
         QTRY_COMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
         QCOMPARE(model->rowCount(), 1);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 0);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 0);
         QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QString());
         QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), 0);
         QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 1);
@@ -125,7 +123,7 @@ private slots:
         conn.input(QStringLiteral("x"));
 
         QTRY_COMPARE(text(conn, 0), QStringLiteral("x"));
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
 
         conn.input(QStringLiteral("<Esc>"));
@@ -144,15 +142,29 @@ private slots:
         // Neovim masks each character as '*' but reports the cursor in the unmasked 3-byte input.
         QTRY_COMPARE(text(conn, 0), QStringLiteral("**"));
         QCOMPARE(model->rowCount(), 1);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
         QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("pw: "));
 
         conn.input(QStringLiteral("<Left>"));
 
-        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         QCOMPARE(text(conn, 0), QStringLiteral("**"));
+
+        conn.input(QStringLiteral("<Esc>"));
+        QTRY_COMPARE(model->rowCount(), 0);
+    }
+
+    void secretPromptCursorWithinContentIsApproximate() {
+        NvimConnector conn;
+        QVERIFY(attach(conn));
+        CmdlineModel *model = conn.cmdline();
+
+        conn.input(QStringLiteral(":call inputsecret('pw: ')<CR>\u00E9a<Left>b"));
+
+        // The cursor follows the second '*', but Neovim sends unmasked byte 3 for "\u00E9b|a",
+        // which maps to the end of "***".
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("***"));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
 
         conn.input(QStringLiteral("<Esc>"));
         QTRY_COMPARE(model->rowCount(), 0);
@@ -174,7 +186,7 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral(":"));
         QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialShiftRole).toBool(), true);
-        QCOMPARE(role(conn, 1, CmdlineModel::CursorByteOffsetRole).toLongLong(), 3);
+        QCOMPARE(role(conn, 1, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
         QCOMPARE(role(conn, 1, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral("="));
         QCOMPARE(role(conn, 1, CmdlineModel::LevelRole).toInt(), 2);
         const QVariantList chunks = role(conn, 1, CmdlineModel::ChunksRole).toList();
@@ -187,7 +199,7 @@ private slots:
         QTRY_COMPARE(model->rowCount(), 1);
         QTRY_COMPARE(text(conn, 0), QStringLiteral("2"));
         QCOMPARE(model->activeLevel(), 1);
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
         QCOMPARE(removedSpy.count(), 1);
 

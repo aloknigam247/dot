@@ -16,11 +16,6 @@ struct CodePoint {
     char32_t value = QChar::ReplacementCharacter;
 };
 
-struct Cursor {
-    qsizetype byteOffset = 0;
-    qsizetype textOffset = 0;
-};
-
 } // namespace
 
 // Malformed input decodes as U+FFFD consuming only the offending byte, so every byte that does
@@ -95,17 +90,19 @@ static QVariantList chunkList(const CmdlineLine &line, QList<qsizetype> *offsets
     return chunks;
 }
 
-// Neovim reports the cursor in the unmasked buffer while inputsecret() sends one '*' per
-// character, so a valid position can fall past the content or inside one of its sequences.
-static std::expected<Cursor, QString> cursorAt(const QList<qsizetype> &offsets,
-                                               qsizetype position) {
+// Neovim positions are UTF-8 byte offsets. setcmdpos() can place one inside a sequence, and
+// inputsecret() reports the unmasked position against one '*' per character, so one can also fall
+// past the content. Both clamp to the preceding boundary; a masked position within the content
+// cannot be mapped and stays approximate.
+static std::expected<qsizetype, QString> cursorAt(const QList<qsizetype> &offsets,
+                                                  qsizetype position) {
     if(position < 0)
         return std::unexpected(QStringLiteral("cursor byte offset %1 is negative").arg(position));
     qsizetype byteOffset = std::min(position, offsets.size() - 1);
     while(offsets[byteOffset] < 0) --byteOffset;
     if(byteOffset != position)
         qDebug() << "cmdline cursor byte offset" << position << "clamped to" << byteOffset;
-    return Cursor{ byteOffset, offsets[byteOffset] };
+    return offsets[byteOffset];
 }
 
 static QString invisibleLevel(int level) {
@@ -130,8 +127,6 @@ QVariant CmdlineModel::data(const QModelIndex &index, int role) const {
     switch(role) {
         case ChunksRole:
             return level.chunks;
-        case CursorByteOffsetRole:
-            return static_cast<qlonglong>(level.cursorByteOffset);
         case CursorTextOffsetRole:
             return static_cast<qlonglong>(level.cursorTextOffset);
         case FirstCharacterRole:
@@ -156,7 +151,6 @@ QVariant CmdlineModel::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> CmdlineModel::roleNames() const {
     return {
         { ChunksRole, QByteArrayLiteral("chunks") },
-        { CursorByteOffsetRole, QByteArrayLiteral("cursorByteOffset") },
         { CursorTextOffsetRole, QByteArrayLiteral("cursorTextOffset") },
         { FirstCharacterRole, QByteArrayLiteral("firstCharacter") },
         { HighlightIdRole, QByteArrayLiteral("highlightId") },
@@ -210,11 +204,10 @@ std::expected<void, QString> CmdlineModel::setPosition(int level, qsizetype posi
     Level &current = m_levels[row];
     const auto cursor = cursorAt(current.textOffsets, position);
     if(!cursor) return std::unexpected(cursor.error());
-    if(current.cursorByteOffset == cursor->byteOffset) return {};
-    current.cursorByteOffset = cursor->byteOffset;
-    current.cursorTextOffset = cursor->textOffset;
+    if(current.cursorTextOffset == *cursor) return {};
+    current.cursorTextOffset = *cursor;
     const QModelIndex changed = index(static_cast<int>(row));
-    emit dataChanged(changed, changed, { CursorByteOffsetRole, CursorTextOffsetRole });
+    emit dataChanged(changed, changed, { CursorTextOffsetRole });
     return {};
 }
 
@@ -237,8 +230,7 @@ std::expected<void, QString> CmdlineModel::show(int level, const CmdlineSession 
     next.chunks = chunkList(session.content, &next.textOffsets);
     const auto cursor = cursorAt(next.textOffsets, session.position);
     if(!cursor) return std::unexpected(cursor.error());
-    next.cursorByteOffset = cursor->byteOffset;
-    next.cursorTextOffset = cursor->textOffset;
+    next.cursorTextOffset = *cursor;
     next.firstCharacter = session.firstCharacter;
     next.highlightId = session.highlightId;
     next.indent = session.indent;
