@@ -134,6 +134,30 @@ private slots:
         QCOMPARE(removedSpy.count(), 2);
     }
 
+    void secretPromptClampsMaskedCursor() {
+        NvimConnector conn;
+        QVERIFY(attach(conn));
+        CmdlineModel *model = conn.cmdline();
+
+        conn.input(QStringLiteral(":call inputsecret('pw: ')<CR>a\u00E9"));
+
+        // Neovim masks each character as '*' but reports the cursor in the unmasked 3-byte input.
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("**"));
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("pw: "));
+
+        conn.input(QStringLiteral("<Left>"));
+
+        QTRY_COMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
+        QCOMPARE(text(conn, 0), QStringLiteral("**"));
+
+        conn.input(QStringLiteral("<Esc>"));
+        QTRY_COMPARE(model->rowCount(), 0);
+    }
+
     void nestedExpressionRestoresOuterLevel() {
         NvimConnector conn;
         QVERIFY(attach(conn));
@@ -266,6 +290,12 @@ private slots:
         QSignalSpy attachSpy(&conn, &NvimConnector::attachComplete);
         QSignalSpy disconnectedSpy(&conn, &NvimConnector::disconnected);
         QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
+        QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
+        int rowsDuringHandoff = -1;
+        QObject handoffContext;
+        connect(&conn, &NvimConnector::attachedChanged, &handoffContext, [&] {
+            if(!conn.attached()) rowsDuringHandoff = model->rowCount();
+        });
 
         conn.input(QStringLiteral(":abc"));
         QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
@@ -277,8 +307,11 @@ private slots:
         QVERIFY(newPid && newPid->toInt() > 0 && newPid->toInt() != oldPid->toInt());
         QVERIFY(conn.attached());
         QCOMPARE(disconnectedSpy.count(), 0);
+        // The old session stays visible until the replacement server connects.
+        QCOMPARE(rowsDuringHandoff, 1);
         QCOMPARE(model->rowCount(), 0);
         QCOMPARE(removedSpy.count(), 0);
+        QCOMPARE(resetSpy.count(), 1);
         QVERIFY(enableExtCmdline(conn));
 
         conn.input(QStringLiteral(":xyz"));

@@ -186,6 +186,8 @@ endforeach()
 # test_restart spawns a SECOND nvim (the :restart handoff) on top of the first,
 # so it needs headroom above the default 60s ceiling under parallel load.
 set_tests_properties(test_restart PROPERTIES TIMEOUT 120)
+# test_cmdline also runs a :restart handoff.
+set_tests_properties(test_cmdline PROPERTIES TIMEOUT 120)
 
 
 # Perf tests assert hard wall-clock ceilings (test_boot_perf: boot < 3000ms;

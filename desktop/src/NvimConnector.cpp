@@ -865,7 +865,6 @@ void NvimConnector::onNotification(const dot::Notification &note) {
 }
 
 void NvimConnector::onRpcDisconnected() {
-    m_cmdline->reset();
     resetColorRequests();
     m_attachPending = false;
     m_images->cancelPending();
@@ -884,6 +883,7 @@ void NvimConnector::onRpcDisconnected() {
         m_rpc->connectToAddress(m_restartListenAddr);
         return;
     }
+    m_cmdline->reset();
     m_attached = false;
     emit attachedChanged();
     emit disconnected();
@@ -908,6 +908,7 @@ void NvimConnector::onRestartFailed() {
     if(!m_restartInProgress) return;
     m_restartInProgress = false;
     m_restartTimer->stop();
+    m_cmdline->reset();
     m_attached = false;
     emit attachedChanged();
     emit disconnected();

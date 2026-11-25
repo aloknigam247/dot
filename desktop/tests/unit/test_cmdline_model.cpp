@@ -138,11 +138,9 @@ private slots:
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
         }
 
-        QTest::ignoreMessage(
-            QtWarningMsg, "Invalid cmdline_pos: cursor byte offset 2 is inside a UTF-8 sequence");
         dispatch(conn, redrawEvent("cmdline_pos", 2, 1));
-        QTest::ignoreMessage(
-            QtWarningMsg, "Invalid cmdline_pos: cursor byte offset 8 is outside 7 content bytes");
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         dispatch(conn, redrawEvent("cmdline_pos", 8, 1));
         verifyUnicodeSession(conn);
     }
@@ -158,10 +156,9 @@ private slots:
             QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), textOffset);
         }
 
-        QTest::ignoreMessage(
-            QtWarningMsg, "Invalid cmdline_pos: cursor byte offset 3 is inside a UTF-8 sequence");
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 7);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
     }
 
     void invalidUtf8DecodesEachByteAsReplacement_data() {
@@ -235,15 +232,35 @@ private slots:
         }
 
         for(const int interior: { 2, 3 }) {
-            const QString warning =
-                QStringLiteral(
-                    "Invalid cmdline_pos: cursor byte offset %1 is inside a UTF-8 sequence")
-                    .arg(interior);
-            QTest::ignoreMessage(QtWarningMsg, qPrintable(warning));
+            dispatch(conn, redrawEvent("cmdline_pos", 5, 1));
             dispatch(conn, redrawEvent("cmdline_pos", interior, 1));
-            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 5);
-            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 3);
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
+            QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
         }
+    }
+
+    void maskedCursorClampsToContent() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        // inputsecret() after typing "a\u00E9": one '*' per character, cursor in unmasked bytes.
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "**", 0 } }, 3, std::string(),
+                                   std::string("pw: "), 0, 1, 0));
+
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(0, QStringLiteral("**"), 0) });
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("pw: "));
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 5, 1));
+        QCOMPARE(dataSpy.count(), 0);
+
+        dispatch(conn, redrawEvent("cmdline_pos", 1, 1));
+        QCOMPARE(dataSpy.count(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorTextOffsetRole).toLongLong(), 1);
     }
 
     void positionOnlyKeepsChunks() {
@@ -302,12 +319,17 @@ private slots:
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
         dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
-        dispatch(conn, showEvent(Line{ { 0, "1+1", 0 } }, 3, "=", 2));
         QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+
+        dispatch(conn, showEvent(Line{ { 0, "1+1", 0 } }, 3, "=", 2));
+        QCOMPARE(activeLevelSpy.count(), 1);
+        QCOMPARE(model->activeLevel(), 2);
+        dispatch(conn, showEvent(Line{ { 0, "1+2", 0 } }, 3, "=", 2));
+        QCOMPARE(activeLevelSpy.count(), 1);
 
         dispatch(conn, redrawEvent("cmdline_hide", 1, false));
 
-        QCOMPARE(activeLevelSpy.count(), 0);
+        QCOMPARE(activeLevelSpy.count(), 1);
         QCOMPARE(model->activeLevel(), 2);
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 2);
@@ -477,22 +499,16 @@ private slots:
             << showShape;
         QTest::newRow("show negative cursor")
             << showEvent(valid, -1, ":", 1)
-            << QStringLiteral(
-                   "Invalid cmdline_show: cursor byte offset -1 is outside 1 content bytes");
+            << QStringLiteral("Invalid cmdline_show: cursor byte offset -1 is negative");
         QTest::newRow("show level zero")
             << showEvent(valid, 1, ":", 0)
             << QStringLiteral("Invalid cmdline_show: level 0 is not positive");
-        QTest::newRow("show cursor inside sequence")
-            << showEvent(Line{ { 0, kUnicodeUtf8, 0 } }, 2, ":", 1)
-            << QStringLiteral(
-                   "Invalid cmdline_show: cursor byte offset 2 is inside a UTF-8 sequence");
         QTest::newRow("pos invisible level")
             << redrawEvent("cmdline_pos", 0, 3)
             << QStringLiteral("Invalid cmdline_pos: level 3 is not visible");
         QTest::newRow("pos negative offset")
             << redrawEvent("cmdline_pos", -1, 1)
-            << QStringLiteral(
-                   "Invalid cmdline_pos: cursor byte offset -1 is outside 7 content bytes");
+            << QStringLiteral("Invalid cmdline_pos: cursor byte offset -1 is negative");
         QTest::newRow("pos string offset")
             << redrawEvent("cmdline_pos", std::string("0"), 1)
             << QStringLiteral("Invalid cmdline_pos: expected cursor byte offset and level");
@@ -546,29 +562,41 @@ private slots:
         verifyUnicodeSession(conn);
     }
 
+    void resetClearsAllLevels_data() {
+        QTest::addColumn<int>("path");
+        QTest::newRow("disconnect") << 0;
+        QTest::newRow("restart failed") << 1;
+        QTest::newRow("ui state reset") << 2;
+    }
+
     void resetClearsAllLevels() {
-        for(const bool disconnect: { false, true }) {
-            NvimConnector conn;
-            CmdlineModel *model = conn.cmdline();
-            dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
-            dispatch(conn, showEvent(Line{ { 0, "1", 0 } }, 1, "=", 2));
-            dispatch(conn, redrawEvent("cmdline_block_show",
-                                       std::vector<Line>{ Line{ { 0, "function! Foo()", 0 } } }));
-            QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
-            QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
-            QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
+        QFETCH(int, path);
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
+        dispatch(conn, showEvent(Line{ { 0, "1", 0 } }, 1, "=", 2));
+        dispatch(conn, redrawEvent("cmdline_block_show",
+                                   std::vector<Line>{ Line{ { 0, "function! Foo()", 0 } } }));
+        QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
 
-            if(disconnect) conn.onRpcDisconnected();
-            else conn.resetUiState();
-
-            QCOMPARE(model->rowCount(), 0);
-            QCOMPARE(model->activeLevel(), 0);
-            QCOMPARE(model->blockActive(), false);
-            QCOMPARE(model->blockLines(), QVariantList());
-            QCOMPARE(activeLevelSpy.count(), 1);
-            QCOMPARE(blockSpy.count(), 1);
-            QCOMPARE(resetSpy.count(), 1);
+        if(path == 0) {
+            conn.onRpcDisconnected();
+        } else if(path == 1) {
+            conn.m_restartInProgress = true;
+            conn.onRestartFailed();
+        } else {
+            conn.resetUiState();
         }
+
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(model->activeLevel(), 0);
+        QCOMPARE(model->blockActive(), false);
+        QCOMPARE(model->blockLines(), QVariantList());
+        QCOMPARE(activeLevelSpy.count(), 1);
+        QCOMPARE(blockSpy.count(), 1);
+        QCOMPARE(resetSpy.count(), 1);
     }
 };
 

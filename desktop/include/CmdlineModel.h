@@ -31,7 +31,8 @@ struct CmdlineSession {
 
 // Neovim-owned command-line state from ext_cmdline redraw events. Rows are the visible nesting
 // levels in ascending level order; the last row is the active level. Cursor byte offsets index the
-// UTF-8 content Neovim sent, and cursor text offsets index the concatenated chunk texts.
+// UTF-8 content Neovim sent, and cursor text offsets index the concatenated chunk texts. A position
+// past the content or inside a UTF-8 sequence clamps to the preceding boundary.
 class CmdlineModel : public QAbstractListModel {
     Q_OBJECT
     QML_ELEMENT
