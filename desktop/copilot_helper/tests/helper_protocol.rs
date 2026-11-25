@@ -432,6 +432,8 @@ fn lagged_stream_fails_turn() {
     let errors: Vec<&Value> = records.iter().filter(|record| record["type"] == "error").collect();
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0]["kind"], "event_stream_lagged");
+    // A lag drops only the oldest buffered events, so newer ones are still forwarded.
+    helper.until(|record| item_type(record).as_deref() == Some("session.idle"));
     helper.send("t2", "complete");
     assert_rejection(&helper.until_type("send_rejected"), "t2", "session_failed");
     let (code, records) = helper.shutdown();

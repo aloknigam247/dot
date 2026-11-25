@@ -682,6 +682,15 @@ mod tests {
     }
 
     #[test]
+    fn non_policy_warning_is_not_turn_evidence() {
+        let warning = event(
+            "session.warning",
+            json!({"warningType": "truncation", "originatingMessageId": "id"}),
+        );
+        assert!(evidence(&warning).is_none());
+    }
+
+    #[test]
     fn another_turns_start_does_not_end_active_turn() {
         let mut turn = ActiveTurn::new("request".into());
         turn.sdk_id = Some("id".into());
