@@ -24,10 +24,11 @@ class TestTitleUpdates : public QObject {
 private slots:
     void titleReflectsEditedFile() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(40, 10));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         QTemporaryDir tmp;
         QVERIFY(tmp.isValid());

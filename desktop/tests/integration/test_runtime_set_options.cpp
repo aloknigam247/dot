@@ -68,11 +68,12 @@ private slots:
     // Q_PROPERTY contains the new value.
     void setGuifontFiresSignal() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QSignalSpy attachSpy(&conn, &NvimConnector::attachedChanged);
         QVERIFY(conn.attachUi(80, 24));
         QVERIFY(attachSpy.wait(5000));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         QSignalSpy spy(&conn, &NvimConnector::guifontChanged);
         conn.command(QStringLiteral("set guifont=Cascadia\\ Mono:h14"));
@@ -84,11 +85,12 @@ private slots:
 
     void setLinespaceFiresSignal() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QSignalSpy attachSpy(&conn, &NvimConnector::attachedChanged);
         QVERIFY(conn.attachUi(80, 24));
         QVERIFY(attachSpy.wait(5000));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         QSignalSpy spy(&conn, &NvimConnector::linespaceChanged);
         conn.command(QStringLiteral("set linespace=4"));
@@ -104,14 +106,14 @@ private slots:
         const int lineSpaces[]{ 0, 6 };
         NvimConnector conn;
         QVERIFY(startTestNvim(conn));
-        QSignalSpy flushSpy(&conn, &NvimConnector::flush);
+        FlushLatch initialFlush(&conn);
 
         QQmlApplicationEngine engine;
         QQuickWindow *window = loadMainQml(engine, &conn);
         QVERIFY2(window, "Main.qml failed to load");
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitUntil([&] { return !flushSpy.isEmpty(); }, 5000));
+        QVERIFY(initialFlush.wait());
 
         auto *grid = window->findChild<GridItem *>();
         auto *icon = window->findChild<QQuickItem *>(QStringLiteral("chatIcon"));

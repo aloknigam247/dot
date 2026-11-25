@@ -9,10 +9,11 @@ class TestInsertAndQuit : public QObject {
 private slots:
     void typeAbcThenAssert() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(40, 10));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         conn.input(QStringLiteral("iabc<Esc>"));
         // Allow several redraw flushes; the last flush should carry the final state.

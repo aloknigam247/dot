@@ -40,6 +40,7 @@ private slots:
         t.start();
 
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
 
         QQmlApplicationEngine engine;
@@ -50,7 +51,7 @@ private slots:
         QVERIFY(window);
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         const qint64 elapsed = t.elapsed();
         qDebug() << "Boot to first flush:" << elapsed << "ms";

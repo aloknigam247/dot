@@ -108,6 +108,7 @@ private slots:
 
     void horizontalWheelPansView() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         m_conn = &conn;
         QVERIFY(startTestNvim(conn));
 
@@ -115,7 +116,7 @@ private slots:
         m_window = loadMainQml(engine, &conn);
         QVERIFY2(m_window, "Main.qml failed to load");
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
         QVERIFY(waitUntil([&] { return m_window->isVisible(); }, 5000));
         QVERIFY(QTest::qWaitForWindowExposed(m_window));
 
@@ -171,6 +172,7 @@ private slots:
     // and leftcol never moved.
     void modifiedWheelStillReachesNvim() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         m_conn = &conn;
         QVERIFY(startTestNvim(conn));
 
@@ -178,7 +180,7 @@ private slots:
         m_window = loadMainQml(engine, &conn);
         QVERIFY2(m_window, "Main.qml failed to load");
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
         QVERIFY(waitUntil([&] { return m_window->isVisible(); }, 5000));
         QVERIFY(QTest::qWaitForWindowExposed(m_window));
 

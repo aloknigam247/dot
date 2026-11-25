@@ -67,13 +67,14 @@ private slots:
 
     void leftDragEntersVisualMode() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
 
         QQmlApplicationEngine engine;
         QQuickWindow *window = loadMainQml(engine, &conn);
         QVERIFY2(window, "Main.qml failed to load");
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
         // Main.qml starts with visible: false (to hide the 80x24 attach-jump);
         // it flips visible after the post-attach resize flush. QTest::mouseMove
         // routes via geometry hit-test and needs an exposed window, so wait for

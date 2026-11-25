@@ -9,10 +9,11 @@ class TestRestart : public QObject {
 private slots:
     void restartReconnectsToNewServer() {
         NvimConnector conn;
+        FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
         QVERIFY(conn.attachUi(80, 24));
         QVERIFY(waitForAttach(&conn));
-        QVERIFY(waitForFlush(&conn));
+        QVERIFY(initialFlush.wait());
 
         // The `restart` UI event landed with nvim API level 14. On older servers
         // :restart just quits, so there is nothing to exercise.

@@ -49,6 +49,19 @@ inline bool waitForFlush(NvimConnector *conn, int timeoutMs = 5000) {
     return spy.wait(timeoutMs);
 }
 
+// Latches any flush since construction. Arm it before attaching: the initial redraw's flush can
+// be delivered while a test is still spinning the event loop for attach or window exposure, and
+// nvim sends no further flush until something changes, so a waitForFlush() armed later can miss it.
+class FlushLatch {
+public:
+    explicit FlushLatch(NvimConnector *conn) : m_spy(conn, &NvimConnector::flush) {}
+
+    bool wait(int timeoutMs = 5000) { return !m_spy.isEmpty() || m_spy.wait(timeoutMs); }
+
+private:
+    QSignalSpy m_spy;
+};
+
 inline bool waitForAttach(NvimConnector *conn, int timeoutMs = 5000) {
     if(conn->attached()) return true;
     QSignalSpy spy(conn, &NvimConnector::attachedChanged);
