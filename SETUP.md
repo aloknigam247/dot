@@ -114,10 +114,11 @@ The following sections cover the Neovim runtime and contributor-only CI/coverage
 
 ### CI trigger boundaries
 
-[Desktop CI](.github/workflows/ci.yml) and [Android CI](.github/workflows/android-ci.yml) use native path filters following
-the [repository layout](README.md#repository-layout). Shared changes run both workflows; documentation inside an included
-component directory also runs its validation. Unrelated root documentation and design changes do not start validation.
-The workflow YAML files define the exact filters; an included change runs the complete existing workflow.
+[Desktop CI](.github/workflows/ci.yml), [Copilot bridge CI](.github/workflows/copilot-bridge-ci.yml), and
+[Android CI](.github/workflows/android-ci.yml) use native path filters following the
+[repository layout](README.md#repository-layout). Shared changes run Desktop and Android CI; documentation inside an
+included component directory also runs its validation. Unrelated root documentation and design changes do not start
+validation. The workflow YAML files define the exact filters; an included change runs the complete existing workflow.
 
 Skipped workflows may leave required checks or coverage requirements unsatisfied. Check the effective
 [repository rules](https://github.com/aloknigam247/dot/rules) and GitHub's
@@ -188,6 +189,20 @@ cold-builds Qt (1–3 h) and then publishes the blob. Two one-time requirements:
 - After the first publish, open the package under **github.com/users/aloknigam247/packages** and set
   its visibility to **Public** — otherwise a private package hits the 500 MB free quota and later
   runs fail to restore. Public packages on a public repo have unlimited storage and transfer.
+
+## 10. Copilot CLI bridge
+
+The [Copilot CLI bridge](README.md#copilot-cli-bridge) needs [rustup](https://rustup.rs); a Cargo install without rustup
+ignores the pinned toolchain. Run Cargo from `desktop\copilot_bridge` so `rust-toolchain.toml` and
+`.cargo\config.toml` apply; that config stops the SDK build script from downloading a CLI.
+
+```ps1
+cd desktop\copilot_bridge
+cargo build --locked
+cargo test --locked
+```
+
+[Copilot bridge CI](.github/workflows/copilot-bridge-ci.yml) also checks formatting and lints.
 
 ## Troubleshooting
 

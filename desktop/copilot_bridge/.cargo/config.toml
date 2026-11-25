@@ -1,0 +1,4 @@
+# The SDK build script otherwise downloads a CLI runtime; the bridge uses the CLI installed on PATH.
+[env]
+COPILOT_SKIP_CLI_DOWNLOAD = "1"
+RUST_TEST_THREADS = "4"

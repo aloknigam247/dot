@@ -1,0 +1,49 @@
+name: Copilot bridge CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/copilot-bridge-ci.yml"
+      - "desktop/copilot_bridge/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/copilot-bridge-ci.yml"
+      - "desktop/copilot_bridge/**"
+
+concurrency:
+  group: copilot-bridge-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-bridge:
+    defaults:
+      run:
+        working-directory: desktop/copilot_bridge
+    name: copilot-bridge
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pinned toolchain
+        shell: pwsh
+        run: rustup toolchain install --no-self-update
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/copilot_bridge
+
+      - name: Check formatting
+        shell: pwsh
+        run: cargo fmt --check
+
+      - name: Lint
+        shell: pwsh
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        shell: pwsh
+        run: cargo test --locked

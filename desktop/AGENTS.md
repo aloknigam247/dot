@@ -3,6 +3,7 @@
 ## Index
 
 - [CMakeLists.txt](CMakeLists.txt): source/header pairs in `DOT_LIB_SOURCES`, the `Dot` QML module, and deployment.
+- [copilot_bridge](copilot_bridge): Rust Copilot CLI bridge; see [SETUP.md](../SETUP.md#10-copilot-cli-bridge).
 - [include](include): public headers; implementations and change entrypoints are in the [C++ guide](src/AGENTS.md).
 - [lua/dot_backend.lua](lua/dot_backend.lua): Neovim-side backend; bundled by [resources/dot.qrc](resources/dot.qrc).
 - [QML guide](qml/AGENTS.md): scene composition, bindings, and focus ownership.
@@ -25,7 +26,8 @@ Attach capabilities are defined by `packAttachOptions` in `NvimConnector.cpp`, n
 
 ## Build and deployment
 
-Run desktop build, test, and script commands from this directory. Follow [SETUP.md](../SETUP.md) for prerequisites.
+Run desktop build, test, and script commands from this directory; run Copilot bridge Cargo commands from
+[copilot_bridge](copilot_bridge). Follow [SETUP.md](../SETUP.md) for prerequisites.
 [CMakePresets.json](CMakePresets.json) owns generator, toolchain, triplet, configuration, and output-directory settings.
 `VCPKG_ROOT` supplies the toolchain; configure restores dependencies from [vcpkg.json](vcpkg.json) against
 [vcpkg-configuration.json](vcpkg-configuration.json). Do not update the baseline as part of an unrelated change.

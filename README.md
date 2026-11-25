@@ -26,6 +26,7 @@ The design is not a claim of native implementation parity.
 | `android\` | Android application, shared JVM chat client, and Gradle build |
 | `common\` | Shared artwork, release tooling, and patch-coverage checker |
 | `desktop\` | C++/QML client, build configuration, tests, and desktop tooling |
+| `desktop\copilot_bridge\` | Rust [Copilot CLI bridge](#copilot-cli-bridge) |
 | `docs\` | Repository-wide design documentation |
 
 ## Versioning
@@ -38,8 +39,9 @@ The [version workflow](.github/workflows/semantic-release.yml) runs on its confi
 | Android | `android-vX.Y.Z` | `android/app/build.gradle.kts` | `android/CHANGELOG.md` |
 | Desktop dot | `dot-vX.Y.Z` | `desktop/CMakeLists.txt`, `desktop/vcpkg.json` | `desktop/CHANGELOG.md` |
 
-[Release path filters](common/release/release.config.cjs) count `android/` for Android, `desktop/` for dot, and
-`common/` for both. Files outside those directories, including this README, do not affect either version or changelog.
+[Release path filters](common/release/release.config.cjs) count `android/` for Android, `desktop/` (including
+`desktop/copilot_bridge/`) for dot, and `common/` for both. Files outside those directories, including this README, do
+not affect either version or changelog.
 
 semantic-release uses conventional commits: `feat:` bumps minor, `fix:` and `perf:` bump patch, and breaking changes
 (`!` or a `BREAKING CHANGE:` footer) bump major. Without an existing component tag, its first version is `1.0.0`.
@@ -114,6 +116,54 @@ Use `set(id, opts)` to update a placement, `get(id)` to inspect its requested op
 Images follow actual grid scrolling, not buffer/extmark positions. Plugins must re-place them after other viewport
 changes; a successful `set` restores scroll-clipped content. Invalid input and exhausted
 [resource limits](desktop/include/ImageModel.h) raise a Lua error without silently evicting existing images.
+
+## Copilot CLI bridge
+
+`dot_copilot_bridge` is a standalone process for dot chat; dot does not launch it yet. It connects to the installed
+GitHub Copilot CLI through the official `copilot-sdk` crate and never downloads or bundles a CLI. It uses the first
+`copilot` executable on `PATH` (with `PATHEXT` extensions) that completes a protocol 4 SDK handshake. Each handshake
+and session creation must finish within `DOT_COPILOT_BRIDGE_STARTUP_TIMEOUT_MS` milliseconds (default 30000); a status
+or auth query that exceeds it reports a `null` `version` or `unknown` `auth`.
+The bridge runs one session in its working directory, denies every permission request, disables client telemetry, and
+leaves credentials with the CLI. Build and test it as described in [SETUP.md](SETUP.md#10-copilot-cli-bridge).
+
+The bridge exchanges one JSON object per line on stdin and stdout. Bridge protocol version 1 records:
+
+| Direction | `type` | Fields |
+| --- | --- | --- |
+| Input | `cancel` | `request_id`, `turn_id` |
+| Input | `send` | `prompt`, `request_id` |
+| Input | `shutdown` | `request_id` |
+| Output | `cancel_acknowledged` | `request_id`, `turn_id` |
+| Output | `cancel_rejected` | `kind` (`abort_failed`, `no_active_turn`, `turn_mismatch`, `turn_starting`), `message`, `request_id` |
+| Output | `error` | `kind` (`cli_not_found`, `cli_unusable`, `event_stream_closed`, `event_stream_lagged`, `invalid_request`, `session_shutdown`, `session_start_failed`), `message`; startup errors add `protocol` and, for discovery, `candidates`; invalid requests add `request_id` when present |
+| Output | `item` | `item` (the SDK event's exact JSON serialization, as a string), `source` (`lifecycle`, `session`) |
+| Output | `ready` | `cli` (`auth`: `signed_in`, `signed_out`, or `unknown` with `auth_error`; `path`; `protocol`; `version` or `null`), `protocol` |
+| Output | `send_accepted` | `request_id`, `turn_id` |
+| Output | `send_rejected` | `kind` (`cancel_pending`, `empty_turn_id`, `reuse_rejected`, `send_failed`, `session_failed`, `turn_active`), `message`, `request_id` |
+| Output | `turn_ended` | `outcome` (`aborted`, `completed`, `failed`), `request_id`, `turn_id` |
+
+Each discovery candidate reports `message`, `outcome` (`protocol_mismatch`, `protocol_unverified`, `startup_failed`, or
+`timed_out`), and `path`; a protocol mismatch adds `cli_protocol` and `required_protocol`, plus `cli_version` when the
+CLI's version is available.
+
+- `ready` precedes every `item`. A startup `error` is the only record before the bridge exits with code 1.
+- At most one turn is active. `send_accepted` precedes exactly one `turn_ended` for that turn; a rejected send has none.
+  A cancel acknowledgement never ends a turn. Turn correlation follows the SDK's `send_and_wait`: start and end events
+  that omit their correlation IDs are ignored, so such a turn stays active until `shutdown`. A root `session.error`
+  whose `originatingMessageId` is absent or names the turn makes that turn end `failed`, unless aborted, at its next
+  end event. An unattributed error followed by idle does not permit reuse without a matching start. A malformed root
+  `session.error` `originatingMessageId` or `session.autopilot_stopped` `requestId` (empty or not a string) ends the
+  active turn `failed` without a safe boundary.
+- Sends are rejected with `cancel_pending` until every cancel has its `cancel_acknowledged` or `cancel_rejected`.
+- After an `empty_turn_id` or `send_failed` rejection, an `event_stream_closed`, `event_stream_lagged`, or
+  `session_shutdown` error, or a turn end that cannot prove a safe boundary, later sends are rejected until the bridge
+  restarts.
+- `event_stream_lagged` means an SDK subscription overflowed its buffer (512 session events, 256 lifecycle events)
+  before the bridge read it. Each record is written to stdout before the next event is handled, so a parent that stops
+  reading stdout can cause this.
+- A `shutdown` request or closed stdin ends any active turn as `failed`, stops the CLI, and exits with code 0. A stdin
+  read error does the same but exits with code 1. An I/O error that stops the bridge is written to stderr.
 
 ## Architecture
 
