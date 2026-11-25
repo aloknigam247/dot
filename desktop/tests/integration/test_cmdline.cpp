@@ -52,7 +52,7 @@ private slots:
         NvimConnector conn;
         QVERIFY(attach(conn));
         CmdlineModel *model = conn.cmdline();
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
         const QString unicode(u"a\u00E9\U0001F600");
 
         conn.input(QStringLiteral(":") + unicode);
@@ -83,8 +83,7 @@ private slots:
 
         QTRY_COMPARE(model->rowCount(), 0);
         QCOMPARE(model->activeLevel(), 0);
-        QCOMPARE(hiddenSpy.count(), 1);
-        QCOMPARE(hiddenSpy.at(0), QVariantList({ 1, true }));
+        QCOMPARE(removedSpy.count(), 1);
     }
 
     void searchPromptsReportFirstCharacter() {
@@ -110,7 +109,7 @@ private slots:
         NvimConnector conn;
         QVERIFY(attach(conn));
         CmdlineModel *model = conn.cmdline();
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
 
         conn.input(QStringLiteral(":call input('Name: ')<CR>"));
 
@@ -121,8 +120,7 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), 0);
         QCOMPARE(role(conn, 0, CmdlineModel::LevelRole).toInt(), 1);
         QCOMPARE(text(conn, 0), QString());
-        QCOMPARE(hiddenSpy.count(), 1);
-        QCOMPARE(hiddenSpy.at(0), QVariantList({ 1, false }));
+        QCOMPARE(removedSpy.count(), 1);
 
         conn.input(QStringLiteral("x"));
 
@@ -133,15 +131,14 @@ private slots:
         conn.input(QStringLiteral("<Esc>"));
 
         QTRY_COMPARE(model->rowCount(), 0);
-        QCOMPARE(hiddenSpy.count(), 2);
-        QCOMPARE(hiddenSpy.at(1), QVariantList({ 1, true }));
+        QCOMPARE(removedSpy.count(), 2);
     }
 
     void nestedExpressionRestoresOuterLevel() {
         NvimConnector conn;
         QVERIFY(attach(conn));
         CmdlineModel *model = conn.cmdline();
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
 
         conn.input(QStringLiteral(":<C-r>=1+1"));
 
@@ -168,8 +165,7 @@ private slots:
         QCOMPARE(model->activeLevel(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::CursorByteOffsetRole).toLongLong(), 1);
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialCharacterRole).toString(), QString());
-        QCOMPARE(hiddenSpy.count(), 1);
-        QCOMPARE(hiddenSpy.at(0), QVariantList({ 2, false }));
+        QCOMPARE(removedSpy.count(), 1);
 
         conn.input(QStringLiteral("<Esc>"));
         QTRY_COMPARE(model->rowCount(), 0);
@@ -243,7 +239,7 @@ private slots:
         QVERIFY(attach(conn));
         CmdlineModel *model = conn.cmdline();
         QSignalSpy disconnectedSpy(&conn, &NvimConnector::disconnected);
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
 
         conn.input(QStringLiteral(":abc"));
         QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
@@ -254,7 +250,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(disconnectedSpy.count(), 1, 10000);
         QCOMPARE(model->rowCount(), 0);
         QCOMPARE(model->activeLevel(), 0);
-        QCOMPARE(hiddenSpy.count(), 0);
+        QCOMPARE(removedSpy.count(), 0);
         QVERIFY(!conn.attached());
     }
 
@@ -269,7 +265,7 @@ private slots:
         CmdlineModel *model = conn.cmdline();
         QSignalSpy attachSpy(&conn, &NvimConnector::attachComplete);
         QSignalSpy disconnectedSpy(&conn, &NvimConnector::disconnected);
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
 
         conn.input(QStringLiteral(":abc"));
         QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
@@ -282,7 +278,7 @@ private slots:
         QVERIFY(conn.attached());
         QCOMPARE(disconnectedSpy.count(), 0);
         QCOMPARE(model->rowCount(), 0);
-        QCOMPARE(hiddenSpy.count(), 0);
+        QCOMPARE(removedSpy.count(), 0);
         QVERIFY(enableExtCmdline(conn));
 
         conn.input(QStringLiteral(":xyz"));

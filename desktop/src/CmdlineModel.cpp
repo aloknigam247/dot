@@ -163,7 +163,7 @@ std::expected<void, QString> CmdlineModel::appendBlock(const CmdlineLine &line) 
     return {};
 }
 
-void CmdlineModel::hide(int level, bool abort) {
+void CmdlineModel::hide(int level) {
     const qsizetype row = rowForLevel(level);
     if(row < 0) return;
     const int previousActiveLevel = activeLevel();
@@ -171,7 +171,6 @@ void CmdlineModel::hide(int level, bool abort) {
     m_levels.removeAt(row);
     endRemoveRows();
     if(activeLevel() != previousActiveLevel) emit activeLevelChanged();
-    emit cmdlineHidden(level, abort);
 }
 
 void CmdlineModel::hideBlock() {

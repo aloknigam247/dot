@@ -1157,12 +1157,12 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
         return;
     }
     if(name == "cmdline_hide") {
-        const auto level = a.size >= 2 ? eventInteger(a.ptr[0]) : std::nullopt;
-        if(!level || a.ptr[1].type != msgpack::type::BOOLEAN) {
-            qWarning("Invalid cmdline_hide: expected level and abort flag");
+        const auto level = a.size >= 1 ? eventInteger(a.ptr[0]) : std::nullopt;
+        if(!level) {
+            qWarning("Invalid cmdline_hide: expected level");
             return;
         }
-        m_cmdline->hide(*level, a.ptr[1].via.boolean);
+        m_cmdline->hide(*level);
         return;
     }
     if(name == "cmdline_pos") {

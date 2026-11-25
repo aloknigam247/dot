@@ -66,7 +66,7 @@ public:
     QVariantList blockLines() const { return m_blockLines; }
 
     std::expected<void, QString> appendBlock(const CmdlineLine &line);
-    void hide(int level, bool abort);
+    void hide(int level);
     void hideBlock();
     void reset();
     std::expected<void, QString> setPosition(int level, qsizetype position);
@@ -78,7 +78,6 @@ public:
 signals:
     void activeLevelChanged();
     void blockChanged();
-    void cmdlineHidden(int level, bool abort);
 
 private:
     struct Level {

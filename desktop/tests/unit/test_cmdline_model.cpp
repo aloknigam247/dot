@@ -231,7 +231,6 @@ private slots:
         CmdlineModel *model = conn.cmdline();
         QAbstractItemModelTester tester(model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
         QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
 
         // Neovim sends the inner level before redrawing the outer one.
@@ -254,8 +253,6 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, QStringLiteral("abc"), 0) });
         QCOMPARE(role(conn, 0, CmdlineModel::FirstCharacterRole).toString(), QStringLiteral(":"));
-        QCOMPARE(hiddenSpy.count(), 1);
-        QCOMPARE(hiddenSpy.at(0), QVariantList({ 2, false }));
     }
 
     void hidingLowerLevelKeepsActiveLevel() {
@@ -298,24 +295,23 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::SpecialShiftRole).toBool(), false);
     }
 
-    void hideReportsAbort() {
+    void hideIgnoresInvisibleLevel() {
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
         QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
-        QSignalSpy hiddenSpy(model, &CmdlineModel::cmdlineHidden);
+        QSignalSpy removedSpy(model, &CmdlineModel::rowsRemoved);
         dispatch(conn, showEvent(Line{ { 0, "abc", 0 } }, 3, ":", 1));
 
         dispatch(conn, redrawEvent("cmdline_hide", 3, true));
         QCOMPARE(model->rowCount(), 1);
-        QCOMPARE(hiddenSpy.count(), 0);
+        QCOMPARE(removedSpy.count(), 0);
 
         dispatch(conn, redrawEvent("cmdline_hide", 1, true));
 
         QCOMPARE(model->rowCount(), 0);
         QCOMPARE(model->activeLevel(), 0);
         QCOMPARE(activeLevelSpy.count(), 2);
-        QCOMPARE(hiddenSpy.count(), 1);
-        QCOMPARE(hiddenSpy.at(0), QVariantList({ 1, true }));
+        QCOMPARE(removedSpy.count(), 1);
     }
 
     void blockAppendHideLifecycle() {
@@ -460,15 +456,12 @@ private slots:
         QTest::newRow("special invisible level")
             << redrawEvent("cmdline_special_char", std::string("^"), true, 2)
             << QStringLiteral("Invalid cmdline_special_char: level 2 is not visible");
-        QTest::newRow("hide missing abort")
-            << redrawEvent("cmdline_hide", 1)
-            << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
-        QTest::newRow("hide integer abort")
-            << redrawEvent("cmdline_hide", 1, 0)
-            << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
+        QTest::newRow("hide missing level")
+            << redrawEvent("cmdline_hide")
+            << QStringLiteral("Invalid cmdline_hide: expected level");
         QTest::newRow("hide string level")
             << redrawEvent("cmdline_hide", std::string("1"), true)
-            << QStringLiteral("Invalid cmdline_hide: expected level and abort flag");
+            << QStringLiteral("Invalid cmdline_hide: expected level");
         QTest::newRow("block show argument not array")
             << redrawEvent("cmdline_block_show", 1)
             << QStringLiteral("Invalid cmdline_block_show: expected an array of chunk lines");
