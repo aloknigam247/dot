@@ -124,3 +124,7 @@ jobs:
           path: ${{ steps.checks.outputs.reports }}
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Assert rejection of damaged production reports
+        shell: pwsh
+        run: .\validation_only\check_reports.ps1
