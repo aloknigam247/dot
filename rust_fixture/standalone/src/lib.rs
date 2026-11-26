@@ -13,7 +13,8 @@ mod inline_checks {
 }
 
 pub fn uncalled() -> u32 {
-    19
+    let unchanged = 19;
+    unchanged
 }
 
 pub fn answer() -> u32 {
