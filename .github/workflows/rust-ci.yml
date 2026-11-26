@@ -112,7 +112,7 @@ jobs:
           if (-not $reports) { throw "No per-workspace Rust Cobertura reports were produced." }
           & common\scripts\coverage_patch.ps1 -ReportPath $reports `
             -BaseRef "${{ github.event.pull_request.base.sha }}" `
-            -CoberturaPathsAreRepoRelative
+            -CoberturaPathsAreRepoRelative -DiffPath "*.rs"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Rust coverage reports
