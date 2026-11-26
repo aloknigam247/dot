@@ -124,7 +124,6 @@ foreach ($path in $ReportPath) {
         foreach ($pkg in $report.coverage.packages.package) {
             foreach ($cls in $pkg.classes.class) {
                 $key = Get-CoberturaKey ([string]$cls.filename)
-                if (-not $key) { continue }
                 foreach ($ln in $cls.lines.line) {
                     $k = "$key|$($ln.number)"
                     if (-not $hits.ContainsKey($k)) { $hits[$k] = 0 }
