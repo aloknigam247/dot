@@ -21,6 +21,7 @@
 #include "GridItem.h"
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
+#include "support/PaneGeometryOracle.h"
 
 using namespace dot;
 using namespace dot::test;
@@ -235,6 +236,12 @@ private slots:
             QVERIFY(toggle->property("selected").toBool());
             QVERIFY(panel->findChildren<QTcpServer *>().isEmpty());
             QVERIFY(panel->findChildren<QAbstractSocket *>().isEmpty());
+            const qreal dpr = window->devicePixelRatio();
+            const auto expected = paneOracle(window->size(), true,
+                                             fontMetricsOracle(*grid, conn.linespace(), dpr), dpr);
+            QTRY_COMPARE(liveCells(conn), expected.cells);
+            comparePaneScene(window, expected, true);
+            checkNoResizeEcho(conn);
         }
 
         conn.command(smallFontCommand);

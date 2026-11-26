@@ -162,8 +162,8 @@ void GridItem::recomputeMetrics() {
     // and cell math agree pixel-for-pixel.
     m_font.setLetterSpacing(QFont::AbsoluteSpacing, 0.0);
     const QFontMetricsF fm(m_font);
-    const qreal dpr = window() ? window()->devicePixelRatio() : 1.0;
-    const CellMetrics cm = computeCellMetrics(fm, m_linespace, dpr);
+    m_metricsDpr = window() ? window()->devicePixelRatio() : 1.0;
+    const CellMetrics cm = computeCellMetrics(fm, m_linespace, m_metricsDpr);
     m_cellWidth = cm.cellWidth;
     m_cellHeight = cm.cellHeight;
     m_baseline = cm.baseline;
@@ -228,16 +228,22 @@ int GridItem::rowAt(qreal y) const {
     return static_cast<int>(y / m_cellHeight);
 }
 
+QSize GridItem::cellsForSize(const QSizeF &size) const {
+    // A snapped origin can leave an integral cell count a few ulps below its boundary.
+    constexpr qreal tolerance = 1e-6;
+    return { std::max(12, qFloor((size.width() / m_cellWidth) + tolerance)),
+             std::max(3, qFloor((size.height() / m_cellHeight) + tolerance)) };
+}
+
 void GridItem::maybeResizeUi() {
     if(!m_conn || width() <= 0 || height() <= 0) return;
     if(m_gridId != 1) return;
-    const int cols = std::max(10, static_cast<int>(width() / m_cellWidth));
-    const int rows = std::max(3, static_cast<int>(height() / m_cellHeight));
+    const QSize cells = cellsForSize(size());
     // Delegate dedup to ResizeCoalescer (which compares against the last emitted
     // request). Guarding here against the grid model instead would skip the
     // corrective resize during a font/linespace change on :restart, when the
     // model still reads the pre-change size while an earlier resize is in flight.
-    m_conn->requestResize(cols, rows);
+    m_conn->requestResize(cells.width(), cells.height());
 }
 
 void GridItem::geometryChange(const QRectF &newGeom, const QRectF &oldGeom) {

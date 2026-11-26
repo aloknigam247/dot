@@ -71,6 +71,32 @@ TestCase {
         compare(p.model.count, 0)
     }
 
+    function test_chat_allocation_boundaries() {
+        const m = make().metrics
+        for (const [width, allocation] of [[400, 200], [719, 359], [720, 360], [721, 360]]) {
+            compare(m.chatAllocation(width, true), allocation)
+            compare(m.chatAllocation(width, false), 0)
+        }
+        for (const [extent, width] of [[359, 718], [360, 720], [361, 721]]) {
+            compare(m.windowWidthForPaneExtent(extent, true), width)
+            compare(width - m.chatAllocation(width, true), extent)
+            compare(m.windowWidthForPaneExtent(extent, false), extent)
+        }
+        for (const size of [Qt.size(0, 0), Qt.size(10, 10),
+                            m.windowSizeForGrid(11, 2, false), m.windowSizeForGrid(12, 3, false)]) {
+            compare(m.cellsForWindow(size.width, size.height, false), Qt.size(12, 3))
+        }
+        compare(m.grid.cellsForSize(Qt.size(19 * m.cellWidth - 1e-9, 5 * m.rowHeight - 1e-9)), Qt.size(19, 5))
+        function roundTrip(cols, rows, visible) {
+            const size = m.windowSizeForGrid(cols, rows, visible)
+            compare(m.cellsForWindow(size.width, size.height, visible), Qt.size(cols, rows))
+        }
+        for (const visible of [false, true]) {
+            for (let c = 12; c < 300; ++c) roundTrip(c, 3, visible)
+            for (let r = 3; r < 100; ++r) roundTrip(12, r, visible)
+        }
+    }
+
     function test_open_focuses_input_close_hides() {
         var p = make()
         closedSpy.clear()

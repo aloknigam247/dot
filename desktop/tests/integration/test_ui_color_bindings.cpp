@@ -76,6 +76,7 @@ struct UiColorHarness {
     NvimConnector conn;
     WindowChrome chrome;
     QQmlApplicationEngine engine;
+    QQuickItem *editorPane = nullptr;
     QQuickItem *input = nullptr;
     bool paletteReadyAtFirstVisibility = false;
     QQuickItem *panel = nullptr;
@@ -98,9 +99,10 @@ struct UiColorHarness {
                                                 window->color() == colors->frame();
             }
         });
+        editorPane = window->findChild<QQuickItem *>(QStringLiteral("editorPane"));
         input = window->findChild<QQuickItem *>(QStringLiteral("chatInput"));
         panel = window->findChild<QQuickItem *>(QStringLiteral("chatPanel"));
-        if(!input || !panel) return false;
+        if(!editorPane || !input || !panel) return false;
         if(!waitForVisible) return true;
         return QTest::qWaitForWindowExposed(window) && paletteReadyAtFirstVisibility;
     }
@@ -159,6 +161,8 @@ private slots:
         const QColor frame = colors->frame();
         QVERIFY(ui.openChat());
         QVERIFY(ui.defineColors());
+        // Resting resolves through PmenuSbar, which links to Pmenu; chrome publishes after content.
+        QTRY_COMPARE(colors->resting(), QColor("#2f323a"));
         const QColor resting = colors->resting();
         auto *cursor = ui.window->findChild<CursorItem *>();
         auto *grid = ui.window->findChild<GridItem *>();
@@ -168,6 +172,7 @@ private slots:
         QCOMPARE(colors->theme(), theme);
         QCOMPARE(ui.window->color(), frame);
         QCOMPARE(ui.panel->property("color").value<QColor>(), QColor("#1c1f25"));
+        QCOMPARE(ui.editorPane->property("color").value<QColor>(), colors->paneBackground());
         QCOMPARE(ui.panel->opacity(), qreal(1));
         QCOMPARE(ui.input->property("color").value<QColor>(), QColor("#b5e3c8"));
         QCOMPARE(inputRow->property("color").value<QColor>(), resting);
@@ -186,6 +191,7 @@ private slots:
         QTRY_COMPARE(ui.input->property("color").value<QColor>(), QColor(0, 0, 0));
         QVERIFY(!published.isEmpty());
         QCOMPARE(ui.panel->property("color").value<QColor>(), QColor(Qt::white));
+        QCOMPARE(ui.editorPane->property("color").value<QColor>(), colors->paneBackground());
         QCOMPARE(ui.window->color(), frame);
         QCOMPARE(inputRow->property("color").value<QColor>(), resting);
         QCOMPARE(ui.window->findChild<QQuickItem *>(QStringLiteral("chatInput")), ui.input);
@@ -645,6 +651,7 @@ end)
             pk.pack(0);
         }));
         QCOMPARE(ui.input->property("color").value<QColor>(), oldForeground);
+        QCOMPARE(ui.editorPane->opacity(), qreal(1));
         QCOMPARE(ui.panel->opacity(), qreal(1));
         QCOMPARE(shell->opacity(), qreal(1));
         QTest::ignoreMessage(QtCriticalMsg, "ColorPalette: pane: missing foreground");
@@ -652,6 +659,7 @@ end)
         QVERIFY(redrawEvent(ui.conn, "flush", [](auto &pk) { pk.pack_array(0); }));
 
         QVERIFY(!colors->paneValid());
+        QCOMPARE(ui.editorPane->opacity(), qreal(0));
         QCOMPARE(ui.panel->opacity(), qreal(0));
         QCOMPARE(shell->opacity(), qreal(0));
         QCOMPARE(ui.window->activeFocusItem(), ui.input);
@@ -659,6 +667,7 @@ end)
                  QStringList{ QStringLiteral("pane: missing foreground") });
         ui.conn.command(QStringLiteral("highlight Normal guifg=#b5e3c9 guibg=#1c1f26"));
         QTRY_COMPARE(ui.panel->opacity(), qreal(1));
+        QCOMPARE(ui.editorPane->opacity(), qreal(1));
         QCOMPARE(shell->opacity(), qreal(1));
         QCOMPARE(ui.input->property("color").value<QColor>(), QColor("#b5e3c9"));
         QCOMPARE(ui.window->activeFocusItem(), ui.input);
@@ -701,6 +710,7 @@ end
         connect(colors, &ColorPalette::paletteChanged, &ui.conn, [&] {
             if(!colors->paneValid()) {
                 sawInvalid = true;
+                QCOMPARE(ui.editorPane->opacity(), qreal(0));
                 QVERIFY(!colors->chromeValid());
                 QVERIFY(!colors->frame().isValid());
                 QVERIFY(colors->theme().isEmpty());
@@ -715,6 +725,8 @@ end
             return sawInvalid && ui.conn.attached() && colors->chromeValid() &&
                    colors->paneValid() && colors->paneBackground() != QColor("#1c1f25");
         }, 20000));
+        QCOMPARE(ui.editorPane->opacity(), qreal(1));
+        QCOMPARE(ui.editorPane->property("color").value<QColor>(), colors->paneBackground());
         QTRY_COMPARE(colors->theme(), QStringLiteral("dark"));
         const auto newPid = evalSync(ui.conn, QStringLiteral("getpid()"));
         QVERIFY(newPid);
