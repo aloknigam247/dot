@@ -26,11 +26,20 @@ if ($reportFiles.Count -ne 2) { throw "Expected two real coverage artifacts." }
 $entries = @(
     for ($i = 0; $i -lt $workspaces.Count; $i++) {
         $relativeReport = Get-RepoRelativePath (Join-Path $directory $reportFiles[$i].Name)
-        Copy-Item -LiteralPath $reportFiles[$i].FullName -Destination (Join-Path $repoRoot $relativeReport)
+        $root = Get-RepoRelativePath $workspaces[$i].Root
+        $copy = Join-Path $repoRoot $relativeReport
+        [xml]$raw = Get-Content -Raw -LiteralPath $reportFiles[$i].FullName
+        foreach ($class in $raw.SelectNodes("//class")) {
+            $filename = $class.GetAttribute("filename")
+            if ($filename.StartsWith("$root/", [StringComparison]::Ordinal)) {
+                $class.SetAttribute("filename", $filename.Substring($root.Length + 1).Replace("/", "\"))
+            }
+        }
+        $raw.Save($copy)
         [pscustomobject]@{
             hasProductionPackage = $true
             report = $relativeReport
-            root = Get-RepoRelativePath $workspaces[$i].Root
+            root = $root
         }
     }
 )
@@ -75,38 +84,78 @@ try {
     Assert-Rejection "no mapped production classes" "contains no classes" {
         Normalize-CoberturaReport $sample $sourceInfo $samplePath
     }
-    $badPath = "$($sample.root)/src/not_tracked.rs"
+    $badPath = "src\not_tracked.rs"
     $untrackedSource = "<coverage><packages><package><classes><class filename='$badPath'><lines><line number='1' hits='1'/>" +
         "</lines></class></classes></package></packages></coverage>"
     [IO.File]::WriteAllText($samplePath, $untrackedSource)
     Assert-Rejection "unmapped production source" "not in the tracked source map" {
         Normalize-CoberturaReport $sample $sourceInfo $samplePath
     }
-    $ambiguous = [pscustomobject]@{ root = "rust_fixture/multi"; packageRoots = @("rust_fixture/multi/left",
+    $multi = [pscustomobject]@{ root = "rust_fixture/multi"; packageRoots = @("rust_fixture/multi/left",
         "rust_fixture/multi/members/right") }
     $sources = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($root in $ambiguous.packageRoots) { [void]$sources.Add("$root/src/lib.rs") }
-    Assert-Rejection "ambiguous source" "maps to multiple production sources" {
-        Get-ProductionSourceKey "src/lib.rs" $ambiguous $sources
+    foreach ($root in $multi.packageRoots) { [void]$sources.Add("$root/src/lib.rs") }
+    $resolved = Get-ProductionSourceKey "left\src\lib.rs" $multi $sources
+    if ($resolved -cne "rust_fixture/multi/left/src/lib.rs") { throw "Relative source resolved to '$resolved'." }
+    Write-Host "Verified relative Cobertura source resolves against the workspace root: $resolved"
+    $exclusionCases = [ordered]@{
+        "crates/a/src/tests/helpers.rs" = "'tests' directory"
+        "crates/a/tests/it.rs" = "'tests' directory"
+        "crates/tests/src/lib.rs" = $null
+        "examples/demo.rs" = "'examples' directory"
+        "fixtures/sample.rs" = $null
+        "src/session/tests.rs" = "tests.rs unit-test module"
+        "src/tests_util.rs" = $null
     }
+    foreach ($path in $exclusionCases.Keys) {
+        $reason = Get-SourceExclusionReason $path @(".", "crates/a", "crates/tests")
+        if ($reason -cne $exclusionCases[$path]) { throw "Exclusion for '$path' was '$reason'." }
+    }
+    Write-Host "Verified innermost-package exclusions for $($exclusionCases.Count) paths."
     $conventionPath = "rust_fixture/standalone/src/convention_probe.rs"
     $conventionFile = Join-Path $repoRoot $conventionPath
     $conventionCases = [ordered]@{
-        "inline test module" = "#[cfg(test)]`nmod inline_checks {}`n"
-        "same-line inline test item" = "#[cfg(test)] fn helper() {}`n"
-        "unconditional tests module" = "mod tests;`n"
+        "all(test) predicate" = @("#[cfg(all(test, windows))]`nmod x {}`n", "1: test cfg predicate")
+        "cfg_attr(test)" = @("#[cfg_attr(test, derive(Debug))]`nstruct S;`n", "1: test cfg predicate")
+        "cfg(test) before another attribute" = @("#[cfg(test)]`n#[path = `"x.rs`"]`nmod tests;`n",
+            "1: test cfg predicate")
+        "inline test module" = @("#[cfg(test)]`nmod inline_checks {}`n", "1: test cfg predicate")
+        "inline tests module" = @("#[cfg(test)]`nmod tests {}`n", "2: tests module not declared")
+        "inner cfg(test)" = @("#![cfg(test)]`nmod tests;`n", "1: test cfg predicate")
+        "multi-line cfg" = @("#[cfg(`n    any(unix, test)`n)]`nfn f() {}`n", "1: test cfg predicate")
+        "not(test) predicate" = @("#[cfg(not(test))]`nfn f() {}`n", "1: test cfg predicate")
+        "same-line inline test item" = @("#[cfg(test)] fn helper() {}`n", "1: test cfg predicate")
+        "test attribute" = @("fn f() {}`n#[test]`nfn t() {}`n", "2: test attribute")
+        "tokio test attribute" = @("#[tokio::test(flavor = `"multi_thread`")]`nasync fn t() {}`n",
+            "1: test attribute")
+        "unconditional tests module" = @("mod tests;`n", "1: tests module not declared")
     }
     foreach ($case in $conventionCases.Keys) {
-        [IO.File]::WriteAllText($conventionFile, $conventionCases[$case])
-        Assert-Rejection $case "${conventionPath}:1: Rust unit tests must live in a tests.rs module" {
+        [IO.File]::WriteAllText($conventionFile, $conventionCases[$case][0])
+        Assert-Rejection $case "${conventionPath}:$($conventionCases[$case][1])" {
             Assert-UnitTestModuleConvention $conventionPath
         }
     }
-    foreach ($accepted in @("#[cfg(test)]`nmod tests;`n", "pub fn f() {}`n#[cfg(test)] mod tests; // unit`n")) {
+    $ignoredText = @(
+        "// #[test]",
+        "/* #[cfg(test)] /* nested */ mod tests { */",
+        "const S: &str = `"#[test] mod tests {`";",
+        "const R: &str = r#`"#[cfg(test)] `" mod tests {`"#;",
+        "const C: char = '`"';",
+        "fn f<'a>(x: &'a str) -> &'a str { x }",
+        "#[cfg(feature = `"test`")]",
+        "fn g() {}",
+        "#[test_case]",
+        "fn h() {}",
+        "#[cfg(test)]",
+        "pub(crate) mod tests;"
+    ) -join "`n"
+    foreach ($accepted in @("#[cfg(test)]`nmod tests;`n", "pub fn f() {}`n#[cfg(test)] mod tests; // unit`n",
+        $ignoredText)) {
         [IO.File]::WriteAllText($conventionFile, $accepted)
         Assert-UnitTestModuleConvention $conventionPath
     }
-    Write-Host "Verified accepted tests.rs module declarations."
+    Write-Host "Verified accepted tests.rs module declarations, comments, and literals."
     Remove-Item -LiteralPath $conventionFile
 } finally {
     foreach ($entry in $entries) {

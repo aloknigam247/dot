@@ -110,45 +110,97 @@ function Invoke-NativeCommand([string]$workingDirectory, [string]$executable, [s
     }
 }
 
-function Get-SourceExclusionReason([string]$relativePath) {
-    $excludedDirectories = @(
-        "benches", "examples", "fixtures", "generated", "target", "tests",
-        "third-party", "third_party", "vendor"
-    )
-    $segments = $relativePath.Replace("\", "/").Split("/")
-    foreach ($segment in $segments) {
-        if ($excludedDirectories -contains $segment.ToLowerInvariant()) { return "'$segment' directory" }
-    }
-    if ([IO.Path]::GetFileName($relativePath) -match "(?i)(^|[-_])generated\.rs$") { return "generated file name" }
-    if ([IO.Path]::GetFileName($relativePath) -eq "tests.rs") { return "tests.rs unit-test module" }
+function Get-SourceExclusionReason([string]$relativePath, [string[]]$packageRoots) {
+    $path = $relativePath.Replace("\", "/")
+    $packageRoot = $packageRoots |
+        Where-Object { $_ -eq "." -or $path.StartsWith("$_/", [StringComparison]::OrdinalIgnoreCase) } |
+        Sort-Object { if ($_ -eq ".") { 0 } else { $_.Length } } -Descending |
+        Select-Object -First 1
+    if (-not $packageRoot) { return $null }
 
-    $sourcePath = Join-Path $repoRoot $relativePath
-    if (Test-Path -LiteralPath $sourcePath) {
-        $header = @(Get-Content -LiteralPath $sourcePath -TotalCount 8) -join "`n"
-        if ($header -match "@generated") { return "@generated header" }
+    $packagePath = if ($packageRoot -eq ".") { $path } else { $path.Substring($packageRoot.Length + 1) }
+    foreach ($segment in ($packagePath.Split("/") | Select-Object -SkipLast 1)) {
+        if (@("benches", "examples", "tests") -contains $segment) { return "'$segment' directory" }
     }
+    if ([IO.Path]::GetFileName($path) -eq "tests.rs") { return "tests.rs unit-test module" }
     return $null
 }
 
+# Blanks comments and string/char literals, keeping offsets and line breaks, so item checks see only code.
+function Get-RustCodeText([string]$source) {
+    $position = 0
+    $token = [regex]('//[^\n]*|/\*|(?<!\w)[bc]?r(#*)"[\s\S]*?"\1|"(?:[^"\\]|\\[\s\S])*"' +
+        "|'(?:[^'\\\n]|\\'|\\[^'\n][^'\n]*)'")
+    $builder = [Text.StringBuilder]::new($source.Length)
+    while ($position -lt $source.Length) {
+        $match = $token.Match($source, $position)
+        if (-not $match.Success) { break }
+        $end = $match.Index + $match.Length
+        if ($match.Value -eq "/*") {
+            $depth = 1
+            while ($depth -gt 0) {
+                $close = $source.IndexOf("*/", $end, [StringComparison]::Ordinal)
+                $open = $source.IndexOf("/*", $end, [StringComparison]::Ordinal)
+                if ($close -lt 0) {
+                    $end = $source.Length
+                    break
+                }
+                if ($open -ge 0 -and $open -lt $close) {
+                    $depth++
+                    $end = $open + 2
+                } else {
+                    $depth--
+                    $end = $close + 2
+                }
+            }
+        }
+        [void]$builder.Append($source, $position, $match.Index - $position)
+        [void]$builder.Append(($source.Substring($match.Index, $end - $match.Index) -replace "[^\r\n]", " "))
+        $position = $end
+    }
+    if ($position -lt $source.Length) { [void]$builder.Append($source, $position, $source.Length - $position) }
+    return $builder.ToString()
+}
+
 function Assert-UnitTestModuleConvention([string]$relativePath) {
-    $sourceLines = @(Get-Content -LiteralPath (Join-Path $repoRoot $relativePath))
-    $cfgTest = '^\s*#\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*'
-    $testsModule = '^(?:pub\b(?:\s*\([^)]*\))?\s*)?mod\s+tests\s*;\s*(?://.*)?$'
-    for ($index = 0; $index -lt $sourceLines.Count; $index++) {
-        $line = [string]$sourceLines[$index]
-        $previous = if ($index -gt 0) { [string]$sourceLines[$index - 1] } else { "" }
-        $next = if ($index + 1 -lt $sourceLines.Count) { ([string]$sourceLines[$index + 1]).Trim() } else { "" }
-        $violation = if ($line -match $cfgTest) {
-            $item = $line -replace $cfgTest, ""
-            if (-not $item) { $item = $next }
-            $item -notmatch $testsModule
-        } else {
-            $line.Trim() -match $testsModule -and $previous -notmatch "$cfgTest`$"
+    $allowedModules = [System.Collections.Generic.HashSet[int]]::new()
+    $testsModule = [regex]'\G\s*(?:pub\b(?:\s*\([^)]*\))?\s*)?(mod\s+tests\s*;)'
+    $violations = [System.Collections.Generic.List[string]]::new()
+    $code = Get-RustCodeText ([IO.File]::ReadAllText((Join-Path $repoRoot $relativePath)))
+    $getLine = { param([int]$offset) $code.Substring(0, $offset).Split("`n").Count }
+
+    foreach ($attribute in ([regex]'#\s*(!\s*)?\[').Matches($code)) {
+        $depth = 1
+        $contentStart = $attribute.Index + $attribute.Length
+        $end = $contentStart
+        while ($depth -gt 0 -and $end -lt $code.Length) {
+            if ($code[$end] -eq "[") { $depth++ } elseif ($code[$end] -eq "]") { $depth-- }
+            $end++
         }
-        if ($violation) {
-            throw ("{0}:{1}: Rust unit tests must live in a tests.rs module declared as '#[cfg(test)] mod tests;'." -f
-                $relativePath, ($index + 1))
+        $content = $code.Substring($contentStart, $end - $contentStart - [int]($depth -eq 0)) -replace "\s+", ""
+        $reason = if ($content -cmatch '^(?:::)?(?:\w+::)*test(?:\(|$)') {
+            "test attribute"
+        } elseif ($content -cmatch '^cfg(?:_attr)?\(' -and $content -cmatch '\btest\b') {
+            $module = $testsModule.Match($code, $end)
+            if ($content -ceq "cfg(test)" -and -not $attribute.Groups[1].Success -and $module.Success) {
+                [void]$allowedModules.Add($module.Groups[1].Index)
+                $null
+            } else {
+                "test cfg predicate"
+            }
         }
+        if ($reason) { $violations.Add("${relativePath}:$(& $getLine $attribute.Index): $reason") }
+    }
+    foreach ($module in ([regex]'\bmod\s+tests\b').Matches($code)) {
+        if (-not $allowedModules.Contains($module.Index)) {
+            $violations.Add(
+                "${relativePath}:$(& $getLine $module.Index): tests module not declared as '#[cfg(test)] mod tests;'"
+            )
+        }
+    }
+    if ($violations.Count -gt 0) {
+        throw ("Rust unit tests must live in a tests.rs module declared as '#[cfg(test)] mod tests;':`n  " +
+            ($violations -join "`n  "))
     }
 }
 
@@ -161,16 +213,16 @@ function Get-ProductionFiles($workspace) {
     }
 
     $paths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $packageRoots = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $excludedSources = [System.Collections.Generic.SortedDictionary[string, string]]::new(
         [StringComparer]::OrdinalIgnoreCase
     )
     $hasProductionPackage = $false
+    $packageRoots = @($workspace.Packages | ForEach-Object {
+        Get-RepoRelativePath ([IO.Path]::GetDirectoryName([string]$_.manifest_path))
+    } | Sort-Object -Unique)
 
     foreach ($package in $workspace.Packages) {
-        $packageRoot = [IO.Path]::GetDirectoryName([string]$package.manifest_path)
-        $packageRelativeRoot = Get-RepoRelativePath $packageRoot
-        [void]$packageRoots.Add($packageRelativeRoot)
+        $packageRelativeRoot = Get-RepoRelativePath ([IO.Path]::GetDirectoryName([string]$package.manifest_path))
         $productionTargets = @($package.targets | Where-Object {
             $kind = @($_.kind)
             @("bin", "cdylib", "dylib", "lib", "proc-macro", "rlib", "staticlib") |
@@ -181,7 +233,7 @@ function Get-ProductionFiles($workspace) {
 
         foreach ($target in $productionTargets) {
             $targetPath = Get-RepoRelativePath ([string]$target.src_path)
-            $exclusionReason = Get-SourceExclusionReason $targetPath
+            $exclusionReason = Get-SourceExclusionReason $targetPath $packageRoots
             if ($exclusionReason) {
                 $excludedSources[$targetPath] = $exclusionReason
                 continue
@@ -197,7 +249,7 @@ function Get-ProductionFiles($workspace) {
                 -not $trackedPath.StartsWith("$packageRelativeRoot/", [StringComparison]::OrdinalIgnoreCase)) {
                 continue
             }
-            $exclusionReason = Get-SourceExclusionReason $trackedPath
+            $exclusionReason = Get-SourceExclusionReason $trackedPath $packageRoots
             if ($exclusionReason) {
                 $excludedSources[$trackedPath] = $exclusionReason
                 continue
@@ -208,14 +260,14 @@ function Get-ProductionFiles($workspace) {
 
     $files = @($paths | Sort-Object)
     foreach ($path in $files) { Assert-UnitTestModuleConvention $path }
-    $excludedSourceEntries = @($excludedSources.GetEnumerator() | Where-Object { -not $paths.Contains($_.Key) } |
+    $excludedSourceEntries = @($excludedSources.GetEnumerator() |
         ForEach-Object { [pscustomobject]@{ path = $_.Key; reason = $_.Value } })
 
     return [pscustomobject]@{
         ExcludedSources = $excludedSourceEntries
         Files = $files
         HasProductionPackage = $hasProductionPackage
-        PackageRoots = @($packageRoots | Sort-Object)
+        PackageRoots = $packageRoots
     }
 }
 
@@ -224,44 +276,24 @@ function Get-ProductionSourceKey(
     $workspace,
     [System.Collections.Generic.HashSet[string]]$workspaceFiles
 ) {
-    $normalizedName = $filename.Replace("\", "/")
-    $candidatePaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $workspaceRoot = Join-Path $repoRoot ([string]$workspace.root)
-
-    if ([IO.Path]::IsPathRooted($filename)) {
-        $absolute = [IO.Path]::GetFullPath($filename)
-        try {
-            [void]$candidatePaths.Add((Get-RepoRelativePath $absolute))
-        } catch {
-            return $null
-        }
+    # cargo-llvm-cov writes Cobertura filenames relative to the workspace root it runs in.
+    $absolute = if ([IO.Path]::IsPathRooted($filename)) {
+        $filename
     } else {
-        try { [void]$candidatePaths.Add((Get-RepoRelativePath (Join-Path $repoRoot $normalizedName))) } catch {}
-        try { [void]$candidatePaths.Add((Get-RepoRelativePath (Join-Path $workspaceRoot $normalizedName))) } catch {}
-        foreach ($packageRoot in $workspace.packageRoots) {
-            $packagePath = Join-Path $repoRoot ([string]$packageRoot)
-            try { [void]$candidatePaths.Add((Get-RepoRelativePath (Join-Path $packagePath $normalizedName))) } catch {}
-        }
+        Join-Path (Join-Path $repoRoot ([string]$workspace.root)) $filename
     }
-
-    $matches = @($candidatePaths | Where-Object { $workspaceFiles.Contains($_) })
-    if ($matches.Count -gt 1) {
-        throw "Cobertura path '$filename' maps to multiple production sources: $($matches -join ', ')."
+    try {
+        $candidate = Get-RepoRelativePath $absolute
+    } catch {
+        return $null
     }
-    if ($matches.Count -eq 1) { return $matches[0] }
+    if ($workspaceFiles.Contains($candidate)) { return $candidate }
 
-    foreach ($candidate in $candidatePaths) {
-        foreach ($packageRoot in $workspace.packageRoots) {
-            $insidePackage = if ($packageRoot -eq ".") {
-                $candidate -ne "."
-            } else {
-                $candidate.StartsWith("$packageRoot/", [StringComparison]::OrdinalIgnoreCase)
-            }
-            if ($insidePackage -and
-                -not (Get-SourceExclusionReason $candidate)) {
-                throw "Cobertura production source is not in the tracked source map: $filename ($candidate)."
-            }
-        }
+    $insidePackage = @($workspace.packageRoots | Where-Object {
+        $_ -eq "." -or $candidate.StartsWith("$_/", [StringComparison]::OrdinalIgnoreCase)
+    }).Count -gt 0
+    if ($insidePackage -and -not (Get-SourceExclusionReason $candidate $workspace.packageRoots)) {
+        throw "Cobertura production source is not in the tracked source map: $filename ($candidate)."
     }
     return $null
 }
@@ -506,9 +538,6 @@ if ($Run) {
         )
         Invoke-NativeCommand $workspace.Root "cargo" @("build", "--workspace", "--locked")
         Invoke-NativeCommand $workspace.Root "cargo" @("build", "--workspace", "--release", "--locked")
-        Invoke-NativeCommand $workspace.Root "cargo" @(
-            "test", "--workspace", "--locked", "--no-fail-fast"
-        )
 
         if ($workspace.Packages.Count -gt 1) {
             foreach ($package in $workspace.Packages) {
@@ -522,7 +551,7 @@ if ($Run) {
 
         $reportPath = Join-Path $repoRoot $entry.report
         Invoke-NativeCommand $workspace.Root "cargo" @(
-            "llvm-cov", "--workspace", "--all-targets", "--locked", "--cobertura",
+            "llvm-cov", "--workspace", "--all-targets", "--locked", "--no-fail-fast", "--cobertura",
             "--output-path", $reportPath
         )
         Normalize-CoberturaReport $entry $sourceInfo $reportPath
