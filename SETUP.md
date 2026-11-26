@@ -114,7 +114,7 @@ The following sections cover the Neovim runtime and contributor-only CI/coverage
 
 ### CI trigger boundaries
 
-[Desktop CI](.github/workflows/ci.yml), [Copilot bridge CI](.github/workflows/copilot-bridge-ci.yml), and
+[Desktop CI](.github/workflows/ci.yml), [Rust CI](.github/workflows/rust-ci.yml), and
 [Android CI](.github/workflows/android-ci.yml) use native path filters following the
 [repository layout](README.md#repository-layout). Shared changes run Desktop and Android CI; documentation inside an
 included component directory also runs its validation. Unrelated root documentation and design changes do not start
@@ -202,7 +202,9 @@ cargo build --locked
 cargo test --locked
 ```
 
-[Copilot bridge CI](.github/workflows/copilot-bridge-ci.yml) also checks formatting and lints.
+[Rust CI](.github/workflows/rust-ci.yml) also checks formatting, lints, and production coverage. Put unit tests in a
+`tests.rs` module declared as `#[cfg(test)] mod tests;`; CI rejects other test attributes, test `cfg` predicates, and
+`tests` modules in production sources.
 
 ## Troubleshooting
 

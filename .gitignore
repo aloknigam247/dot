@@ -19,6 +19,7 @@ compile_commands.json
 qtquickcontrols2.conf
 tmp/
 .worktree/
+_rust_ci/
 
 # Android / Gradle
 .gradle/

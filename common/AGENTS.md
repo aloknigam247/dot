@@ -23,5 +23,6 @@ Shared-path changes may affect both components according to the release configur
 ## Coverage
 
 [coverage_patch.ps1](scripts/coverage_patch.ps1) checks changed executable lines against Cobertura or JaCoCo reports.
-Its parameter help defines report/path mapping; use the consuming [Android](../.github/workflows/android-ci.yml) and
-[desktop](../.github/workflows/ci.yml) workflow calls for component-specific arguments.
+Its parameter help defines report/path mapping; use the consuming [Android](../.github/workflows/android-ci.yml),
+[desktop](../.github/workflows/ci.yml), and [Rust](../.github/workflows/rust-ci.yml) workflow calls for
+component-specific arguments.
