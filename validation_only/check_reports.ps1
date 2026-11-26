@@ -55,13 +55,19 @@ try {
     }
     $env:DOT_RUST_COVERAGE_FLOOR = "100"
     Assert-Rejection "below measured floor" "is below the committed floor" { Write-CoverageSummary $entries }
+    $overlap = [pscustomobject]@{
+        coverable = 1
+        covered = 1
+        hasProductionPackage = $true
+        root = "rust_fixture/overlap"
+        sources = @(([string]$entries[0].sources[0]).ToUpperInvariant())
+    }
+    Assert-Rejection "source measured by two workspaces" "is measured by workspaces '$($entries[0].root)'" {
+        Write-CoverageSummary @($entries[0], $overlap)
+    }
     Remove-Item -LiteralPath $samplePath
     Assert-Rejection "missing one workspace report" "missing for workspace '$($sample.root)'" {
         Normalize-CoberturaReport $sample $sourceInfo $samplePath
-    }
-    Assert-Rejection "other src/lib.rs cannot replace missing report" "missing for workspace '$($sample.root)'" {
-        $fresh = @($entries | Select-Object hasProductionPackage,report,root)
-        Write-CoverageSummary $fresh
     }
     [IO.File]::WriteAllText($samplePath, "")
     Assert-Rejection "empty report" "empty for workspace" { Normalize-CoberturaReport $sample $sourceInfo $samplePath }
