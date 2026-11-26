@@ -53,7 +53,7 @@ try {
         }
         Write-Host "Verified normalized report $($entries[$i].root): $covered/$($lines.Count) production lines."
     }
-    $env:DOT_RUST_COVERAGE_FLOOR = "100"
+    $CoverageFloor = 100
     Assert-Rejection "below measured floor" "is below the committed floor" { Write-CoverageSummary $entries }
     $overlap = [pscustomobject]@{
         coverable = 1
@@ -85,11 +85,29 @@ try {
     $ambiguous = [pscustomobject]@{ root = "rust_fixture/multi"; packageRoots = @("rust_fixture/multi/left",
         "rust_fixture/multi/members/right") }
     $sources = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $excluded = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($root in $ambiguous.packageRoots) { [void]$sources.Add("$root/src/lib.rs") }
     Assert-Rejection "ambiguous source" "maps to multiple production sources" {
-        Get-ProductionSourceKey "src/lib.rs" $ambiguous $sources $excluded
+        Get-ProductionSourceKey "src/lib.rs" $ambiguous $sources
     }
+    $conventionPath = "rust_fixture/standalone/src/convention_probe.rs"
+    $conventionFile = Join-Path $repoRoot $conventionPath
+    $conventionCases = [ordered]@{
+        "inline test module" = "#[cfg(test)]`nmod inline_checks {}`n"
+        "same-line inline test item" = "#[cfg(test)] fn helper() {}`n"
+        "unconditional tests module" = "mod tests;`n"
+    }
+    foreach ($case in $conventionCases.Keys) {
+        [IO.File]::WriteAllText($conventionFile, $conventionCases[$case])
+        Assert-Rejection $case "${conventionPath}:1: Rust unit tests must live in a tests.rs module" {
+            Assert-UnitTestModuleConvention $conventionPath
+        }
+    }
+    foreach ($accepted in @("#[cfg(test)]`nmod tests;`n", "pub fn f() {}`n#[cfg(test)] mod tests; // unit`n")) {
+        [IO.File]::WriteAllText($conventionFile, $accepted)
+        Assert-UnitTestModuleConvention $conventionPath
+    }
+    Write-Host "Verified accepted tests.rs module declarations."
+    Remove-Item -LiteralPath $conventionFile
 } finally {
     foreach ($entry in $entries) {
         $reportPath = Join-Path $repoRoot $entry.report

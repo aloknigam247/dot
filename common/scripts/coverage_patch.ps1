@@ -52,9 +52,6 @@
     JaCoCo only: repo-relative source root prepended to "<package>/<sourcefile>"
     to reconstruct a report line's repo-relative path so it matches git's paths.
 
-.PARAMETER CoberturaPathsAreRepoRelative
-    Cobertura filenames are already normalized repository-relative paths.
-
 .PARAMETER MinPatchRatio
     Required covered/considered ratio for changed lines. Defaults to 1.0 (100%).
 #>
@@ -65,7 +62,6 @@ param(
     [ValidateSet("cobertura", "jacoco")][string]$Format = "cobertura",
     [string[]]$DiffPath = @("desktop/include", "desktop/src", "include", "src"),
     [string]$SourceRoot = "android/app/src/main/java",
-    [switch]$CoberturaPathsAreRepoRelative,
     [double]$MinPatchRatio = 1.0
 )
 
@@ -76,18 +72,8 @@ $ErrorActionPreference = "Stop"
 function Get-MatchKey([string]$path) { return $path.Replace("\", "/").ToLowerInvariant() }
 
 function Get-CoberturaKey([string]$path) {
-    if ($CoberturaPathsAreRepoRelative) {
-        if ([IO.Path]::IsPathRooted($path) -or $path.Replace("\", "/") -match "(^|/)\.\.?(/|$)") {
-            throw "Expected a normalized repository-relative Cobertura path: '$path'."
-        }
-        return Get-MatchKey $path
-    }
-
     $absolute = [IO.Path]::GetFullPath($path, $repoRoot)
-    $relative = [IO.Path]::GetRelativePath($repoRoot, $absolute)
-    $key = Get-MatchKey $relative
-    if ($key -match "^desktop/(src|include)/.+$") { return $key }
-    return $null
+    return Get-MatchKey ([IO.Path]::GetRelativePath($repoRoot, $absolute))
 }
 
 $repoRoot = git rev-parse --show-toplevel
@@ -95,11 +81,6 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
     throw "Could not resolve the repository root."
 }
 $repoRoot = [IO.Path]::GetFullPath($repoRoot.Trim())
-
-if ($CoberturaPathsAreRepoRelative -and $Format -ne "cobertura") {
-    throw "CoberturaPathsAreRepoRelative can only be used with Cobertura reports."
-}
-
 $mergeBase = (git -C $repoRoot merge-base $BaseRef HEAD).Trim()
 if (-not $mergeBase) { Write-Error "could not find merge-base of $BaseRef and HEAD."; exit 1 }
 Write-Host "patch coverage ($Format): diffing $mergeBase..HEAD over $($DiffPath -join ', ')"
