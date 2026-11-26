@@ -13,7 +13,7 @@ mod inline_checks {
 }
 
 pub fn uncalled() -> u32 {
-    19
+    31
 }
 
 pub fn answer() -> u32 {
