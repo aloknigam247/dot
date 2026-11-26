@@ -200,6 +200,12 @@ NvimConnector       decodes and dispatches redraw events (grid_line, grid_scroll
 `NvimConnector` exposes redraw notifications as `Q_SIGNAL`s that the QML shell connects to
 directly — there is no imperative pull from QML back into RPC state.
 
+The chat toggle sits in a band above the panes. A 4px frame gap surrounds and separates them. The editor grid sits
+6px inside its pane, with its left and top edges rounded up to a whole device pixel. The grid fits as many whole
+font cells as that rectangle holds, with a 12-column, 3-row minimum; smaller windows clip the grid. Neovim-requested
+sizes of at least 3 rows resize the window to fit. Cell edges also align to device pixels at display scales where
+cell sizes snap, including 125%, 150%, and 175%.
+
 [`ColorPalette`](desktop/include/ColorPalette.h) resolves `HighlightTable` and `ModeInfo` into complete content-color
 pairs before each redraw `flush`, alongside a complete Neovim-owned chrome snapshot. QML and `CursorItem` read these
 cached properties.

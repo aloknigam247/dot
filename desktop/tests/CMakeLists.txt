@@ -1,3 +1,5 @@
+find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+
 set(DOT_TEST_DLL_PATH       "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
 set(DOT_TEST_QPA_PLUGIN_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins/platforms")
 set(DOT_TEST_QML_IMPORT_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/Qt6/qml")
@@ -153,10 +155,10 @@ target_link_libraries(test_visual_on_drag PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_wheel_scroll                  integration/test_wheel_scroll.cpp)
 target_link_libraries(test_wheel_scroll PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_window_snap                   integration/test_window_snap.cpp)
-target_link_libraries(test_window_snap PRIVATE dot_libplugin Qt6::Quick)
+target_link_libraries(test_window_snap PRIVATE dot_libplugin Qt6::GuiPrivate Qt6::Quick)
 
 # test_runtime_set_options loads Main.qml under one of its cases.
-target_link_libraries(test_runtime_set_options PRIVATE dot_libplugin Qt6::Quick)
+target_link_libraries(test_runtime_set_options PRIVATE dot_libplugin Qt6::GuiPrivate Qt6::Quick)
 
 # User-POV smoke harness loads Main.qml in a real QQuickWindow and drives it
 # via QTest::keyClick — exercises the full focus chain, not just the connector.

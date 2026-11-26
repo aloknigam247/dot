@@ -35,6 +35,7 @@ class GridItem : public QQuickItem {
     Q_PROPERTY(qreal cellBaseline READ baseline NOTIFY fontChanged)
     Q_PROPERTY(bool debugOverlay READ debugOverlay WRITE setDebugOverlay NOTIFY debugOverlayChanged)
     Q_PROPERTY(QFont textFont READ textFont NOTIFY fontChanged)
+    Q_PROPERTY(qreal metricsDpr READ metricsDpr NOTIFY fontChanged)
 
 public:
     explicit GridItem(QQuickItem *parent = nullptr);
@@ -55,12 +56,14 @@ public:
     qreal cellWidth() const { return m_cellWidth; }
     qreal cellHeight() const { return m_cellHeight; }
     qreal baseline() const { return m_baseline; }
+    qreal metricsDpr() const { return m_metricsDpr; }
 
     bool debugOverlay() const { return m_debugOverlay; }
     void setDebugOverlay(bool v);
 
     const QFont &textFont() const { return m_font; }
 
+    Q_INVOKABLE QSize cellsForSize(const QSizeF &size) const;
     Q_INVOKABLE int colAt(qreal x) const;
     Q_INVOKABLE int rowAt(qreal y) const;
 
@@ -127,6 +130,7 @@ private:
     qreal m_baseline = 12.0;
     bool m_debugOverlay = false;
     int m_linespace = 0;
+    qreal m_metricsDpr = 1.0;
 
     // Scene-graph state. Owned by the grid-layer roots (which Qt destroys),
     // so these are observing pointers only — they are dropped, never deleted,

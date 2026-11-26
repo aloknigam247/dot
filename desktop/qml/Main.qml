@@ -19,8 +19,7 @@ Window {
         id: systemPalette
     }
 
-    // Target grid size requested by Component.onCompleted. Set once; the
-    // flush-listener below compares against this to decide when to show.
+    // Keep the first frame hidden until Neovim flushes the current startup target.
     property int _requestedCols: 0
     property int _requestedRows: 0
     property bool _shown: false
@@ -41,12 +40,9 @@ Window {
     // Recompute target (cols, rows) from the current window and cell dimensions.
     // Called at startup and again if guifont changes before the window is shown.
     function _recomputeTarget() {
-        const cw = Math.max(1, shell.cellWidth)
-        const ch = Math.max(1, shell.cellHeight)
-        const cols = Math.max(80, Math.floor(width  / cw))
-        const rows = Math.max(24, Math.floor(height / ch))
-        _requestedCols = cols
-        _requestedRows = rows
+        const cells = shell.metrics.cellsForWindow(window.width, window.height, chatPanel.visible)
+        _requestedCols = cells.width
+        _requestedRows = cells.height
     }
 
     // main.cpp fires nvim_ui_attach(80, 24) early (before this engine is
@@ -78,12 +74,7 @@ Window {
         const gr = g.gridRows(1)
         if (gc > 0 && gr > 0 && (_showSafetyExpired || (gc === _requestedCols && gr === _requestedRows))) {
             _shown = true
-            const cw = shell.cellWidth
-            const ch = shell.cellHeight
-            if (cw > 0 && ch > 0) {
-                window.width  = gc * cw
-                window.height = gr * ch
-            }
+            _applyNvimSize(gc, gr)
             window.visible = true
         }
     }
@@ -95,19 +86,27 @@ Window {
         window.visible = true
     }
 
-    // nvim changed grid 1's size itself (:set columns/lines). Resize the window
-    // client area to fit exactly, in the nvim->GUI direction — the inverse of
-    // _recomputeTarget (which derives the grid FROM the window). dockW mirrors
-    // the F11 handler: Shell ends at chatPanel.left, so the grid needs
-    // cols*cellWidth of Shell width, not window width.
+    // Invert the pane fit rather than adding the current chat width: a smaller
+    // requested window can cross the dock's half-window allocation threshold.
     function _applyNvimSize(cols, rows) {
         if (!_shown) return
-        const cw = shell.cellWidth
-        const ch = shell.cellHeight
-        if (cw <= 0 || ch <= 0) return
-        const dockW = chatPanel.visible ? chatPanel.width : 0
-        window.width  = cols * cw + dockW
-        window.height = rows * ch
+        const size = shell.metrics.windowSizeForGrid(cols, rows, chatPanel.visible)
+        window.width = size.width
+        window.height = size.height
+    }
+
+    function _toggleFullScreen() {
+        if (window.visibility === Window.FullScreen) {
+            window.visibility = Window.Windowed
+            return
+        }
+        // Fit Neovim in parallel with the OS fullscreen transition.
+        const scr = window.screen
+        if (scr) {
+            const cells = shell.metrics.cellsForWindow(scr.width, scr.height, chatPanel.visible)
+            $connector.tryResize(cells.width, cells.height)
+        }
+        window.visibility = Window.FullScreen
     }
 
     Connections {
@@ -211,39 +210,45 @@ Window {
         }
     }
 
+    Rectangle {
+        objectName: "editorPane"
+        readonly property rect bounds: shell.metrics.editorPaneRect(window.width, window.height, chatPanel.visible)
+        x: bounds.x
+        y: bounds.y
+        width: bounds.width
+        height: bounds.height
+        color: $connector.colorPalette.paneBackground
+        opacity: $connector.colorPalette.paneValid ? 1 : 0
+        radius: shell.metrics.paneCornerRadius
+        visible: !window._startupFailed
+    }
+
     Shell {
         id: shell
         objectName: "shell"
+        readonly property rect bounds: metrics.gridRectForWindow(window.width, window.height, chatPanel.visible)
+        x: bounds.x
+        y: bounds.y
+        width: bounds.width
+        height: bounds.height
         enabled: visible
         opacity: $connector.colorPalette.paneValid ? 1 : 0
         visible: !window._startupFailed
-        anchors.left: parent.left
-        anchors.right: chatPanel.visible ? chatPanel.left : parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
     }
 
-    // Chat panel — docked on the right, hidden by default. Toggling `visible`
-    // changes Shell's width, which fires GridItem::geometryChange ->
-    // maybeResizeUi -> requestResize (the existing tryResize path — geometry is
-    // never poked directly). Width is clamped so a narrow window never starves
-    // the grid to <=0 width (which would suppress the resize entirely).
     ChatPanel {
         id: chatPanel
+        readonly property rect bounds: metrics.chatPaneRect(window.width, window.height, chatPanel.visible)
+        x: bounds.x
+        y: bounds.y
+        width: bounds.width
+        height: bounds.height
         enabled: !window._startupFailed
         metrics: shell.metrics
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.right: parent.right
-        width: visible ? Math.min(360, Math.floor(parent.width * 0.5)) : 0
         visible: false
         onClosed: shell.focusGrid()
     }
 
-    // Always-visible toggle button (a small speech-bubble icon) in the app's
-    // top strip. Floating overlay so it never perturbs Shell geometry or the
-    // boot resize sequence. Not in the native OS caption (that would need a
-    // frameless-window rewrite).
     NeutralButton {
         id: chatToggle
         objectName: "chatToggle"
@@ -251,14 +256,13 @@ Window {
         activeFocusOnTab: false
         enabled: visible
         iconOnly: true
-        implicitHeight: metrics.rowHeight + 2 * metrics.padding
+        implicitHeight: metrics.topBandHeight
         metrics: shell.metrics
         selectable: true
         selected: chatPanel.visible
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.rightMargin: 6
-        anchors.topMargin: 3
+        anchors.rightMargin: metrics.frameGap
         visible: !window._startupFailed
         z: 150
 
@@ -320,25 +324,6 @@ Window {
     Shortcut {
         sequence: "F11"
         context: Qt.WindowShortcut
-        onActivated: {
-            const willBeFullscreen = window.visibility !== Window.FullScreen
-            if (willBeFullscreen) {
-                // Pre-issue tryResize so nvim resizes the grid IN PARALLEL with
-                // the OS fullscreen animation. Otherwise the user sees the
-                // window expand instantly but the grid lag by the RPC RTT.
-                const scr = window.screen
-                if (scr) {
-                    const cw = Math.max(1, shell.cellWidth)
-                    const ch = Math.max(1, shell.cellHeight)
-                    const dockW = chatPanel.visible ? chatPanel.width : 0
-                    const cols = Math.max(1, Math.floor((scr.width - dockW) / cw))
-                    const rows = Math.max(1, Math.floor(scr.height / ch))
-                    $connector.tryResize(cols, rows)
-                }
-                window.visibility = Window.FullScreen
-            } else {
-                window.visibility = Window.Windowed
-            }
-        }
+        onActivated: window._toggleFullScreen()
     }
 }

@@ -10,8 +10,10 @@ import Dot 1.0
 Rectangle {
     id: panel
     objectName: "chatPanel"
+    clip: true
     color: colors.paneBackground
     opacity: colors.paneValid ? 1 : 0
+    radius: metrics.paneCornerRadius
     visible: false
 
     readonly property ColorPalette colors: $connector.colorPalette
@@ -40,23 +42,14 @@ Rectangle {
 
     ChatModel { id: chatModel }
 
-    // Left divider between the grid and the panel.
-    Rectangle {
-        id: divider
-        objectName: "chatDivider"
-        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-        width: 1
-        color: panel.colors.raised
-    }
-
     Column {
         anchors.fill: parent
-        anchors.leftMargin: divider.width
+        anchors.margins: panel.metrics.nestedGap
 
         ListView {
             id: list
             width: parent.width
-            height: parent.height - inputRow.height
+            height: Math.max(0, parent.height - inputRow.height)
             model: chatModel
             clip: true
             spacing: 6
@@ -107,7 +100,7 @@ Rectangle {
             id: inputRow
             objectName: "chatInputRow"
             width: parent.width
-            height: panel.metrics.rowHeight + 2 * panel.metrics.padding
+            height: Math.max(0, Math.min(panel.metrics.rowHeight + 2 * panel.metrics.padding, parent.height))
             radius: panel.metrics.cornerRadius
             color: panel.colors.resting
             border.color: input.activeFocus ? panel.colors.accent : panel.colors.raised

@@ -172,8 +172,10 @@ private slots:
             return window->findChild<QQuickItem *>(QStringLiteral("startupErrorText")) != nullptr;
         }, 5000));
         auto *details = window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
+        auto *editorPane = window->findChild<QQuickItem *>(QStringLiteral("editorPane"));
         auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
         QVERIFY(details);
+        QVERIFY(editorPane && !editorPane->isVisible());
         QVERIFY(shell);
         QVERIFY(details->isVisible());
         QCOMPARE(details->property("text").toString(), expected);
@@ -221,8 +223,10 @@ private slots:
         }, 5000));
         auto *chatToggle = window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
         auto *details = window->findChild<QQuickItem *>(QStringLiteral("startupErrorText"));
+        auto *editorPane = window->findChild<QQuickItem *>(QStringLiteral("editorPane"));
         auto *shell = window->findChild<QQuickItem *>(QStringLiteral("shell"));
         QVERIFY(chatToggle);
+        QVERIFY(editorPane && !editorPane->isVisible());
         QVERIFY(details);
         QVERIFY(shell);
         QVERIFY(details->isVisible());

@@ -3,6 +3,7 @@ import Dot 1.0
 
 Item {
     id: root
+    clip: true
     focus: true
 
     property alias cellWidth:  baseGrid.cellWidth

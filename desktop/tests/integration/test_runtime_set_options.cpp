@@ -18,6 +18,8 @@
 #include "IntegrationHelpers.h"
 #include "NvimConnector.h"
 #include "ResizeCoalescer.h"
+#include "support/PaneGeometryOracle.h"
+#include "support/PlatformGeometry.h"
 
 using namespace dot;
 using namespace dot::test;
@@ -97,6 +99,65 @@ private slots:
         QVERIFY2(waitUntil([&] { return conn.linespace() == 4; }, 5000),
                  qPrintable(QStringLiteral("linespace was %1").arg(conn.linespace())));
         QVERIFY(spy.count() >= 1);
+    }
+
+    void dprChangeRefitsContent() {
+        NvimConnector conn;
+        QQmlApplicationEngine engine;
+        QVERIFY(startTestNvim(conn));
+        auto *window = loadMainQml(engine, &conn);
+        QVERIFY(window && QTest::qWaitForWindowExposed(window));
+        auto *grid = window->findChild<GridItem *>();
+        auto *toggle = window->findChild<QQuickItem *>(QStringLiteral("chatToggle"));
+        QVERIFY(grid && toggle);
+        const qreal oldDpr = window->devicePixelRatio();
+        QCOMPARE(oldDpr, 1.0);
+        QVERIFY(window->width() >= 900);
+        const auto initial = paneOracle(window->size(), true,
+                                        fontMetricsOracle(*grid, conn.linespace(), oldDpr), oldDpr);
+        QTest::mouseClick(window, Qt::LeftButton, {}, sceneRect(toggle).center().toPoint());
+        QTRY_COMPARE(liveCells(conn), initial.cells);
+        QSignalSpy fontSpy(grid, &GridItem::fontChanged);
+        QSignalSpy resizeSpy(conn.resizeCoalescer(), &ResizeCoalescer::resizeRequested);
+        auto *screen = window->screen();
+        const auto restore = qScopeGuard([&] { QHighDpiScaling::setScreenFactor(screen, oldDpr); });
+        constexpr qreal dpr = 1.25;
+        QHighDpiScaling::setScreenFactor(screen, dpr);
+        QWindowSystemInterface::handleWindowDevicePixelRatioChanged<
+            QWindowSystemInterface::SynchronousDelivery>(window);
+        QWindowSystemInterface::flushWindowSystemEvents();
+        const QRect logical = window->geometry();
+        QVERIFY(logical.width() >= 720);
+        deliverPlatformGeometry(window, logical);
+        QCOMPARE(window->devicePixelRatio(), dpr);
+        QCOMPARE(grid->metricsDpr(), dpr);
+        QVERIFY(!fontSpy.isEmpty());
+        const auto cm = fontMetricsOracle(*grid, conn.linespace(), dpr);
+        const auto expected = paneOracle(logical.size(), true, cm, dpr);
+        QVERIFY(initial.cells != expected.cells);
+        QTRY_COMPARE(liveCells(conn), expected.cells);
+        comparePaneScene(window, expected, true);
+        for(const auto edge: { expected.grid.x(), expected.grid.y() })
+            QVERIFY(qAbs(edge * dpr - qRound(edge * dpr)) < 1e-6);
+        QCOMPARE(resizeSpy.count(), 1);
+        QCOMPARE(resizeSpy.first(),
+                 QVariantList({ expected.cells.width(), expected.cells.height() }));
+        checkNoResizeEcho(conn);
+
+        const QSize small(15, 10);
+        const QSize inverse = windowSizeOracle(small.width(), small.height(), true, cm, dpr);
+        QVERIFY(small != expected.cells);
+        QVERIFY(windowSizeOracle(small.width(), small.height(), false, cm, dpr).width() < 360);
+        resizeSpy.clear();
+        conn.command(
+            QStringLiteral("set columns=%1 lines=%2").arg(small.width()).arg(small.height()));
+        QTRY_COMPARE(liveCells(conn), small);
+        QCOMPARE(window->size(), inverse);
+        deliverPlatformGeometry(window, window->geometry());
+        comparePaneScene(window, paneOracle(inverse, true, cm, dpr), true);
+        checkNoResizeEcho(conn);
+        QCOMPARE(resizeSpy.count(), 0);
+        QCOMPARE(liveCells(conn), small);
     }
 
     void guifontPropagatesThroughQmlScene() {
