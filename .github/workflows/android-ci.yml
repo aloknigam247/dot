@@ -7,6 +7,7 @@ on:
       - ".github/workflows/android-release.yml"
       - "android/**"
       - "common/**"
+      - "!common/scripts/rust_ci.ps1"
   push:
     branches: [main]
     paths:
@@ -14,6 +15,7 @@ on:
       - ".github/workflows/android-release.yml"
       - "android/**"
       - "common/**"
+      - "!common/scripts/rust_ci.ps1"
 
 # A newer push to the same ref cancels the in-flight run.
 concurrency:

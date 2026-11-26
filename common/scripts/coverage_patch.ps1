@@ -2,8 +2,7 @@
 .SYNOPSIS
     Enforce 100% coverage of the lines a change adds or modifies (patch / diff
     coverage). Fails (exit 1) if any changed, coverable, non-exempt line is left
-    uncovered. Works for both the C++ side (cobertura reports) and the Android
-    side (JaCoCo reports).
+    uncovered. Works for C++ and Rust Cobertura reports and Android JaCoCo reports.
 
 .DESCRIPTION
     The overall floor guards the whole codebase; this guard is per-change: every
@@ -26,10 +25,10 @@
       4. Considered lines are dropped when exempted by a source marker (below).
          Every remaining considered line must have hits > 0.
 
-    Exemption markers (read from the HEAD source, since neither coverage tool has
-    reliable per-line C++/Kotlin exclusion): a line carrying a trailing
+    Exemption markers (read from the HEAD source when a coverage format lacks
+    reliable per-line exclusions): a line carrying a trailing
     "// no-cover" is exempt; a "// no-cover:start" ... "// no-cover:end" pair
-    exempts the enclosed block. The "//" form is valid in both C++ and Kotlin.
+    exempts the enclosed block. The "//" form is valid in C++, Kotlin, and Rust.
     Use them ONLY for genuinely uncoverable lines — GUI / SceneGraph glue that
     needs a live surface, platform calls, or coverage-tool artifacts. Each marker
     is visible in the diff, so an exemption is a reviewable decision. The gate
@@ -43,7 +42,7 @@
     The diff runs from merge-base(BaseRef, HEAD) to HEAD.
 
 .PARAMETER Format
-    Report format: "cobertura" (default, C++) or "jacoco" (Android).
+    Report format: "cobertura" (default, C++ and Rust) or "jacoco" (Android).
 
 .PARAMETER DiffPath
     Repository-relative production pathspecs. Include both endpoints of source
@@ -72,14 +71,9 @@ $ErrorActionPreference = "Stop"
 # and each report's reconstructed paths are reduced to this so they collide.
 function Get-MatchKey([string]$path) { return $path.Replace("\", "/").ToLowerInvariant() }
 
-# Resolve report filenames against the checkout, excluding similarly named
-# sources from other build trees.
 function Get-CoberturaKey([string]$path) {
     $absolute = [IO.Path]::GetFullPath($path, $repoRoot)
-    $relative = [IO.Path]::GetRelativePath($repoRoot, $absolute)
-    $key = Get-MatchKey $relative
-    if ($key -match "^desktop/(src|include)/.+$") { return $key }
-    return $null
+    return Get-MatchKey ([IO.Path]::GetRelativePath($repoRoot, $absolute))
 }
 
 $repoRoot = git rev-parse --show-toplevel
@@ -130,7 +124,6 @@ foreach ($path in $ReportPath) {
         foreach ($pkg in $report.coverage.packages.package) {
             foreach ($cls in $pkg.classes.class) {
                 $key = Get-CoberturaKey ([string]$cls.filename)
-                if (-not $key) { continue }
                 foreach ($ln in $cls.lines.line) {
                     $k = "$key|$($ln.number)"
                     if (-not $hits.ContainsKey($k)) { $hits[$k] = 0 }

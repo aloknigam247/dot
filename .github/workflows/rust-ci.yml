@@ -1,0 +1,97 @@
+name: Rust CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-ci.yml"
+      - "**/*.rs"
+      - "**/.cargo/**"
+      - "**/.clippy.toml"
+      - "**/.rustfmt.toml"
+      - "**/Cargo.lock"
+      - "**/Cargo.toml"
+      - "**/clippy.toml"
+      - "**/rust-toolchain"
+      - "**/rust-toolchain.toml"
+      - "**/rustfmt.toml"
+      - "common/scripts/coverage_patch.ps1"
+      - "common/scripts/rust_ci.ps1"
+      - "desktop/copilot_bridge/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rust-ci.yml"
+      - "**/*.rs"
+      - "**/.cargo/**"
+      - "**/.clippy.toml"
+      - "**/.rustfmt.toml"
+      - "**/Cargo.lock"
+      - "**/Cargo.toml"
+      - "**/clippy.toml"
+      - "**/rust-toolchain"
+      - "**/rust-toolchain.toml"
+      - "**/rustfmt.toml"
+      - "common/scripts/coverage_patch.ps1"
+      - "common/scripts/rust_ci.ps1"
+      - "desktop/copilot_bridge/**"
+
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: rust
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned Rust toolchains
+        shell: pwsh
+        run: .\common\scripts\rust_ci.ps1 -PrepareToolchains
+
+      - name: Discover Cargo workspaces
+        id: workspaces
+        shell: pwsh
+        run: .\common\scripts\rust_ci.ps1 -DiscoverWorkspaces
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.workspaces.outputs.has-workspaces == 'true'
+        with:
+          workspaces: ${{ steps.workspaces.outputs.cache-workspaces }}
+
+      - name: Install cargo-llvm-cov
+        if: steps.workspaces.outputs.has-workspaces == 'true'
+        shell: pwsh
+        run: .\common\scripts\rust_ci.ps1 -InstallCoverageTool
+
+      - name: Check, test, and measure production coverage
+        id: checks
+        if: steps.workspaces.outputs.has-workspaces == 'true'
+        shell: pwsh
+        run: .\common\scripts\rust_ci.ps1 -Run
+
+      - name: Enforce Rust patch coverage
+        if: always() && github.event_name == 'pull_request' && steps.checks.outputs.reports != ''
+        shell: pwsh
+        env:
+          RUST_COVERAGE_REPORTS: ${{ steps.checks.outputs.reports }}
+        run: |
+          $reports = @($env:RUST_COVERAGE_REPORTS -split "`r?`n" | Where-Object { $_ })
+          & common\scripts\coverage_patch.ps1 -ReportPath $reports `
+            -BaseRef "${{ github.event.pull_request.base.sha }}" -DiffPath "*.rs"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Rust coverage reports
+        if: always() && steps.workspaces.outputs.has-workspaces == 'true' && steps.checks.outputs.reports != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-coverage
+          path: ${{ steps.checks.outputs.reports }}
+          retention-days: 7
+          if-no-files-found: warn
