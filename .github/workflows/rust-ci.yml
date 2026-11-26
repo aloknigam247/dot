@@ -3,10 +3,7 @@ name: Rust CI
 on:
   pull_request:
     paths:
-      - ".cargo/**"
-      - ".clippy.toml"
       - ".github/workflows/rust-ci.yml"
-      - ".rustfmt.toml"
       - "**/*.rs"
       - "**/.cargo/**"
       - "**/.clippy.toml"
@@ -17,21 +14,12 @@ on:
       - "**/rust-toolchain"
       - "**/rust-toolchain.toml"
       - "**/rustfmt.toml"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "clippy.toml"
       - "common/scripts/coverage_patch.ps1"
       - "common/scripts/rust_ci.ps1"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "rustfmt.toml"
   push:
     branches: [main]
     paths:
-      - ".cargo/**"
-      - ".clippy.toml"
       - ".github/workflows/rust-ci.yml"
-      - ".rustfmt.toml"
       - "**/*.rs"
       - "**/.cargo/**"
       - "**/.clippy.toml"
@@ -42,14 +30,8 @@ on:
       - "**/rust-toolchain"
       - "**/rust-toolchain.toml"
       - "**/rustfmt.toml"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "clippy.toml"
       - "common/scripts/coverage_patch.ps1"
       - "common/scripts/rust_ci.ps1"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "rustfmt.toml"
 
 concurrency:
   group: rust-ci-${{ github.ref }}
