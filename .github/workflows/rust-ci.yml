@@ -60,7 +60,7 @@ permissions:
 
 env:
   # Set only after repeatable Windows Actions measurements establish the floor.
-  DOT_RUST_COVERAGE_FLOOR: ""
+  DOT_RUST_COVERAGE_FLOOR: "1"
 
 jobs:
   rust:
