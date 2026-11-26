@@ -1,3 +1,10 @@
+## [1.6.0](https://github.com/aloknigam247/dot/compare/dot-v1.5.0...dot-v1.6.0) (2026-11-26)
+
+### Added
+
+* **chat:** add Rust SDK bridge for the installed Copilot CLI ([#293](https://github.com/aloknigam247/dot/issues/293)) ([1d9a7b0](https://github.com/aloknigam247/dot/commit/1d9a7b0b5cf356ef1b8780cfe4ef5d4ec6308d70))
+* **ui:** expose live command-line sessions ([#291](https://github.com/aloknigam247/dot/issues/291)) ([04d50bf](https://github.com/aloknigam247/dot/commit/04d50bf515c08499a2952d767cafb9e25aff07df))
+
 ## [1.5.0](https://github.com/aloknigam247/dot/compare/dot-v1.4.0...dot-v1.5.0) (2026-11-25)
 
 ### Added
