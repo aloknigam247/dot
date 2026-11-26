@@ -1,3 +1,6 @@
+#[cfg(not(debug_assertions))]
+compile_error!("release trial");
+
 #[cfg(test)]
 mod external_checks;
 
