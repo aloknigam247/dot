@@ -38,6 +38,21 @@ $sample = $entries[1]
 $samplePath = Join-Path $repoRoot $sample.report
 $sourceInfo = Get-ProductionFiles $workspaces[1]
 try {
+    foreach ($i in 0..1) {
+        $path = Join-Path $repoRoot $entries[$i].report
+        $info = Get-ProductionFiles $workspaces[$i]
+        Normalize-CoberturaReport $entries[$i] $info $path
+        [xml]$xml = Get-Content -Raw -LiteralPath $path
+        $lines = @($xml.SelectNodes("//class/lines/line"))
+        $covered = @($lines | Where-Object { [int]$_.hits -gt 0 }).Count
+        if ([int]$xml.coverage.'lines-valid' -ne $lines.Count -or [int]$xml.coverage.'lines-covered' -ne $covered) {
+            throw "Published workspace totals differ from the actual production lines in $path."
+        }
+        if ([string]$xml.coverage.sources.source -cne "." -or $xml.SelectNodes("//method").Count) {
+            throw "Report contains nonportable source roots or raw method metadata."
+        }
+        Write-Host "Verified normalized report $($entries[$i].root): $covered/$($lines.Count) production lines."
+    }
     $env:DOT_RUST_COVERAGE_FLOOR = "100"
     Assert-Rejection "below measured floor" "is below the committed floor" { Write-CoverageSummary $entries }
     Remove-Item -LiteralPath $samplePath
@@ -55,9 +70,9 @@ try {
         Normalize-CoberturaReport $sample $sourceInfo $samplePath
     }
     $badPath = "$($sample.root)/src/not_tracked.rs"
-    $xml = "<coverage><packages><package><classes><class filename='$badPath'><lines><line number='1' hits='1'/>" +
+    $untrackedSource = "<coverage><packages><package><classes><class filename='$badPath'><lines><line number='1' hits='1'/>" +
         "</lines></class></classes></package></packages></coverage>"
-    [IO.File]::WriteAllText($samplePath, $xml)
+    [IO.File]::WriteAllText($samplePath, $untrackedSource)
     Assert-Rejection "unmapped production source" "not in the tracked source map" {
         Normalize-CoberturaReport $sample $sourceInfo $samplePath
     }
