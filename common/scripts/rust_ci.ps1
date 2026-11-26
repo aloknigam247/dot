@@ -547,6 +547,9 @@ if ($Run) {
                     "--locked", "--no-fail-fast"
                 )
             }
+        } elseif (@($workspace.Packages.targets | Where-Object { $_.doctest }).Count -gt 0) {
+            # cargo llvm-cov --all-targets does not run doctests.
+            Invoke-NativeCommand $workspace.Root "cargo" @("test", "--workspace", "--doc", "--locked", "--no-fail-fast")
         }
 
         $reportPath = Join-Path $repoRoot $entry.report
