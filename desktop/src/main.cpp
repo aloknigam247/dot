@@ -298,3 +298,5 @@ int main(int argc, char **argv) {
 
     return QGuiApplication::exec();
 }
+
+// Disposable path-filter fixture.

@@ -38,3 +38,5 @@ class MainActivity : ComponentActivity() {
         const val KEY_ENDPOINT = "endpoint"
     }
 }
+
+// Disposable path-filter fixture.
