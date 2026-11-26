@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [switch]$DiscoverManifests,
+    [ValidateRange(0, 100)][double]$CoverageFloor = 99.21,
     [switch]$DiscoverWorkspaces,
     [switch]$InstallCoverageTool,
     [switch]$PrepareToolchains,
@@ -9,8 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$selectedModes = @($DiscoverManifests, $DiscoverWorkspaces, $InstallCoverageTool, $PrepareToolchains, $Run) |
-    Where-Object { $_ }
+$selectedModes = @($DiscoverWorkspaces, $InstallCoverageTool, $PrepareToolchains, $Run) | Where-Object { $_ }
 if ($selectedModes.Count -ne 1) {
     throw "Select exactly one operation."
 }
@@ -121,6 +120,7 @@ function Get-SourceExclusionReason([string]$relativePath) {
         if ($excludedDirectories -contains $segment.ToLowerInvariant()) { return "'$segment' directory" }
     }
     if ([IO.Path]::GetFileName($relativePath) -match "(?i)(^|[-_])generated\.rs$") { return "generated file name" }
+    if ([IO.Path]::GetFileName($relativePath) -eq "tests.rs") { return "tests.rs unit-test module" }
 
     $sourcePath = Join-Path $repoRoot $relativePath
     if (Test-Path -LiteralPath $sourcePath) {
@@ -130,238 +130,24 @@ function Get-SourceExclusionReason([string]$relativePath) {
     return $null
 }
 
-function Get-TestOnlyLines([string]$relativePath) {
-    $sourcePath = Join-Path $repoRoot $relativePath
-    $sourceLines = @(Get-Content -LiteralPath $sourcePath)
-    $excludedLines = [System.Collections.Generic.HashSet[int]]::new()
-    $braceDepth = 0
-    $blockCommentDepth = 0
-    $pendingTestItem = $false
-    $testItemBaseDepth = $null
-    $rawStringHashes = -1
-    $quote = ""
-    $escaped = $false
-    $parenDepth = 0
-    $testAttributeBraceDepth = 0
-    $testAttributeParenDepth = 0
-    $testItemIsDeclaration = $null
-    $declarationPattern = '^(?:pub\b(?:\s*\([^)]*\))?\s*)?' +
-        '(?:(?:async|const|default|extern(?:\s+"[^"]*")?|safe|unsafe)\s+)*' +
-        '(?:macro_rules!|(?:const|enum|extern|fn|impl|let|mod|static|struct|trait|type|union|use)\b)'
-
-    for ($lineIndex = 0; $lineIndex -lt $sourceLines.Count; $lineIndex++) {
-        $line = [string]$sourceLines[$lineIndex]
-        $lineNumber = $lineIndex + 1
-        $normalAtLineStart = $blockCommentDepth -eq 0 -and $rawStringHashes -lt 0 -and -not $quote
-        if ($normalAtLineStart -and $null -eq $testItemBaseDepth -and
-            $line -match '^\s*#\[\s*cfg\s*\(\s*test\s*\)\s*\]') {
-            $pendingTestItem = $true
-            $testAttributeBraceDepth = $braceDepth
-            $testAttributeParenDepth = $parenDepth
-            $testItemIsDeclaration = $null
-        }
-        if ($normalAtLineStart -and $pendingTestItem -and $null -eq $testItemIsDeclaration) {
-            $code = $line -replace '^\s*(?:#!?\[[^\]]*\]\s*)*', ''
-            if ($code -and -not $code.StartsWith("//") -and -not $code.StartsWith("/*")) {
-                $testItemIsDeclaration = $code -cmatch $declarationPattern
-            }
-        }
-        if ($pendingTestItem -or $null -ne $testItemBaseDepth) {
-            [void]$excludedLines.Add($lineNumber)
-        }
-
-        for ($index = 0; $index -lt $line.Length; $index++) {
-            $character = $line[$index]
-            $nextCharacter = if ($index + 1 -lt $line.Length) { $line[$index + 1] } else { [char]0 }
-
-            if ($rawStringHashes -ge 0) {
-                if ($character -eq '"') {
-                    $closingHashes = 0
-                    while ($index + 1 + $closingHashes -lt $line.Length -and
-                        $line[$index + 1 + $closingHashes] -eq '#') {
-                        $closingHashes++
-                    }
-                    if ($closingHashes -ge $rawStringHashes) {
-                        $rawStringHashes = -1
-                        $index += $closingHashes
-                    }
-                }
-                continue
-            }
-
-            if ($blockCommentDepth -gt 0) {
-                if ($character -eq '/' -and $nextCharacter -eq '*') {
-                    $blockCommentDepth++
-                    $index++
-                } elseif ($character -eq '*' -and $nextCharacter -eq '/') {
-                    $blockCommentDepth--
-                    $index++
-                }
-                continue
-            }
-
-            if ($quote) {
-                if ($escaped) {
-                    $escaped = $false
-                } elseif ($character -eq '\') {
-                    $escaped = $true
-                } elseif ($character -eq $quote) {
-                    $quote = ""
-                }
-                continue
-            }
-
-            if ($character -eq '/' -and $nextCharacter -eq '/') { break }
-            if ($character -eq '/' -and $nextCharacter -eq '*') {
-                $blockCommentDepth = 1
-                $index++
-                continue
-            }
-
-            if ($character -eq 'r' -or
-                ($character -eq 'b' -and $nextCharacter -eq 'r')) {
-                $rawStart = if ($character -eq 'b') { $index + 1 } else { $index }
-                $quoteIndex = $rawStart + 1
-                $hashCount = 0
-                while ($quoteIndex + $hashCount -lt $line.Length -and
-                    $line[$quoteIndex + $hashCount] -eq '#') {
-                    $hashCount++
-                }
-                if ($quoteIndex + $hashCount -lt $line.Length -and
-                    $line[$quoteIndex + $hashCount] -eq '"') {
-                    $rawStringHashes = $hashCount
-                    $index = $quoteIndex + $hashCount
-                    continue
-                }
-            }
-
-            if ($character -eq '"') {
-                $quote = '"'
-                continue
-            }
-            if ($character -eq "'") {
-                $characterEnd = -1
-                if ($nextCharacter -eq '\') {
-                    $characterEnd = $line.IndexOf("'", $index + 2)
-                    if ($characterEnd -gt $index + 12) { $characterEnd = -1 }
-                } elseif ($index + 2 -lt $line.Length -and $line[$index + 2] -eq "'") {
-                    $characterEnd = $index + 2
-                }
-                if ($characterEnd -ge 0) {
-                    $quote = "'"
-                    continue
-                }
-            }
-
-            if ($character -eq '{') {
-                if ($pendingTestItem -and $null -eq $testItemBaseDepth) {
-                    $testItemBaseDepth = $braceDepth
-                }
-                $braceDepth++
-            } elseif ($character -eq '}') {
-                $braceDepth--
-                if ($null -ne $testItemBaseDepth) {
-                    if ($braceDepth -eq $testItemBaseDepth) {
-                        $testItemBaseDepth = $null
-                        $pendingTestItem = $false
-                    }
-                } elseif ($pendingTestItem -and $braceDepth -lt $testAttributeBraceDepth) {
-                    $pendingTestItem = $false
-                    if (-not $line.Substring(0, $index).Trim()) { [void]$excludedLines.Remove($lineNumber) }
-                }
-            } elseif ($character -eq '(' -or $character -eq '[') {
-                $parenDepth++
-            } elseif ($character -eq ')' -or $character -eq ']') {
-                $parenDepth--
-                if ($pendingTestItem -and $null -eq $testItemBaseDepth -and
-                    $parenDepth -lt $testAttributeParenDepth) {
-                    $pendingTestItem = $false
-                    if (-not $line.Substring(0, $index).Trim()) { [void]$excludedLines.Remove($lineNumber) }
-                }
-            } elseif ($pendingTestItem -and $null -eq $testItemBaseDepth -and
-                $parenDepth -eq $testAttributeParenDepth -and
-                ($character -eq ';' -or ($character -eq ',' -and $testItemIsDeclaration -eq $false))) {
-                # Declarations end at ';' or their block; fields, variants, arms and arguments also end at ','.
-                $pendingTestItem = $false
-            }
-        }
-    }
-
-    return @($excludedLines | Sort-Object)
-}
-
-function Get-ModuleDeclarations([string]$relativePath, $trackedSet) {
-    $sourcePath = Join-Path $repoRoot $relativePath
-    $sourceLines = @(Get-Content -LiteralPath $sourcePath)
-    $testOnlyLines = [System.Collections.Generic.HashSet[int]]::new()
-    foreach ($lineNumber in (Get-TestOnlyLines $relativePath)) { [void]$testOnlyLines.Add([int]$lineNumber) }
-    $sourceDirectory = Split-Path -Parent $sourcePath
-    $sourceName = [IO.Path]::GetFileNameWithoutExtension($sourcePath)
-    $moduleDirectory = if ($sourceName -in @("lib", "main", "mod")) {
-        $sourceDirectory
-    } else {
-        Join-Path $sourceDirectory $sourceName
-    }
-
+function Assert-UnitTestModuleConvention([string]$relativePath) {
+    $sourceLines = @(Get-Content -LiteralPath (Join-Path $repoRoot $relativePath))
+    $cfgTest = '^\s*#\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*'
+    $testsModule = '^(?:pub\b(?:\s*\([^)]*\))?\s*)?mod\s+tests\s*;\s*(?://.*)?$'
     for ($index = 0; $index -lt $sourceLines.Count; $index++) {
-        $moduleLine = [string]$sourceLines[$index]
-        $moduleLineNumber = $index + 1
-        $testOnly = $testOnlyLines.Contains($moduleLineNumber)
-        $pathAttribute = $null
-
-        if ($moduleLine -match '^\s*#\[cfg\s*\(\s*test\s*\)\]\s*(.*)$') {
-            $moduleLine = $Matches[1]
-            if ([string]::IsNullOrWhiteSpace($moduleLine) -or $moduleLine.StartsWith("#[")) {
-                for ($next = $index + 1; $next -lt [Math]::Min($sourceLines.Count, $index + 10); $next++) {
-                    $candidate = ([string]$sourceLines[$next]).Trim()
-                    if (-not $candidate -or $candidate.StartsWith("//")) { continue }
-                    if ($candidate -match '^#\[path\s*=\s*"([^"]+)"\]\s*$') {
-                        $pathAttribute = $Matches[1]
-                        continue
-                    }
-                    if ($candidate.StartsWith("#[")) { continue }
-                    $moduleLine = $candidate
-                    $index = $next
-                    break
-                }
-            }
-        } elseif ($moduleLine -match '^\s*#\[path\s*=\s*"([^"]+)"\]\s*$') {
-            $pathAttribute = $Matches[1]
-            for ($next = $index + 1; $next -lt [Math]::Min($sourceLines.Count, $index + 4); $next++) {
-                $candidate = ([string]$sourceLines[$next]).Trim()
-                if (-not $candidate -or $candidate.StartsWith("//") -or $candidate.StartsWith("#[")) { continue }
-                $moduleLine = $candidate
-                $index = $next
-                break
-            }
-        }
-
-        $declaration = '^\s*(?:pub\b(?:\s*\([^)]*\))?\s*)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?://.*)?$'
-        if ($moduleLine -notmatch $declaration) { continue }
-        $moduleName = $Matches[1]
-        $modulePaths = if ($pathAttribute) {
-            @([IO.Path]::GetFullPath((Join-Path $sourceDirectory $pathAttribute)))
+        $line = [string]$sourceLines[$index]
+        $previous = if ($index -gt 0) { [string]$sourceLines[$index - 1] } else { "" }
+        $next = if ($index + 1 -lt $sourceLines.Count) { ([string]$sourceLines[$index + 1]).Trim() } else { "" }
+        $violation = if ($line -match $cfgTest) {
+            $item = $line -replace $cfgTest, ""
+            if (-not $item) { $item = $next }
+            $item -notmatch $testsModule
         } else {
-            @(
-                [IO.Path]::GetFullPath((Join-Path $moduleDirectory "$moduleName.rs")),
-                [IO.Path]::GetFullPath((Join-Path $moduleDirectory "$moduleName\mod.rs"))
-            )
+            $line.Trim() -match $testsModule -and $previous -notmatch "$cfgTest`$"
         }
-        $matches = @($modulePaths | Where-Object {
-            try {
-                $trackedSet.Contains((Get-RepoRelativePath $_))
-            } catch {
-                $false
-            }
-        })
-        if ($matches.Count -gt 1) {
-            throw "Module declaration in '$relativePath' maps to multiple tracked Rust sources."
-        }
-        if ($matches.Count -eq 1) {
-            [pscustomobject]@{
-                Path = Get-RepoRelativePath $matches[0]
-                TestOnly = $testOnly
-            }
+        if ($violation) {
+            throw ("{0}:{1}: Rust unit tests must live in a tests.rs module declared as '#[cfg(test)] mod tests;'." -f
+                $relativePath, ($index + 1))
         }
     }
 }
@@ -376,8 +162,6 @@ function Get-ProductionFiles($workspace) {
 
     $paths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $packageRoots = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $testOnlyModules = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $productionModules = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $excludedSources = [System.Collections.Generic.SortedDictionary[string, string]]::new(
         [StringComparer]::OrdinalIgnoreCase
     )
@@ -395,22 +179,6 @@ function Get-ProductionFiles($workspace) {
         if ($productionTargets.Count -eq 0) { continue }
         $hasProductionPackage = $true
 
-        foreach ($trackedPath in $trackedSet) {
-            if ($packageRelativeRoot -ne "." -and
-                -not $trackedPath.StartsWith("$packageRelativeRoot/", [StringComparison]::OrdinalIgnoreCase)) {
-                continue
-            }
-            if (Get-SourceExclusionReason $trackedPath) { continue }
-            foreach ($module in (Get-ModuleDeclarations $trackedPath $trackedSet)) {
-                if ($module.TestOnly) {
-                    [void]$testOnlyModules.Add([string]$module.Path)
-                } else {
-                    [void]$productionModules.Add([string]$module.Path)
-                }
-            }
-        }
-
-        $targetPaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($target in $productionTargets) {
             $targetPath = Get-RepoRelativePath ([string]$target.src_path)
             $exclusionReason = Get-SourceExclusionReason $targetPath
@@ -421,7 +189,6 @@ function Get-ProductionFiles($workspace) {
             if (-not $trackedSet.Contains($targetPath)) {
                 throw "Production Cargo target is not tracked: $targetPath"
             }
-            [void]$targetPaths.Add($targetPath)
             [void]$paths.Add($targetPath)
         }
 
@@ -435,34 +202,16 @@ function Get-ProductionFiles($workspace) {
                 $excludedSources[$trackedPath] = $exclusionReason
                 continue
             }
-            if ($testOnlyModules.Contains($trackedPath) -and
-                -not $productionModules.Contains($trackedPath) -and -not $targetPaths.Contains($trackedPath)) {
-                continue
-            }
             [void]$paths.Add($trackedPath)
         }
     }
 
     $files = @($paths | Sort-Object)
-    $excludedFiles = @($testOnlyModules | Where-Object {
-        -not $productionModules.Contains($_) -and -not $paths.Contains($_)
-    } | Sort-Object)
-    foreach ($path in $excludedFiles) {
-        if (-not $excludedSources.ContainsKey($path)) { $excludedSources[$path] = "test-only module" }
-    }
+    foreach ($path in $files) { Assert-UnitTestModuleConvention $path }
     $excludedSourceEntries = @($excludedSources.GetEnumerator() | Where-Object { -not $paths.Contains($_.Key) } |
         ForEach-Object { [pscustomobject]@{ path = $_.Key; reason = $_.Value } })
-    $excludedLines = [System.Collections.Generic.List[object]]::new()
-    foreach ($path in $files) {
-        $testLines = @(Get-TestOnlyLines $path)
-        if ($testLines.Count -gt 0) {
-            $excludedLines.Add([pscustomobject]@{ path = $path; lines = $testLines })
-        }
-    }
 
     return [pscustomobject]@{
-        ExcludedLines = @($excludedLines)
-        ExcludedFiles = $excludedFiles
         ExcludedSources = $excludedSourceEntries
         Files = $files
         HasProductionPackage = $hasProductionPackage
@@ -473,8 +222,7 @@ function Get-ProductionFiles($workspace) {
 function Get-ProductionSourceKey(
     [string]$filename,
     $workspace,
-    [System.Collections.Generic.HashSet[string]]$workspaceFiles,
-    [System.Collections.Generic.HashSet[string]]$excludedFiles
+    [System.Collections.Generic.HashSet[string]]$workspaceFiles
 ) {
     $normalizedName = $filename.Replace("\", "/")
     $candidatePaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -503,7 +251,6 @@ function Get-ProductionSourceKey(
     if ($matches.Count -eq 1) { return $matches[0] }
 
     foreach ($candidate in $candidatePaths) {
-        if ($excludedFiles.Contains($candidate)) { return $null }
         foreach ($packageRoot in $workspace.packageRoots) {
             $insidePackage = if ($packageRoot -eq ".") {
                 $candidate -ne "."
@@ -534,14 +281,6 @@ function Normalize-CoberturaReport($workspace, $sourceInfo, [string]$reportPath)
 
     $workspaceFiles = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($file in $sourceInfo.Files) { [void]$workspaceFiles.Add([string]$file) }
-    $excludedFiles = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($file in $sourceInfo.ExcludedFiles) { [void]$excludedFiles.Add([string]$file) }
-    $testOnlyLines = @{}
-    foreach ($entry in $sourceInfo.ExcludedLines) {
-        $excluded = [System.Collections.Generic.HashSet[int]]::new()
-        foreach ($lineNumber in $entry.lines) { [void]$excluded.Add([int]$lineNumber) }
-        $testOnlyLines[[string]$entry.path] = $excluded
-    }
 
     $workspaceContext = [pscustomobject]@{
         packageRoots = @($sourceInfo.PackageRoots)
@@ -553,18 +292,15 @@ function Normalize-CoberturaReport($workspace, $sourceInfo, [string]$reportPath)
         throw "Cobertura report for workspace '$($workspace.root)' contains no classes."
     }
     foreach ($class in $classes) {
-        $key = Get-ProductionSourceKey `
-            ([string]$class.GetAttribute("filename")) $workspaceContext $workspaceFiles $excludedFiles
+        $key = Get-ProductionSourceKey ([string]$class.GetAttribute("filename")) $workspaceContext $workspaceFiles
         if (-not $key) { continue }
 
-        $lineExclusions = $testOnlyLines[$key]
         foreach ($line in $class.SelectNodes("./lines/line")) {
             $hits = 0L
             $lineNumber = 0
             if (-not [int]::TryParse($line.GetAttribute("number"), [ref]$lineNumber) -or $lineNumber -lt 1) {
                 throw "Invalid Cobertura line number in '$reportPath'."
             }
-            if ($lineExclusions -and $lineExclusions.Contains($lineNumber)) { continue }
             if (-not [long]::TryParse($line.GetAttribute("hits"), [ref]$hits) -or $hits -lt 0) {
                 throw "Invalid Cobertura hit count for ${key}:$lineNumber in '$reportPath'."
             }
@@ -696,43 +432,18 @@ function Write-CoverageSummary($workspaces) {
         }
     }
 
-    $floorText = [Environment]::GetEnvironmentVariable("DOT_RUST_COVERAGE_FLOOR")
-    if ([string]::IsNullOrWhiteSpace($floorText)) {
-        throw ("DOT_RUST_COVERAGE_FLOOR is unset. Calibrate repeatable Windows Actions coverage, " +
-            "inspect uncovered lines, and commit the measured floor.")
-    }
-    $coverageFloor = 0.0
-    $parsedFloor = [double]::TryParse(
-        $floorText,
-        [Globalization.NumberStyles]::Float,
-        [Globalization.CultureInfo]::InvariantCulture,
-        [ref]$coverageFloor
-    )
-    if (-not $parsedFloor -or [double]::IsNaN($coverageFloor) -or
-        [double]::IsInfinity($coverageFloor) -or $coverageFloor -lt 0 -or $coverageFloor -gt 100) {
-        throw "DOT_RUST_COVERAGE_FLOOR must be a percentage from 0 through 100."
-    }
-    if ($coveragePercent -lt $coverageFloor) {
+    if ($coveragePercent -lt $CoverageFloor) {
         throw ("Production Rust coverage {0}% is below the committed floor {1}%." -f `
-            [math]::Round($coveragePercent, 3), $coverageFloor)
+            [math]::Round($coveragePercent, 3), $CoverageFloor)
     }
-}
-
-if ($DiscoverManifests) {
-    $manifests = @(Get-TrackedManifests)
-    if ($manifests.Count -eq 0) {
-        Write-Host "No tracked Cargo manifests; Rust checks and coverage are not applicable."
-        Write-GitHubOutput "has-rust" "false"
-    } else {
-        Write-Host "Found $($manifests.Count) tracked Cargo manifest(s)."
-        Write-GitHubOutput "has-rust" "true"
-    }
-    exit 0
 }
 
 if ($PrepareToolchains) {
     $manifestPaths = @(Get-ManifestPaths)
-    if ($manifestPaths.Count -eq 0) { throw "No tracked Cargo manifests were found." }
+    if ($manifestPaths.Count -eq 0) {
+        Write-Host "No tracked Cargo manifests; Rust checks and coverage are not applicable."
+        exit 0
+    }
 
     foreach ($manifestPath in $manifestPaths) {
         $manifestDirectory = Split-Path -Parent $manifestPath
@@ -763,7 +474,6 @@ if ($DiscoverWorkspaces) {
 
 if ($InstallCoverageTool) {
     $manifestPaths = @(Get-ManifestPaths)
-    if ($manifestPaths.Count -eq 0) { throw "No tracked Cargo manifests were found." }
     Invoke-NativeCommand (Split-Path -Parent $manifestPaths[0]) "cargo" @(
         "install", "cargo-llvm-cov", "--version", "0.9.2", "--locked"
     )
@@ -772,11 +482,6 @@ if ($InstallCoverageTool) {
 
 if ($Run) {
     $workspaces = @(Get-WorkspaceMetadata)
-    if ($workspaces.Count -eq 0) {
-        Write-Host "No Cargo workspace roots remain; no Rust coverage is claimed."
-        exit 0
-    }
-
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 
     $workspaceEntries = [System.Collections.Generic.List[object]]::new()
@@ -824,7 +529,6 @@ if ($Run) {
     }
 
     Write-GitHubMultilineOutput "reports" @($workspaceEntries | ForEach-Object { $_.report })
-    Write-GitHubOutput "reports_ready" "true"
     Write-CoverageSummary $workspaceEntries
     exit 0
 }

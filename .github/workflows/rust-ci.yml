@@ -16,6 +16,7 @@ on:
       - "**/rustfmt.toml"
       - "common/scripts/coverage_patch.ps1"
       - "common/scripts/rust_ci.ps1"
+      - "desktop/copilot_bridge/**"
   push:
     branches: [main]
     paths:
@@ -32,6 +33,7 @@ on:
       - "**/rustfmt.toml"
       - "common/scripts/coverage_patch.ps1"
       - "common/scripts/rust_ci.ps1"
+      - "desktop/copilot_bridge/**"
 
 concurrency:
   group: rust-ci-${{ github.ref }}
@@ -39,9 +41,6 @@ concurrency:
 
 permissions:
   contents: read
-
-env:
-  DOT_RUST_COVERAGE_FLOOR: "99.21"
 
 jobs:
   rust:
@@ -52,19 +51,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Discover tracked Cargo manifests
-        id: manifests
-        shell: pwsh
-        run: .\common\scripts\rust_ci.ps1 -DiscoverManifests
-
       - name: Install pinned Rust toolchains
-        if: steps.manifests.outputs.has-rust == 'true'
         shell: pwsh
         run: .\common\scripts\rust_ci.ps1 -PrepareToolchains
 
       - name: Discover Cargo workspaces
         id: workspaces
-        if: steps.manifests.outputs.has-rust == 'true'
         shell: pwsh
         run: .\common\scripts\rust_ci.ps1 -DiscoverWorkspaces
 
@@ -85,16 +77,14 @@ jobs:
         run: .\common\scripts\rust_ci.ps1 -Run
 
       - name: Enforce Rust patch coverage
-        if: always() && github.event_name == 'pull_request' && steps.checks.outputs.reports_ready == 'true'
+        if: always() && github.event_name == 'pull_request' && steps.checks.outputs.reports != ''
         shell: pwsh
         env:
           RUST_COVERAGE_REPORTS: ${{ steps.checks.outputs.reports }}
         run: |
           $reports = @($env:RUST_COVERAGE_REPORTS -split "`r?`n" | Where-Object { $_ })
-          if (-not $reports) { throw "No per-workspace Rust Cobertura reports were produced." }
           & common\scripts\coverage_patch.ps1 -ReportPath $reports `
-            -BaseRef "${{ github.event.pull_request.base.sha }}" `
-            -CoberturaPathsAreRepoRelative -DiffPath "*.rs"
+            -BaseRef "${{ github.event.pull_request.base.sha }}" -DiffPath "*.rs"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Rust coverage reports
