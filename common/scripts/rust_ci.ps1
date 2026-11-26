@@ -43,7 +43,7 @@ function Get-TrackedManifests {
     return @($paths | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Sort-Object -Unique)
 }
 
-function Get-ManifestDirectories {
+function Get-ManifestPaths {
     $manifests = Get-TrackedManifests
     return @($manifests | ForEach-Object { [IO.Path]::GetFullPath((Join-Path $repoRoot $_)) })
 }
@@ -62,7 +62,7 @@ function Get-WorkspaceMetadata {
         [StringComparer]::OrdinalIgnoreCase
     )
 
-    foreach ($manifestPath in (Get-ManifestDirectories)) {
+    foreach ($manifestPath in (Get-ManifestPaths)) {
         $manifestDirectory = Split-Path -Parent $manifestPath
         Push-Location $manifestDirectory
         try {
@@ -309,10 +309,11 @@ function Get-ModuleDeclarations([string]$relativePath, $trackedSet) {
             }
         }
 
-        if ($moduleLine -notmatch '^\s*mod\s+[A-Za-z_][A-Za-z0-9_]*\s*;\s*(?://.*)?$') { continue }
-        $moduleName = [regex]::Match($moduleLine, '^\s*mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;').Groups[1].Value
+        $declaration = '^\s*(?:pub\b(?:\s*\([^)]*\))?\s*)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?://.*)?$'
+        if ($moduleLine -notmatch $declaration) { continue }
+        $moduleName = $Matches[1]
         $modulePaths = if ($pathAttribute) {
-            @([IO.Path]::GetFullPath((Join-Path $moduleDirectory $pathAttribute)))
+            @([IO.Path]::GetFullPath((Join-Path $sourceDirectory $pathAttribute)))
         } else {
             @(
                 [IO.Path]::GetFullPath((Join-Path $moduleDirectory "$moduleName.rs")),
@@ -502,7 +503,7 @@ function Normalize-CoberturaReport($workspace, $sourceInfo, [string]$reportPath)
         packageRoots = @($sourceInfo.PackageRoots)
         root = [string]$workspace.root
     }
-    $mappedLineCount = 0
+    $files = @{}
     $classes = @($report.SelectNodes("/coverage/packages/package/classes/class"))
     if ($workspace.hasProductionPackage -and $classes.Count -eq 0) {
         throw "Cobertura report for workspace '$($workspace.root)' contains no classes."
@@ -510,78 +511,94 @@ function Normalize-CoberturaReport($workspace, $sourceInfo, [string]$reportPath)
     foreach ($class in $classes) {
         $key = Get-ProductionSourceKey `
             ([string]$class.GetAttribute("filename")) $workspaceContext $workspaceFiles $excludedFiles
-        if (-not $key) {
-            [void]$class.ParentNode.RemoveChild($class)
-            continue
-        }
+        if (-not $key) { continue }
 
-        $class.SetAttribute("filename", $key)
         $lineExclusions = $testOnlyLines[$key]
-        foreach ($line in @($class.SelectNodes("./lines/line"))) {
+        foreach ($line in $class.SelectNodes("./lines/line")) {
+            $hits = 0L
             $lineNumber = 0
             if (-not [int]::TryParse($line.GetAttribute("number"), [ref]$lineNumber) -or $lineNumber -lt 1) {
                 throw "Invalid Cobertura line number in '$reportPath'."
             }
-            if ($lineExclusions -and $lineExclusions.Contains($lineNumber)) {
-                [void]$line.ParentNode.RemoveChild($line)
-            } else {
-                $mappedLineCount++
+            if ($lineExclusions -and $lineExclusions.Contains($lineNumber)) { continue }
+            if (-not [long]::TryParse($line.GetAttribute("hits"), [ref]$hits) -or $hits -lt 0) {
+                throw "Invalid Cobertura hit count for ${key}:$lineNumber in '$reportPath'."
             }
+            if (-not $files.ContainsKey($key)) { $files[$key] = @{} }
+            $files[$key][$lineNumber] += $hits
         }
     }
 
-    if ($workspace.hasProductionPackage -and $mappedLineCount -eq 0) {
+    if ($workspace.hasProductionPackage -and $files.Count -eq 0) {
         throw "Cobertura report for production workspace '$($workspace.root)' contains no production lines."
     }
-    $report.Save($reportPath)
+
+    # Emit only line coverage. Raw method, package and document totals include excluded test code.
+    [xml]$production = @"
+<coverage branch-rate="0" branches-covered="0" branches-valid="0" complexity="0">
+  <sources><source>.</source></sources>
+  <packages><package branch-rate="0" complexity="0"><classes/></package></packages>
+</coverage>
+"@
+    $covered = 0
+    $valid = 0
+    $coverage = $production.DocumentElement
+    $package = $coverage.SelectSingleNode("packages/package")
+    $classList = $package.SelectSingleNode("classes")
+    $package.SetAttribute("name", [string]$workspace.root)
+    foreach ($attribute in @("timestamp", "version")) {
+        if ($report.DocumentElement.HasAttribute($attribute)) {
+            $coverage.SetAttribute($attribute, $report.DocumentElement.GetAttribute($attribute))
+        }
+    }
+    foreach ($key in ($files.Keys | Sort-Object)) {
+        $class = $classList.AppendChild($production.CreateElement("class"))
+        $lineHits = $files[$key]
+        $classCovered = @($lineHits.Values | Where-Object { $_ -gt 0 }).Count
+        $class.SetAttribute("branch-rate", "0")
+        $class.SetAttribute("complexity", "0")
+        $class.SetAttribute("filename", $key)
+        $class.SetAttribute("line-rate", [Xml.XmlConvert]::ToString([double]($classCovered / $lineHits.Count)))
+        $class.SetAttribute("name", $key)
+        [void]$class.AppendChild($production.CreateElement("methods"))
+        $lines = $class.AppendChild($production.CreateElement("lines"))
+        foreach ($number in ($lineHits.Keys | Sort-Object)) {
+            $line = $lines.AppendChild($production.CreateElement("line"))
+            $line.SetAttribute("hits", [string]$lineHits[$number])
+            $line.SetAttribute("number", [string]$number)
+        }
+        $covered += $classCovered
+        $valid += $lineHits.Count
+    }
+    $rate = if ($valid) { [Xml.XmlConvert]::ToString([double]($covered / $valid)) } else { "0" }
+    $coverage.SetAttribute("line-rate", $rate)
+    $coverage.SetAttribute("lines-covered", [string]$covered)
+    $coverage.SetAttribute("lines-valid", [string]$valid)
+    $package.SetAttribute("line-rate", $rate)
+    $production.Save($reportPath)
+    $workspace | Add-Member -NotePropertyName "covered" -NotePropertyValue $covered
+    $workspace | Add-Member -NotePropertyName "coverable" -NotePropertyValue $valid
+    $workspace | Add-Member -NotePropertyName "sources" -NotePropertyValue @($files.Keys)
 }
 
 function Write-CoverageSummary($workspaces) {
     $totalCovered = 0
     $totalCoverable = 0
     $workspacesWithProduction = 0
+    $sourceOwners = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
 
     foreach ($workspace in $workspaces) {
-        $reportPath = Join-Path $repoRoot ([string]$workspace.report)
-        if (-not (Test-Path -LiteralPath $reportPath)) {
-            throw "Cobertura report is missing for workspace '$($workspace.root)': $reportPath"
-        }
-        if ((Get-Item -LiteralPath $reportPath).Length -eq 0) {
-            throw "Cobertura report is empty for workspace '$($workspace.root)': $reportPath"
-        }
-
-        try {
-            [xml]$report = Get-Content -LiteralPath $reportPath -Raw
-        } catch {
-            throw "Cobertura report is invalid for workspace '$($workspace.root)': $_"
-        }
-        $lineHits = @{}
-
-        foreach ($pkg in $report.coverage.packages.package) {
-            foreach ($class in $pkg.classes.class) {
-                $key = ([string]$class.filename).Replace("\", "/").ToLowerInvariant()
-                foreach ($line in $class.lines.line) {
-                    $lineNumber = [int]$line.number
-                    if ($lineNumber -lt 1) { throw "Invalid Cobertura line number in '$reportPath'." }
-                    $matchKey = "$key|$lineNumber"
-                    if (-not $lineHits.ContainsKey($matchKey)) { $lineHits[$matchKey] = 0 }
-                    $lineHits[$matchKey] += [int]$line.hits
-                }
+        foreach ($source in $workspace.sources) {
+            if ($sourceOwners.ContainsKey($source)) {
+                throw ("Rust production source '{0}' is measured by workspaces '{1}' and '{2}'." -f `
+                    $source, $sourceOwners[$source], $workspace.root)
             }
+            $sourceOwners[$source] = $workspace.root
         }
-
-        if ($workspace.hasProductionPackage -and $lineHits.Count -eq 0) {
-            throw "Cobertura report for workspace '$($workspace.root)' contains no mapped production lines."
-        }
-
-        $covered = @($lineHits.Values | Where-Object { $_ -gt 0 }).Count
-        $coverable = $lineHits.Count
         if ($workspace.hasProductionPackage) { $workspacesWithProduction++ }
-        $totalCovered += $covered
-        $totalCoverable += $coverable
-        $workspace | Add-Member -NotePropertyName "covered" -NotePropertyValue $covered
-        $workspace | Add-Member -NotePropertyName "coverable" -NotePropertyValue $coverable
-        Write-Host "Workspace $($workspace.root): production lines $covered/$coverable"
+        $totalCovered += $workspace.covered
+        $totalCoverable += $workspace.coverable
+        Write-Host "Workspace $($workspace.root): production lines $($workspace.covered)/$($workspace.coverable)"
     }
 
     if ($workspacesWithProduction -eq 0) {
@@ -652,10 +669,10 @@ if ($DiscoverManifests) {
 }
 
 if ($PrepareToolchains) {
-    $manifestDirectories = @(Get-ManifestDirectories)
-    if ($manifestDirectories.Count -eq 0) { throw "No tracked Cargo manifests were found." }
+    $manifestPaths = @(Get-ManifestPaths)
+    if ($manifestPaths.Count -eq 0) { throw "No tracked Cargo manifests were found." }
 
-    foreach ($manifestPath in $manifestDirectories) {
+    foreach ($manifestPath in $manifestPaths) {
         $manifestDirectory = Split-Path -Parent $manifestPath
         Invoke-NativeCommand $manifestDirectory "rustup" @("toolchain", "install", "--no-self-update")
         Invoke-NativeCommand $manifestDirectory "rustup" @(
@@ -683,9 +700,9 @@ if ($DiscoverWorkspaces) {
 }
 
 if ($InstallCoverageTool) {
-    $manifestDirectories = @(Get-ManifestDirectories)
-    if ($manifestDirectories.Count -eq 0) { throw "No tracked Cargo manifests were found." }
-    Invoke-NativeCommand (Split-Path -Parent $manifestDirectories[0]) "cargo" @(
+    $manifestPaths = @(Get-ManifestPaths)
+    if ($manifestPaths.Count -eq 0) { throw "No tracked Cargo manifests were found." }
+    Invoke-NativeCommand (Split-Path -Parent $manifestPaths[0]) "cargo" @(
         "install", "cargo-llvm-cov", "--version", "0.9.2", "--locked"
     )
     exit 0

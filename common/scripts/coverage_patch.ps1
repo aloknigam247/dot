@@ -28,7 +28,7 @@
     Exemption markers (read from the HEAD source when a coverage format lacks
     reliable per-line exclusions): a line carrying a trailing
     "// no-cover" is exempt; a "// no-cover:start" ... "// no-cover:end" pair
-    exempts the enclosed block.     The "//" form is valid in C++, Kotlin, and Rust.
+    exempts the enclosed block. The "//" form is valid in C++, Kotlin, and Rust.
     Use them ONLY for genuinely uncoverable lines — GUI / SceneGraph glue that
     needs a live surface, platform calls, or coverage-tool artifacts. Each marker
     is visible in the diff, so an exemption is a reviewable decision. The gate
@@ -96,11 +96,8 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 $repoRoot = [IO.Path]::GetFullPath($repoRoot.Trim())
 
-if ($CoberturaPathsAreRepoRelative) {
-    if ($Format -ne "cobertura") {
-        throw "CoberturaPathsAreRepoRelative can only be used with Cobertura reports."
-    }
-    $DiffPath = @("*.rs")
+if ($CoberturaPathsAreRepoRelative -and $Format -ne "cobertura") {
+    throw "CoberturaPathsAreRepoRelative can only be used with Cobertura reports."
 }
 
 $mergeBase = (git -C $repoRoot merge-base $BaseRef HEAD).Trim()
@@ -139,7 +136,6 @@ foreach ($line in $diff) {
 
 # --- 2. union hit map: "key|line" -> summed hits ----------------------------
 $hits = @{}
-$rustReportOwners = @{}
 foreach ($path in $ReportPath) {
     if (-not (Test-Path -LiteralPath $path)) { Write-Error "report not found: $path"; exit 1 }
     [xml]$report = Get-Content -LiteralPath $path -Raw
@@ -148,12 +144,6 @@ foreach ($path in $ReportPath) {
             foreach ($cls in $pkg.classes.class) {
                 $key = Get-CoberturaKey ([string]$cls.filename)
                 if (-not $key) { continue }
-                if ($CoberturaPathsAreRepoRelative) {
-                    if ($rustReportOwners.ContainsKey($key) -and $rustReportOwners[$key] -ne $path) {
-                        throw "Rust production source '$key' appears in multiple workspace reports."
-                    }
-                    $rustReportOwners[$key] = $path
-                }
                 foreach ($ln in $cls.lines.line) {
                     $k = "$key|$($ln.number)"
                     if (-not $hits.ContainsKey($k)) { $hits[$k] = 0 }
