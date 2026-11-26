@@ -59,8 +59,7 @@ permissions:
   contents: read
 
 env:
-  # Set only after repeatable Windows Actions measurements establish the floor.
-  DOT_RUST_COVERAGE_FLOOR: ""
+  DOT_RUST_COVERAGE_FLOOR: "99.21"
 
 jobs:
   rust:

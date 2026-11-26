@@ -502,7 +502,7 @@ function Normalize-CoberturaReport($workspace, $sourceInfo, [string]$reportPath)
         packageRoots = @($sourceInfo.PackageRoots)
         root = [string]$workspace.root
     }
-    $mappedLineCount = 0
+    $files = @{}
     $classes = @($report.SelectNodes("/coverage/packages/package/classes/class"))
     if ($workspace.hasProductionPackage -and $classes.Count -eq 0) {
         throw "Cobertura report for workspace '$($workspace.root)' contains no classes."
@@ -510,30 +510,71 @@ function Normalize-CoberturaReport($workspace, $sourceInfo, [string]$reportPath)
     foreach ($class in $classes) {
         $key = Get-ProductionSourceKey `
             ([string]$class.GetAttribute("filename")) $workspaceContext $workspaceFiles $excludedFiles
-        if (-not $key) {
-            [void]$class.ParentNode.RemoveChild($class)
-            continue
-        }
+        if (-not $key) { continue }
 
-        $class.SetAttribute("filename", $key)
         $lineExclusions = $testOnlyLines[$key]
-        foreach ($line in @($class.SelectNodes("./lines/line"))) {
+        foreach ($line in $class.SelectNodes("./lines/line")) {
+            $hits = 0L
             $lineNumber = 0
             if (-not [int]::TryParse($line.GetAttribute("number"), [ref]$lineNumber) -or $lineNumber -lt 1) {
                 throw "Invalid Cobertura line number in '$reportPath'."
             }
-            if ($lineExclusions -and $lineExclusions.Contains($lineNumber)) {
-                [void]$line.ParentNode.RemoveChild($line)
-            } else {
-                $mappedLineCount++
+            if ($lineExclusions -and $lineExclusions.Contains($lineNumber)) { continue }
+            if (-not [long]::TryParse($line.GetAttribute("hits"), [ref]$hits) -or $hits -lt 0) {
+                throw "Invalid Cobertura hit count for ${key}:$lineNumber in '$reportPath'."
             }
+            if (-not $files.ContainsKey($key)) { $files[$key] = @{} }
+            $files[$key][$lineNumber] += $hits
         }
     }
 
-    if ($workspace.hasProductionPackage -and $mappedLineCount -eq 0) {
+    if ($workspace.hasProductionPackage -and $files.Count -eq 0) {
         throw "Cobertura report for production workspace '$($workspace.root)' contains no production lines."
     }
-    $report.Save($reportPath)
+
+    # Emit only line coverage. Raw method, package and document totals include excluded test code.
+    [xml]$production = @"
+<coverage branch-rate="0" branches-covered="0" branches-valid="0" complexity="0">
+  <sources><source>.</source></sources>
+  <packages><package branch-rate="0" complexity="0"><classes/></package></packages>
+</coverage>
+"@
+    $covered = 0
+    $valid = 0
+    $coverage = $production.DocumentElement
+    $package = $coverage.SelectSingleNode("packages/package")
+    $classList = $package.SelectSingleNode("classes")
+    $package.SetAttribute("name", [string]$workspace.root)
+    foreach ($attribute in @("timestamp", "version")) {
+        if ($report.DocumentElement.HasAttribute($attribute)) {
+            $coverage.SetAttribute($attribute, $report.DocumentElement.GetAttribute($attribute))
+        }
+    }
+    foreach ($key in ($files.Keys | Sort-Object)) {
+        $class = $classList.AppendChild($production.CreateElement("class"))
+        $lineHits = $files[$key]
+        $classCovered = @($lineHits.Values | Where-Object { $_ -gt 0 }).Count
+        $class.SetAttribute("branch-rate", "0")
+        $class.SetAttribute("complexity", "0")
+        $class.SetAttribute("filename", $key)
+        $class.SetAttribute("line-rate", [Xml.XmlConvert]::ToString([double]($classCovered / $lineHits.Count)))
+        $class.SetAttribute("name", $key)
+        [void]$class.AppendChild($production.CreateElement("methods"))
+        $lines = $class.AppendChild($production.CreateElement("lines"))
+        foreach ($number in ($lineHits.Keys | Sort-Object)) {
+            $line = $lines.AppendChild($production.CreateElement("line"))
+            $line.SetAttribute("hits", [string]$lineHits[$number])
+            $line.SetAttribute("number", [string]$number)
+        }
+        $covered += $classCovered
+        $valid += $lineHits.Count
+    }
+    $rate = if ($valid) { [Xml.XmlConvert]::ToString([double]($covered / $valid)) } else { "0" }
+    $coverage.SetAttribute("line-rate", $rate)
+    $coverage.SetAttribute("lines-covered", [string]$covered)
+    $coverage.SetAttribute("lines-valid", [string]$valid)
+    $package.SetAttribute("line-rate", $rate)
+    $production.Save($reportPath)
 }
 
 function Write-CoverageSummary($workspaces) {
