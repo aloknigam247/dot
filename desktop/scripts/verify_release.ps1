@@ -53,15 +53,17 @@ try {
     }
     if ($expectedFiles.Count -eq 0) { throw "The archive manifest is empty." }
     [void]$expectedFiles.Add($manifestPath)
-    foreach ($file in (Get-ChildItem -LiteralPath $extracted -Recurse -File)) {
+    $executables = @("bin\dot.exe", "bin\dot_copilot_bridge.exe")
+    foreach ($file in (Get-ChildItem -LiteralPath $extracted -Recurse -File -Force)) {
         if (-not $expectedFiles.Contains($file.FullName)) { throw "Unlisted archive file: $($file.FullName)" }
+        $relative = [IO.Path]::GetRelativePath($extracted, $file.FullName)
         if ($file.Extension -in @(".a", ".exp", ".ilk", ".lib", ".o", ".obj", ".pdb") -or
-            ($file.Extension -eq ".exe" -and $file.FullName -ne (Join-Path $extracted "bin\dot.exe"))) {
+            ($file.Extension -eq ".exe" -and $relative -notin $executables)) {
             throw "Development artifact in archive: $($file.FullName)"
         }
     }
     foreach ($relative in @(
-        "bin\dot.exe",
+        $executables
         "bin\msvcp140.dll",
         "bin\qt.conf",
         "bin\Qt6Core.dll",
@@ -78,6 +80,30 @@ try {
             throw "Required runtime content is absent from the manifest: $relative"
         }
     }
+
+    $rustRoot = Join-Path $extracted "third_party\rust"
+    $expectedNotices = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $rustPackages = @(& (Join-Path $PSScriptRoot "rust_dependencies.ps1"))
+    foreach ($package in $rustPackages) {
+        $label = "$($package.Name) $($package.Version)"
+        foreach ($notice in $package.Notices) {
+            $relative = "$($package.Name)-$($package.Version)/$($notice.Path)"
+            [void]$expectedNotices.Add($relative)
+            $path = Join-Path $rustRoot $relative
+            $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($notice.Bytes))
+            if (-not [IO.File]::Exists($path) -or (Get-FileHash -LiteralPath $path).Hash -cne $hash) {
+                throw "Rust dependency notice is absent or changed: $label $($notice.Path)"
+            }
+        }
+        Write-Host "Verified Rust notice: $label ($($package.Notices.Path -join ', '))"
+    }
+    foreach ($file in (Get-ChildItem -LiteralPath $rustRoot -Recurse -File -Force)) {
+        $relative = [IO.Path]::GetRelativePath($rustRoot, $file.FullName).Replace("\", "/")
+        if (-not $expectedNotices.Contains($relative)) {
+            throw "Unexpected Rust notice in archive: third_party/rust/$relative"
+        }
+    }
+    Write-Host "Verified Rust notices for $($rustPackages.Count) packages."
 
     $binary = Join-Path $extracted "bin\dot.exe"
     & (Join-Path $sourceDirectory "tests\version_metadata_check.ps1") -ExePath $binary -ExpectedVersion $ExpectedVersion

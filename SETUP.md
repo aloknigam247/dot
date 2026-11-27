@@ -67,6 +67,8 @@ $sha = git -C $env:VCPKG_ROOT rev-parse HEAD
 
 ## 5. First configure — slow (Qt compile)
 
+Put Cargo on `PATH` before configuring; see [Copilot CLI bridge](#10-copilot-cli-bridge) for the CI toolchain.
+
 ```ps1
 Set-Location (Join-Path (git rev-parse --show-toplevel) "desktop")
 cmake --preset release   # or: cmake --preset dev  (Debug escape hatch)
@@ -86,6 +88,7 @@ cmake --build --preset release --parallel   # or: cmake --build --preset dev --p
 set `$env:CMAKE_BUILD_PARALLEL_LEVEL` in your PowerShell profile.
 
 Produces `build\release\RelWithDebInfo\dot.exe` (Debug: `build\dev\Debug\dot.exe`) and the test binaries.
+Both configurations stage `dot_copilot_bridge.exe` beside `dot.exe`.
 The post-build deployment in `CMakeLists.txt` copies the required Qt runtime next to the executable.
 
 ## 7. Run the tests
@@ -192,9 +195,11 @@ cold-builds Qt (1–3 h) and then publishes the blob. Two one-time requirements:
 
 ## 10. Copilot CLI bridge
 
-The [Copilot CLI bridge](README.md#copilot-cli-bridge) needs [rustup](https://rustup.rs); a Cargo install without rustup
-ignores the pinned toolchain. Run Cargo from `desktop\copilot_bridge` so `rust-toolchain.toml` and
-`.cargo\config.toml` apply; that config stops the SDK build script from downloading a CLI.
+Use [rustup](https://rustup.rs) to build the [Copilot CLI bridge](README.md#copilot-cli-bridge) with the toolchain
+pinned in [rust-toolchain.toml](desktop/copilot_bridge/rust-toolchain.toml), as CI does. Standalone Cargo is also
+supported but ignores the pin and must provide the `x86_64-pc-windows-msvc` standard library. Run Cargo from
+`desktop\copilot_bridge` so `.cargo\config.toml` prevents the SDK from downloading a CLI.
+Package and verify releases with the same compiler (`RUSTC`, or `rustc` on `PATH`) and its standard-library notices.
 
 ```ps1
 cd desktop\copilot_bridge

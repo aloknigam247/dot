@@ -272,6 +272,15 @@ foreach(scale IN ITEMS 1.5 2)
     )
 endforeach()
 
+if(WIN32)
+    add_test(NAME test_bridge_staged
+        COMMAND pwsh -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_CURRENT_SOURCE_DIR}/check_bridge_staged.ps1"
+            -DeployDir "$<TARGET_FILE_DIR:dot>"
+    )
+    set_tests_properties(test_bridge_staged PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()
+
 # Deploy-integrity check — deterministic (no launch). Guards the EXPLICIT, hand-picked Qt
 # deploy list in the top-level CMakeLists.txt against two independent, derived expectations:
 #   (A) every Qt6*.dll imported by dot.exe or a deployed plugin is itself deployed, and

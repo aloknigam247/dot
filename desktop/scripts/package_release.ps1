@@ -129,6 +129,14 @@ if ($LASTEXITCODE -ne 0 -or $binaryVersion -cne "dot $version") {
 & (Join-Path $sourceDirectory "tests\version_metadata_check.ps1") -ExePath $binary -ExpectedVersion $version
 
 $timer = [Diagnostics.Stopwatch]::StartNew()
+Push-Location -LiteralPath (Join-Path $sourceDirectory "copilot_bridge")
+try {
+    $compiler = if ($env:RUSTC) { $env:RUSTC } else { "rustc" }
+    $rustc = (Get-Command $compiler -CommandType Application | Select-Object -First 1).Source
+} finally { Pop-Location }
+& cmake -E env "RUSTC=$rustc" cmake --build $build --config RelWithDebInfo --target dot_copilot_bridge | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Building the Copilot bridge with $rustc failed." }
+
 $stage = Join-Path $output "stage"
 [void][IO.Directory]::CreateDirectory($stage)
 & cmake --install $build --config RelWithDebInfo --prefix $stage | Out-Host
@@ -136,13 +144,25 @@ if ($LASTEXITCODE -ne 0) { throw "Installing the portable runtime failed." }
 
 $developmentFiles = @(Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
     $_.Extension -in @(".a", ".exp", ".ilk", ".lib", ".o", ".obj", ".pdb") -or
-    ($_.Extension -eq ".exe" -and $_.FullName -ne (Join-Path $stage "bin\dot.exe"))
+    ($_.Extension -eq ".exe" -and [IO.Path]::GetRelativePath($stage, $_.FullName) -notin
+        @("bin\dot.exe", "bin\dot_copilot_bridge.exe"))
 })
 if ($developmentFiles) {
     throw "Development artifacts entered staging: $($developmentFiles.FullName -join ', ')"
 }
 
 $notices = Join-Path $stage "third_party"
+$rustPackages = @(& (Join-Path $PSScriptRoot "rust_dependencies.ps1") -RustcPath $rustc)
+foreach ($package in $rustPackages) {
+    $directory = Join-Path $notices "rust\$($package.Name)-$($package.Version)"
+    foreach ($notice in $package.Notices) {
+        $path = Join-Path $directory $notice.Path
+        [void][IO.Directory]::CreateDirectory((Split-Path $path))
+        [IO.File]::WriteAllBytes($path, $notice.Bytes)
+    }
+}
+Write-Host "Collected Rust notices for $($rustPackages.Count) packages."
+
 $prefix = Join-Path $build "vcpkg_installed\x64-windows"
 $packageLists = @(Get-ChildItem -LiteralPath (Join-Path $build "vcpkg_installed\vcpkg\info") -Filter "*.list" |
     Sort-Object Name)

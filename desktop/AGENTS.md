@@ -43,6 +43,7 @@ ctest --preset release
 
 For Debug, substitute `dev` in all three commands. Output locations are documented in [SETUP.md](../SETUP.md#6-build).
 Use `--parallel` without a fixed core count.
+The `dot` target builds and stages the Copilot CLI bridge, so desktop builds require Cargo.
 
 The Windows `POST_BUILD` block in `CMakeLists.txt` stages the selected Qt runtime, plugins, QML modules, and `qt.conf`
 beside `dot.exe` for both preset configurations. Its `CMAKE_BUILD_TYPE` branch selects the vcpkg prefix and DLL suffix.

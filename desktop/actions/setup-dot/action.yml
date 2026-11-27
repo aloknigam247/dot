@@ -50,6 +50,11 @@ runs:
         "VCPKG_BINARY_SOURCES=clear;nuget,$src,readwrite" |
           Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+    - name: Install pinned Rust toolchain
+      shell: pwsh
+      working-directory: desktop/copilot_bridge
+      run: rustup toolchain install --no-self-update
+
     - name: Configure
       shell: pwsh
       working-directory: desktop
