@@ -52,6 +52,7 @@ private slots:
         QTRY_VERIFY(externalCmdline(conn) == true);
         conn.input(QStringLiteral(":abc"));
         QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
+        QVERIFY(!conn.grid()->dumpAscii().contains(QStringLiteral(":abc")));
 
         conn.setExtCmdline(false);
         QCOMPARE(model->rowCount(), 0);
@@ -60,7 +61,7 @@ private slots:
         conn.input(QStringLiteral("d"));
         QTRY_COMPARE(evalSync(conn, QStringLiteral("getcmdline()")),
                      std::optional<QVariant>(QStringLiteral("abcd")));
-        QCOMPARE(model->rowCount(), 0);
+        QTRY_VERIFY(conn.grid()->dumpAscii().contains(QStringLiteral(":abcd")));
         conn.input(QStringLiteral("<Esc>"));
     }
 

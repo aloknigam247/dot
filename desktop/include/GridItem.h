@@ -66,7 +66,6 @@ public:
     Q_INVOKABLE QSize cellsForSize(const QSizeF &size) const;
     Q_INVOKABLE int colAt(qreal x) const;
     Q_INVOKABLE int rowAt(qreal y) const;
-    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
 
     // Build the per-run QFont for a highlight attribute. Public for testing —
     // paint() uses this through a per-frame hl_id cache to avoid repeated
@@ -106,7 +105,7 @@ private:
     void recomputeMetrics();
     void maybeResizeUi();
     void invalidateRendering();
-    void updateInputMethod();
+    void syncCommandLineInputMethod();
     bool acceptsCommandLineInput() const;
     const GridRuns &preparedRuns();
     GridModel *grid() const;

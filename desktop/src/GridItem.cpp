@@ -11,9 +11,7 @@
 #include <QElapsedTimer>
 #include <QFontDatabase>
 #include <QGlyphRun>
-#include <QGuiApplication>
 #include <QHash>
-#include <QInputMethod>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -106,8 +104,9 @@ void GridItem::setConnector(NvimConnector *c) {
     m_conn = c;
     if(m_conn) {
         connect(m_conn->cmdline(), &CmdlineModel::activeLevelChanged, this,
-                &GridItem::updateInputMethod);
-        connect(m_conn, &NvimConnector::attachedChanged, this, &GridItem::updateInputMethod);
+                &GridItem::syncCommandLineInputMethod);
+        connect(m_conn, &NvimConnector::attachedChanged, this,
+                &GridItem::syncCommandLineInputMethod);
         connect(m_conn, &NvimConnector::guifontChanged, this, &GridItem::onGuifontChanged);
         connect(m_conn, &NvimConnector::linespaceChanged, this, &GridItem::onLinespaceChanged);
         connect(m_conn, &NvimConnector::flush, this, &GridItem::onFlush);
@@ -118,7 +117,7 @@ void GridItem::setConnector(NvimConnector *c) {
             connect(h, &HighlightTable::changed, this, &GridItem::invalidateRendering);
         }
     }
-    updateInputMethod();
+    syncCommandLineInputMethod();
     emit connectorChanged();
     invalidateRendering();
 }
@@ -649,16 +648,11 @@ bool GridItem::acceptsCommandLineInput() const {
     return m_conn && m_conn->attached() && m_conn->cmdline()->activeLevel() > 0;
 }
 
-void GridItem::updateInputMethod() {
+void GridItem::syncCommandLineInputMethod() {
     const bool active = acceptsCommandLineInput();
     if(flags().testFlag(ItemAcceptsInputMethod) == active) return;
     setFlag(ItemAcceptsInputMethod, active);
-    QGuiApplication::inputMethod()->update(Qt::ImEnabled);
-}
-
-QVariant GridItem::inputMethodQuery(Qt::InputMethodQuery query) const {
-    if(query == Qt::ImEnabled) return acceptsCommandLineInput();
-    return QQuickItem::inputMethodQuery(query);
+    updateInputMethod(Qt::ImEnabled);
 }
 
 // Neovim owns the command-line text, so only plain insertions at the caret can be forwarded.
