@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 $inputText = "dot entrypoint stdin"
 $id = [guid]::NewGuid().ToString()
 $scratch = Join-Path ([IO.Path]::GetTempPath()) "dot_entrypoint_$id"
+$cmdlinePath = Join-Path $scratch "cmdline_$id.txt"
 $framePath = Join-Path $scratch "frame_$id.txt"
 $initPath = Join-Path $scratch "init_$id.lua"
 $outputPath = Join-Path $scratch "buffer_$id.txt"
@@ -29,6 +30,7 @@ function Invoke-Entrypoint {
     $startInfo.Environment["DOT_BOOT_PROFILE"] = "1"
     [void]$startInfo.Environment.Remove("DOT_BOOT_PROFILE_FILE")
     $startInfo.Environment["DOT_PROFILE_PAINT"] = "1"
+    $startInfo.Environment["DOT_TEST_CMDLINE"] = $cmdlinePath
     $startInfo.Environment["DOT_TEST_FRAME"] = $framePath
     $startInfo.Environment["DOT_TEST_OUTPUT"] = $outputPath
     $startInfo.Environment["QML_DISABLE_DISK_CACHE"] = "1"
@@ -100,6 +102,13 @@ try {
     [IO.File]::WriteAllText($initPath, @"
 vim.opt.swapfile = false
 vim.opt.guifont = "Consolas:h12"
+local function ext_cmdline()
+  return vim.api.nvim_list_uis()[1].ext_cmdline
+end
+local at_attach
+vim.api.nvim_create_autocmd("UIEnter", { once = true, callback = function()
+  at_attach = ext_cmdline()
+end })
 local previous
 local timer = vim.uv.new_timer()
 timer:start(50, 50, vim.schedule_wrap(function()
@@ -113,6 +122,8 @@ timer:start(50, 50, vim.schedule_wrap(function()
   if text == "$inputText" then
     timer:stop()
     timer:close()
+    vim.wait(5000, ext_cmdline)
+    vim.fn.writefile({ tostring(at_attach), tostring(ext_cmdline()) }, vim.env.DOT_TEST_CMDLINE)
     vim.cmd("qa!")
   end
 end))
@@ -122,19 +133,29 @@ end))
     if ($help.Stdout -notmatch "^Usage: dot " -or $help.Stdout -notmatch "--dot-rounded_highlights") {
         throw "The executable did not print the expected dot help: $($help.Stdout)"
     }
-    $run = Invoke-Entrypoint -Path $DriverPath `
-        -Arguments @("--clean", "-u", $initPath, "--dot-rounded_highlights=ErrorMsg", "-") -InputText $inputText
-    if ($run.Stdout -notmatch "(?m)^application=dot\r?$" -or
-        $run.Stdout -notmatch "(?m)^organization=dot\r?$") {
-        throw "Unexpected application identity: $($run.Stdout)"
+    foreach ($case in @(
+        @{ Args = @("--dot-ext_cmdline"); AtAttach = "true"; Name = "CLI" }
+        @{ Args = @("--cmd", "let g:dot_ext_cmdline = v:true"); AtAttach = "false"; Name = "g:dot_ext_cmdline" }
+    )) {
+        $arguments = @("--clean", "-u", $initPath, "--dot-rounded_highlights=ErrorMsg") + $case.Args + "-"
+        $run = Invoke-Entrypoint -Path $DriverPath -Arguments $arguments -InputText $inputText
+        if ($run.Stdout -notmatch "(?m)^application=dot\r?$" -or
+            $run.Stdout -notmatch "(?m)^organization=dot\r?$") {
+            throw "Unexpected application identity: $($run.Stdout)"
+        }
+        if ($run.Stderr -notmatch "dot paint: [0-9]+ us") {
+            throw "The paint profiling path did not run: $($run.Stderr)"
+        }
+        if ([IO.File]::ReadAllText($outputPath).TrimEnd() -ne $inputText) {
+            throw "Neovim did not receive the redirected stdin."
+        }
+        $states = [IO.File]::ReadAllLines($cmdlinePath) -join ","
+        if ($states -ne "$($case.AtAttach),true") {
+            throw "$($case.Name): ext_cmdline (attach,startup): expected '$($case.AtAttach),true', got '$states'."
+        }
+        Remove-Item -LiteralPath $cmdlinePath, $framePath, $outputPath
     }
-    if ($run.Stderr -notmatch "dot paint: [0-9]+ us") {
-        throw "The paint profiling path did not run: $($run.Stderr)"
-    }
-    if ([IO.File]::ReadAllText($outputPath).TrimEnd() -ne $inputText) {
-        throw "Neovim did not receive the redirected stdin."
-    }
-    Write-Host "PASS: dot help, identity, first frame, paint profiling and stdin."
+    Write-Host "PASS: dot help, identity, first frame, paint profiling, stdin and ext_cmdline config."
 } finally {
     Remove-Item -LiteralPath $scratch -Recurse -Force
 }
