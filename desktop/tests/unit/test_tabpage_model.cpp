@@ -330,6 +330,33 @@ private slots:
         QCOMPARE(finishedSpy.count(), 1);
     }
 
+    void pendingSelectionSurvivesUpdateKeepingTarget() {
+        NvimConnector conn;
+        TabpageModel *model = conn.tabpages();
+        QAbstractItemModelTester tester(model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        dispatch(conn, tablineEvent(1, { tab(1, "one"), tab(2, "two"), tab(3, "three") }));
+        const auto selection = model->beginSelection(2);
+        QVERIFY(selection);
+        QSignalSpy finishedSpy(model, &TabpageModel::selectionFinished);
+        QSignalSpy pendingSpy(model, &TabpageModel::selectionPendingChanged);
+
+        dispatch(conn, tablineEvent(3, { tab(3, "three"), tab(2, "renamed"), tab(1, "one") }));
+
+        QCOMPARE(handles(model), QList<qint64>({ 3, 2, 1 }));
+        QCOMPARE(model->currentHandle(), 3);
+        QCOMPARE(finishedSpy.count(), 0);
+        QCOMPARE(pendingSpy.count(), 0);
+        QVERIFY(model->selectionPending());
+        QCOMPARE(model->selectionError(), QString());
+
+        model->finishSelection(selection->generation, {});
+
+        QCOMPARE(finishedSpy.count(), 1);
+        verifyFinished(finishedSpy, 0, 2, true, QString());
+        QVERIFY(!model->selectionPending());
+    }
+
     void staleOrSupersededSelectionIgnored() {
         NvimConnector conn;
         TabpageModel *model = conn.tabpages();
