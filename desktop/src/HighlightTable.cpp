@@ -171,9 +171,12 @@ HlAttr HighlightTable::attr(int id) const {
 QVariantMap HighlightTable::attributeMap(int attrId) const {
     const HlAttr a = attr(attrId);
     QVariantMap map{
-        { QStringLiteral("bold"), a.bold }, { QStringLiteral("italic"), a.italic },
-        { QStringLiteral("reverse"), a.reverse }, { QStringLiteral("strikethrough"), a.strikethrough },
-        { QStringLiteral("undercurl"), a.undercurl }, { QStringLiteral("underline"), a.underline },
+        { QStringLiteral("bold"), a.bold },
+        { QStringLiteral("italic"), a.italic },
+        { QStringLiteral("reverse"), a.reverse },
+        { QStringLiteral("strikethrough"), a.strikethrough },
+        { QStringLiteral("undercurl"), a.undercurl },
+        { QStringLiteral("underline"), a.underline },
     };
     if(a.bg.isValid()) map.insert(QStringLiteral("background"), a.bg);
     if(a.fg.isValid()) map.insert(QStringLiteral("foreground"), a.fg);

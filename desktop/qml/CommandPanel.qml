@@ -10,11 +10,10 @@ Item {
 
     readonly property Item activeRow: levels.count ? levels.itemAt(levels.count - 1) : null
     readonly property bool available: paneVisible && colors.overlayValid && colors.chromeValid && colors.cursorValid
-    readonly property var blockStyles: connector.cmdline.blockLines.map(line => styles(line, styleRevision))
-    readonly property var blockLines: blockStyles.map(line => plain(line))
     readonly property color caretColor: colors.cursorBackground
     readonly property rect caretRect: activeRow ? input.cursorRectangle : Qt.rect(0, 0, 0, 0)
-    readonly property string caretShape: ["block", "horizontal", "vertical"][connector.modeInfo.cursorShape]
+    readonly property string caretShape: connector.modeInfo.cursorStyleEnabled
+                                         ? ["block", "horizontal", "vertical"][connector.modeInfo.cursorShape] : "block"
     readonly property var chunkStyles: {
         if (!activeRow) return []
         const spans = styles(activeRow.chunks, styleRevision)
@@ -71,11 +70,12 @@ Item {
     function plain(spans) {
         return spans.map(span => span.text).join("")
     }
-    function rich(prefix, spans) {
+    function rich(prefix, spans, cursorInk = false) {
         let html = "<span style='white-space:pre-wrap'>" + escapeHtml(prefix)
         for (const s of spans) {
             const decoration = (s.underline ? " underline" : "") + (s.strikethrough ? " line-through" : "")
-            html += "<span style='color:" + s.foreground + ";background-color:" + s.background
+            html += "<span style='color:" + (cursorInk ? colors.cursorForeground : s.foreground)
+                  + (cursorInk ? "" : ";background-color:" + s.background)
                   + (s.bold ? ";font-weight:bold" : "") + (s.italic ? ";font-style:italic" : "")
                   + (decoration ? ";text-decoration:" + decoration : "") + "'>" + escapeHtml(s.text) + "</span>"
         }
@@ -111,11 +111,9 @@ Item {
             required property int cursorTextOffset
             required property string firstCharacter
             required property int indent
-            required property int index
             required property string prompt
             required property string specialCharacter
             required property bool specialShift
-            visible: index === levels.count - 1
         }
     }
     Repeater {
@@ -123,7 +121,6 @@ Item {
         delegate: Rectangle {
             required property int index
             readonly property int spread: 3 - index
-            objectName: "shadowLayer"
             anchors.fill: parent
             anchors.margins: -spread
             anchors.topMargin: 1 - spread
@@ -149,17 +146,18 @@ Item {
         clip: true
         Column {
             id: blockContent
+            objectName: "blockContent"
             anchors.bottom: parent.bottom
             width: parent.width
             Repeater {
-                model: panel.blockStyles
+                model: panel.connector.cmdline.blockLines
                 delegate: Text {
                     required property var modelData
                     objectName: "blockLine"
                     width: blockContent.width
                     color: panel.colors.overlayForeground
                     font: panel.metrics.textFont
-                    text: panel.rich("", modelData)
+                    text: panel.rich("", panel.styles(modelData, panel.styleRevision))
                     textFormat: Text.RichText
                     wrapMode: Text.WrapAnywhere
                 }
@@ -189,7 +187,8 @@ Item {
                 id: input
                 objectName: "commandLayout"
                 y: -Math.max(0, panel.caretRect.y + panel.caretRect.height - viewport.height)
-                width: Math.max(0, viewport.width)
+                // Leave room for a full block after the last glyph, even at an exact wrap boundary.
+                width: Math.max(0, viewport.width - panel.metrics.cellWidth)
                 color: panel.colors.overlayForeground
                 font: panel.metrics.textFont
                 text: panel.rich(panel.kindMark + panel.indentText, panel.chunkStyles)
@@ -203,7 +202,7 @@ Item {
             }
             Rectangle {
                 objectName: "commandCaret"
-                readonly property real fraction: panel.connector.modeInfo.cellPercentage / 100
+                readonly property real fraction: Math.min(100, Math.max(1, panel.connector.modeInfo.cellPercentage)) / 100
                 readonly property string glyph: panel.characterAt(panel.kindMark + panel.displayedText,
                                                                   panel.cursorPosition)
                 readonly property real cell: {
@@ -211,21 +210,31 @@ Item {
                     const next = input.positionToRectangle(Math.min(input.length, panel.cursorPosition + glyph.length))
                     return next.y === r.y && next.x > r.x ? next.x - r.x : panel.metrics.cellWidth
                 }
-                x: Math.min(panel.caretRect.x, Math.max(0, viewport.width - width))
+                x: panel.caretRect.x
                 y: input.y + panel.caretRect.y + (panel.caretShape === "horizontal" ? panel.caretRect.height - height : 0)
                 width: panel.caretShape === "vertical" ? Math.max(1, cell * fraction) : cell
                 height: panel.caretShape === "horizontal" ? Math.max(1, panel.caretRect.height * fraction)
                                                           : panel.caretRect.height
                 color: panel.caretColor
+                clip: true
                 radius: panel.metrics.cursorCornerRadius
-                Text {
+                // Clip the same shaped line, rather than reshaping a single code point in isolation.
+                TextEdit {
                     objectName: "caretGlyph"
-                    anchors.fill: parent
+                    x: input.x - parent.x
+                    y: input.y - parent.y
+                    width: input.width
+                    activeFocusOnPress: false
                     color: panel.colors.cursorForeground
+                    cursorVisible: false
+                    enabled: false
                     font: input.font
-                    text: parent.glyph
-                    textFormat: Text.PlainText
-                    visible: panel.caretShape === "block"
+                    readOnly: true
+                    text: visible ? panel.rich(panel.kindMark + panel.indentText, panel.chunkStyles, true) : ""
+                    textFormat: input.textFormat
+                    visible: panel.caretShape === "block" && parent.glyph.length > 0
+                    wrapMode: input.wrapMode
+                    Accessible.ignored: true
                 }
             }
         }

@@ -47,8 +47,9 @@ class TestHighlightTable : public QObject {
 private slots:
     void attributeMapColors() {
         HighlightTable table;
-        const auto attrs =
-            packAttrMap({ { "background", 0x273849 }, { "foreground", 0x91abcd }, { "special", 0xdef012 } }, {});
+        const auto attrs = packAttrMap(
+            { { "background", 0x273849 }, { "foreground", 0x91abcd }, { "special", 0xdef012 } },
+            {});
         table.defineAttr(7, attrs.get());
         const auto map = table.attributeMap(7);
         QCOMPARE(map.value("background").value<QColor>(), QColor("#273849"));
@@ -58,7 +59,8 @@ private slots:
 
     void attributeMapFlags_data() {
         QTest::addColumn<QString>("enabled");
-        for(const char *flag: { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
+        for(const char *flag:
+            { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
             QTest::newRow(flag) << QString::fromLatin1(flag);
     }
 
@@ -69,9 +71,11 @@ private slots:
         table.setDefaultColors(0xaabbcc, 0x112233, 0xeeddcc);
         table.defineAttr(7, attrs.get());
         const auto map = table.attributeMap(7);
-        for(const char *flag: { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
+        for(const char *flag:
+            { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
             QCOMPARE(map.value(flag), QVariant(enabled == QLatin1String(flag)));
-        QVERIFY(!map.contains("background") && !map.contains("foreground") && !map.contains("special"));
+        QVERIFY(!map.contains("background") && !map.contains("foreground") &&
+                !map.contains("special"));
     }
 
     void defaultColorsSet() {

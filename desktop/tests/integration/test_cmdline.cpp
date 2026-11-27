@@ -14,8 +14,6 @@ class TestCmdline : public QObject {
     Q_OBJECT
 
 private:
-    QByteArray m_previousGate;
-
     static std::optional<bool> externalCmdline(NvimConnector &conn) {
         const auto extCmdline = evalSync(
             conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 20000);
@@ -41,23 +39,9 @@ private:
     }
 
 private slots:
-    void init() {
-        QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_")));
-        m_previousGate = qgetenv("DOT_EXT_CMDLINE");
-        qputenv("DOT_EXT_CMDLINE", "1");
-    }
+    void initTestCase() { qputenv("DOT_EXT_CMDLINE", "1"); }
 
-    void cleanup() {
-        if(m_previousGate.isNull()) qunsetenv("DOT_EXT_CMDLINE");
-        else qputenv("DOT_EXT_CMDLINE", m_previousGate);
-    }
-
-    void builtInCmdlineWithoutOptIn() {
-        qunsetenv("DOT_EXT_CMDLINE");
-        NvimConnector conn;
-        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
-        QVERIFY2(externalCmdline(conn) == false, "ext_cmdline must be off without DOT_EXT_CMDLINE");
-    }
+    void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_"))); }
 
     void colonPromptTracksUnicodeCursor() {
         NvimConnector conn;

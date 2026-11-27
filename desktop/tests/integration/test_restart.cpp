@@ -7,6 +7,8 @@ using namespace dot::test;
 class TestRestart : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() { qunsetenv("DOT_EXT_CMDLINE"); }
+
     void restartReconnectsToNewServer() {
         NvimConnector conn;
         FlushLatch initialFlush(&conn);
@@ -15,7 +17,7 @@ private slots:
         QVERIFY(waitForAttach(&conn));
         QVERIFY(initialFlush.wait());
 
-        // Production attaches leave the command line on the grid until a consumer exists.
+        // Without the DOT_EXT_CMDLINE opt-in, attaches leave the command line on the grid.
         const auto initialExtCmdline =
             evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"));
         QVERIFY(initialExtCmdline);

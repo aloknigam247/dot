@@ -11,6 +11,8 @@
 
 #include <msgpack.hpp>
 
+#include <initializer_list>
+#include <map>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -63,6 +65,12 @@ private:
         conn.handleRedraw(handle.get());
     }
 
+    static void defineAttributes(NvimConnector &conn, std::initializer_list<int> ids) {
+        const std::map<std::string, int> empty;
+        for(const int id: ids)
+            dispatch(conn, redrawEvent("hl_attr_define", id, empty, empty, std::vector<int>()));
+    }
+
     static QVariant role(NvimConnector &conn, int row, int role) {
         CmdlineModel *model = conn.cmdline();
         return model->data(model->index(row), role);
@@ -88,6 +96,7 @@ private slots:
         QAbstractItemModelTester tester(model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
         QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
+        defineAttributes(conn, { 54, 69 });
 
         dispatch(conn, redrawEvent("cmdline_show", Line{ { 54, "1", 313 }, { 69, "+", 282 } }, 2,
                                    std::string("="), std::string("Name: "), 2, 1, 7));
@@ -143,6 +152,7 @@ private slots:
 
     void multiChunkUnicodeOffsetsAccumulateText() {
         NvimConnector conn;
+        defineAttributes(conn, { 1 });
         dispatch(conn,
                  showEvent(Line{ { 0, "\xC3\xA9", 0 }, { 1, "\xF0\x9F\x98\x80x", 2 } }, 0, ":", 1));
 
@@ -276,6 +286,7 @@ private slots:
     void positionOnlyKeepsChunks() {
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
+        defineAttributes(conn, { 1 });
         dispatch(conn, showEvent(Line{ { 0, "ab", 0 }, { 1, "cd", 2 } }, 4, ":", 1));
         const QVariant chunks = role(conn, 0, CmdlineModel::ChunksRole);
         QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
@@ -391,6 +402,7 @@ private slots:
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
         QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        defineAttributes(conn, { 5 });
 
         QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: no block is visible");
         dispatch(conn, redrawEvent("cmdline_block_append", Line{ { 0, "orphan", 0 } }));
@@ -445,6 +457,31 @@ private slots:
         QCOMPARE(model->blockLines().at(0).toList(),
                  QVariantList{ chunkMap(0, QStringLiteral("three"), 0) });
         QCOMPARE(blockSpy.count(), 2);
+    }
+
+    void undefinedAttributesWarnAndKeepChunks() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_show: undefined attr_id 7");
+        dispatch(conn, showEvent(Line{ { 0, "a", 0 }, { 7, "b", 3 } }, 2, ":", 1));
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_show: undefined attr_id 8");
+        dispatch(conn,
+                 redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 8, "x", 0 } } }));
+        QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: undefined attr_id 9");
+        dispatch(conn, redrawEvent("cmdline_block_append", Line{ { 9, "y", 0 } }));
+
+        const QVariantList expectedChunks{ chunkMap(0, QStringLiteral("a"), 0),
+                                           chunkMap(7, QStringLiteral("b"), 3) };
+        const QVariantList expectedBlock{ QVariantList{ chunkMap(8, QStringLiteral("x"), 0) },
+                                          QVariantList{ chunkMap(9, QStringLiteral("y"), 0) } };
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(), expectedChunks);
+        QCOMPARE(model->blockLines(), expectedBlock);
+
+        defineAttributes(conn, { 7 });
+        dispatch(conn, showEvent(Line{ { 7, "b", 3 } }, 1, ":", 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
+                 QVariantList{ chunkMap(7, QStringLiteral("b"), 3) });
     }
 
     void emptyResetAndBlockHideEmitNothing() {

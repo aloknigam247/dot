@@ -105,7 +105,9 @@ void GridItem::setConnector(NvimConnector *c) {
     }
     m_conn = c;
     if(m_conn) {
-        connect(m_conn->cmdline(), &CmdlineModel::activeLevelChanged, this, &GridItem::updateInputMethod);
+        connect(m_conn->cmdline(), &CmdlineModel::activeLevelChanged, this,
+                &GridItem::updateInputMethod);
+        connect(m_conn, &NvimConnector::attachedChanged, this, &GridItem::updateInputMethod);
         connect(m_conn, &NvimConnector::guifontChanged, this, &GridItem::onGuifontChanged);
         connect(m_conn, &NvimConnector::linespaceChanged, this, &GridItem::onLinespaceChanged);
         connect(m_conn, &NvimConnector::flush, this, &GridItem::onFlush);
@@ -643,20 +645,25 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
     return root;
 }
 
+bool GridItem::acceptsCommandLineInput() const {
+    return m_conn && m_conn->attached() && m_conn->cmdline()->activeLevel() > 0;
+}
+
 void GridItem::updateInputMethod() {
-    const bool active = m_conn && m_conn->cmdline()->activeLevel() > 0;
+    const bool active = acceptsCommandLineInput();
     if(flags().testFlag(ItemAcceptsInputMethod) == active) return;
     setFlag(ItemAcceptsInputMethod, active);
     QGuiApplication::inputMethod()->update(Qt::ImEnabled);
 }
 
 QVariant GridItem::inputMethodQuery(Qt::InputMethodQuery query) const {
-    if(query == Qt::ImEnabled) return m_conn && m_conn->cmdline()->activeLevel() > 0;
+    if(query == Qt::ImEnabled) return acceptsCommandLineInput();
     return QQuickItem::inputMethodQuery(query);
 }
 
+// Neovim owns the command-line text, so only plain insertions at the caret can be forwarded.
 void GridItem::inputMethodEvent(QInputMethodEvent *ev) {
-    if(m_conn && m_conn->cmdline()->activeLevel() > 0) {
+    if(acceptsCommandLineInput() && ev->replacementStart() == 0 && ev->replacementLength() == 0) {
         const QString keys = InputHandler::textToNvim(ev->commitString());
         if(!keys.isEmpty()) {
             m_conn->input(keys);

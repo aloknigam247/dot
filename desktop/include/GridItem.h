@@ -107,6 +107,7 @@ private:
     void maybeResizeUi();
     void invalidateRendering();
     void updateInputMethod();
+    bool acceptsCommandLineInput() const;
     const GridRuns &preparedRuns();
     GridModel *grid() const;
     HighlightTable *hl() const;

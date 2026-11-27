@@ -3,8 +3,14 @@
 #include <QObject>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickItemGrabResult>
+#include <QQuickTextDocument>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
+#include <QSignalSpy>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QtMath>
 #include <QtQuickTest>
 
 #include "NvimConnector.h"
@@ -34,7 +40,8 @@ class TestSetup : public QObject {
         dot::CmdlineLine result;
         for(const auto &chunk: chunks) {
             const auto map = chunk.toMap();
-            result.append({ map.value("attrId").toInt(), 0, map.value("text").toString().toUtf8() });
+            result.append(
+                { map.value("attrId").toInt(), 0, map.value("text").toString().toUtf8() });
         }
         return result;
     }
@@ -51,14 +58,46 @@ public:
             if(it.value().metaType().id() == QMetaType::Bool) pk.pack(it.value().toBool());
             else pk.pack(it.value().toInt());
         }
-        m_connector->highlights()->defineAttr(id, msgpack::unpack(buffer.data(), buffer.size()).get());
+        m_connector->highlights()->defineAttr(id,
+                                              msgpack::unpack(buffer.data(), buffer.size()).get());
     }
 
     Q_INVOKABLE void emitFlush() { emit m_connector->flush(); }
+    // QuickTest's grabImage() captures the window, which is empty under the minimal platform.
+    Q_INVOKABLE QVariantList grabPixels(QQuickItem *item, const QVariantList &points) {
+        QVariantList colors;
+        const auto result = item->grabToImage();
+        if(!result) return colors;
+        QSignalSpy ready(result.data(), &QQuickItemGrabResult::ready);
+        if(result->image().isNull() && !ready.wait(5000)) return colors;
+        const QImage image = result->image();
+        const qreal scale = image.width() / item->width();
+        for(const auto &point: points) {
+            const QPointF at = point.toPointF() * scale;
+            colors.append(QColor::fromRgba(image.pixel(qFloor(at.x()), qFloor(at.y()))));
+        }
+        return colors;
+    }
     Q_INVOKABLE void hideBlock() { m_connector->cmdline()->hideBlock(); }
     Q_INVOKABLE void hideCmdline(int level) { QVERIFY(m_connector->cmdline()->hide(level)); }
+    Q_INVOKABLE QVariantMap renderedAt(QObject *item, int offset) {
+        QTextDocument html;
+        auto *quickDoc = item->property("textDocument").value<QQuickTextDocument *>();
+        if(!quickDoc) html.setHtml(item->property("text").toString());
+        QTextDocument *doc = quickDoc ? quickDoc->textDocument() : &html;
+        QTextCursor cursor(doc);
+        cursor.setPosition(offset + 1);
+        const auto format = cursor.charFormat();
+        return { { "background", format.background().color() },
+                 { "bold", format.fontWeight() >= QFont::Bold },
+                 { "foreground", format.foreground().color() },
+                 { "italic", format.fontItalic() },
+                 { "strikeout", format.fontStrikeOut() },
+                 { "text", doc->toPlainText() },
+                 { "underline", format.fontUnderline() } };
+    }
     Q_INVOKABLE void resetCmdline() { m_connector->cmdline()->reset(); }
-    Q_INVOKABLE void setCursorShape(const QString &shape, int cellPercentage) {
+    Q_INVOKABLE void setCursorShape(const QString &shape, int cellPercentage, bool enabled = true) {
         msgpack::sbuffer buffer;
         msgpack::packer<msgpack::sbuffer> pk(buffer);
         pk.pack_array(1);
@@ -69,26 +108,33 @@ public:
         pk.pack(cellPercentage);
         pk.pack("cursor_shape");
         pk.pack(shape.toStdString());
-        m_connector->modeInfo()->setModes(msgpack::unpack(buffer.data(), buffer.size()).get(), true);
+        m_connector->modeInfo()->setModes(msgpack::unpack(buffer.data(), buffer.size()).get(),
+                                          enabled);
     }
     Q_INVOKABLE void setOverlayColors(const QColor &fg, const QColor &bg) {
         constexpr int overlay = 81;
         const auto attr = dot::test::colorAttrs(static_cast<int>(fg.rgb() & 0xffffffU),
-                                               static_cast<int>(bg.rgb() & 0xffffffU));
+                                                static_cast<int>(bg.rgb() & 0xffffffU));
         m_connector->highlights()->defineAttr(overlay, attr.get());
         m_connector->highlights()->setHighlightGroup(QStringLiteral("NormalFloat"), overlay);
         m_connector->colorPalette()->publishContent();
     }
-    Q_INVOKABLE void setPosition(int level, int pos) { QVERIFY(m_connector->cmdline()->setPosition(level, pos)); }
+    Q_INVOKABLE void setPosition(int level, int pos) {
+        QVERIFY(m_connector->cmdline()->setPosition(level, pos));
+    }
     Q_INVOKABLE void setRoleResolved(const QString &role, bool resolved) {
         if(role == QStringLiteral("chrome")) {
-            if(resolved) m_connector->colorPalette()->stageChromeSnapshot(distinctChromeSnapshot().get());
-            else m_connector->colorPalette()->invalidateChrome(QStringLiteral("unresolved test palette"));
+            if(resolved)
+                m_connector->colorPalette()->stageChromeSnapshot(distinctChromeSnapshot().get());
+            else
+                m_connector->colorPalette()->invalidateChrome(
+                    QStringLiteral("unresolved test palette"));
         } else if(role == QStringLiteral("cursor")) {
             m_connector->modeInfo()->setCurrentMode(QStringLiteral("normal"), resolved ? 0 : -1);
         } else {
             QCOMPARE(role, QStringLiteral("overlay"));
-            m_connector->highlights()->setHighlightGroup(QStringLiteral("NormalFloat"), resolved ? 0 : 999);
+            m_connector->highlights()->setHighlightGroup(QStringLiteral("NormalFloat"),
+                                                         resolved ? 0 : 999);
         }
         m_connector->colorPalette()->publishContent();
     }

@@ -88,6 +88,14 @@ static std::optional<TabpageHandle> tabpageHandle(const msgpack::object &value) 
     };
 }
 
+// Undefined attributes still render with inherited colors; the warning exposes the protocol error.
+static void warnUndefinedAttributes(const char *event, const CmdlineLine &line,
+                                    const HighlightTable &table) {
+    for(const CmdlineChunk &chunk: line)
+        if(!table.contains(chunk.attrId))
+            qWarning("Invalid %s: undefined attr_id %d", event, chunk.attrId);
+}
+
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
 // diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
@@ -1188,6 +1196,7 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
             qWarning("Invalid cmdline_block_append: expected a chunk line");
             return;
         }
+        warnUndefinedAttributes("cmdline_block_append", *line, *m_hl);
         if(const auto appended = m_cmdline->appendBlock(*line); !appended)
             qWarning().noquote() << "Invalid cmdline_block_append:" << appended.error();
         return;
@@ -1212,6 +1221,8 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
             }
             block.append(std::move(*line));
         }
+        for(const CmdlineLine &line: block)
+            warnUndefinedAttributes("cmdline_block_show", line, *m_hl);
         m_cmdline->showBlock(block);
         return;
     }
@@ -1256,6 +1267,7 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
                      "and hl_id");
             return;
         }
+        warnUndefinedAttributes("cmdline_show", *content, *m_hl);
         const CmdlineSession session{
             *content, asQString(a.ptr[2]), *highlightId, *indent, *position, asQString(prompt),
         };

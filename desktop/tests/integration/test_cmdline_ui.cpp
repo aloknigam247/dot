@@ -3,14 +3,13 @@
 #include "IntegrationHelpers.h"
 
 #include <QInputMethodEvent>
-#include <QJSValue>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItemGrabResult>
 #include <QQuickTextDocument>
 #include <QQuickWindow>
-#include <QSGRendererInterface>
 #include <QSet>
+#include <QSGRendererInterface>
 #include <QTextCursor>
 #include <QTextDocument>
 
@@ -26,11 +25,21 @@ struct CommandPanelHarness {
     QQmlApplicationEngine engine;
     CursorItem *cursor = nullptr;
     GridItem *grid = nullptr;
+    QQuickItem *blockContent = nullptr;
     QQuickItem *layout = nullptr;
     QQuickItem *panel = nullptr;
     QQuickWindow *window = nullptr;
 
-    bool acceptsInputMethod() const { return grid->flags().testFlag(QQuickItem::ItemAcceptsInputMethod); }
+    bool acceptsInputMethod() const {
+        return grid->flags().testFlag(QQuickItem::ItemAcceptsInputMethod);
+    }
+
+    bool commit(const QString &text, int start = 0, int length = 0) const {
+        QInputMethodEvent event;
+        event.setCommitString(text, start, length);
+        QCoreApplication::sendEvent(grid, &event);
+        return event.isAccepted();
+    }
 
     void type(const QByteArray &text) const {
         for(char key: text) QTest::keyClick(window, key);
@@ -38,18 +47,30 @@ struct CommandPanelHarness {
 
     QString text() const { return panel->property("displayedText").toString(); }
 
-    QVariantList list(const char *name) const {
-        const auto value = panel->property(name);
-        if(value.metaType() == QMetaType::fromType<QJSValue>()) return value.value<QJSValue>().toVariant().toList();
-        return value.toList();
+    QStringList renderedBlock() const {
+        QStringList result;
+        for(const auto *row: blockContent->childItems()) {
+            if(row->objectName() != QStringLiteral("blockLine")) continue;
+            QTextDocument doc;
+            doc.setHtml(row->property("text").toString());
+            result.append(doc.toPlainText());
+        }
+        return result;
     }
 
     void verifyCaret(int position) const {
         QRectF expected;
-        QVERIFY(QMetaObject::invokeMethod(layout, "positionToRectangle", Q_RETURN_ARG(QRectF, expected),
-                                          Q_ARG(int, position)));
+        QVERIFY(QMetaObject::invokeMethod(layout, "positionToRectangle",
+                                          Q_RETURN_ARG(QRectF, expected), Q_ARG(int, position)));
         QVERIFY(expected.height() > 0);
         QCOMPARE(panel->property("caretRect").toRectF(), expected);
+        const auto *caret = panel->findChild<QQuickItem *>(QStringLiteral("commandCaret"));
+        QVERIFY(caret && caret->isVisible());
+        const auto top = panel->property("caretShape").toString() == QStringLiteral("horizontal")
+                             ? expected.bottom() - caret->height()
+                             : expected.y();
+        QCOMPARE(caret->mapToItem(panel, QPointF()),
+                 layout->mapToItem(panel, QPointF(expected.x(), top)));
     }
 };
 
@@ -90,7 +111,8 @@ private slots:
         h->panel = h->window->findChild<QQuickItem *>(QStringLiteral("commandPanel"));
         QVERIFY(h->cursor && h->grid && h->panel);
         h->layout = h->panel->findChild<QQuickItem *>(QStringLiteral("commandLayout"));
-        QVERIFY(h->layout);
+        h->blockContent = h->panel->findChild<QQuickItem *>(QStringLiteral("blockContent"));
+        QVERIFY(h->layout && h->blockContent);
         QTRY_VERIFY(h->panel->property("available").toBool());
         QVERIFY(!h->panel->isVisible());
     }
@@ -100,14 +122,14 @@ private slots:
     void blockStaysWithNextLevel() {
         h->type(":function F()");
         QTest::keyClick(h->window, Qt::Key_Return);
-        QTRY_COMPARE(h->list("blockLines"), QVariantList{QStringLiteral("function F()")});
+        QTRY_COMPARE(h->renderedBlock(), QStringList{ QStringLiteral("function F()") });
         QTRY_COMPARE(h->text(), QStringLiteral("  "));
         QVERIFY(h->panel->isVisible());
         h->verifyCaret(h->panel->property("kindMark").toString().size() + 2);
         h->type("endfunction");
         QTest::keyClick(h->window, Qt::Key_Return);
         QTRY_VERIFY(!h->panel->isVisible());
-        QVERIFY(h->list("blockLines").isEmpty());
+        QVERIFY(h->renderedBlock().isEmpty());
         QCOMPARE(evalSync(h->conn, QStringLiteral("exists('*F')")), std::optional<QVariant>(1));
     }
 
@@ -116,7 +138,8 @@ private slots:
         QTRY_COMPARE(h->text(), QStringLiteral("let g:dot_cancel = 1"));
         QTest::keyClick(h->window, Qt::Key_Escape);
         QTRY_VERIFY(!h->panel->isVisible());
-        QCOMPARE(evalSync(h->conn, QStringLiteral("exists('g:dot_cancel')")), std::optional<QVariant>(0));
+        QCOMPARE(evalSync(h->conn, QStringLiteral("exists('g:dot_cancel')")),
+                 std::optional<QVariant>(0));
         QCOMPARE(h->window->activeFocusItem(), h->grid);
         QVERIFY(h->cursor->isVisible());
     }
@@ -132,31 +155,33 @@ private slots:
     void imeCommitReachesCommandLineOnce() {
         const QString literal(u"\u6F22<x>");
         const auto enabled = [&] { return h->grid->inputMethodQuery(Qt::ImEnabled).toBool(); };
-        const auto commit = [&](const QString &text) {
-            QInputMethodEvent event;
-            event.setCommitString(text);
-            QCoreApplication::sendEvent(h->grid, &event);
-            return event.isAccepted();
-        };
         h->type("iabc");
         QTRY_VERIFY(h->conn.grid()->dumpAscii().contains(QStringLiteral("abc")));
         QVERIFY(!h->acceptsInputMethod());
         QVERIFY(!enabled());
-        QVERIFY(!commit(QStringLiteral("x")));
+        QVERIFY(!h->commit(QStringLiteral("x")));
         QTest::keyClick(h->window, Qt::Key_Escape);
-        QCOMPARE(evalSync(h->conn, QStringLiteral("getline(1)")), std::optional<QVariant>(QStringLiteral("abc")));
+        QCOMPARE(evalSync(h->conn, QStringLiteral("getline(1)")),
+                 std::optional<QVariant>(QStringLiteral("abc")));
         h->type(":let g:dot_commit = '");
         QTRY_VERIFY(enabled());
         QVERIFY(h->acceptsInputMethod());
         QInputMethodEvent preedit(QStringLiteral("not committed"), {});
         QCoreApplication::sendEvent(h->grid, &preedit);
-        QVERIFY(commit(literal));
+        QVERIFY(!preedit.isAccepted());
+        QVERIFY(!h->commit({}));
+        QVERIFY(!h->commit(QStringLiteral("x"), -1, 1));
+        QVERIFY(!h->commit({}, -1, 1));
+        QVERIFY(!h->commit(QStringLiteral("x"), 1, 0));
+        QVERIFY(!h->commit(QStringLiteral("x"), 0, 1));
+        QVERIFY(h->commit(literal));
         h->type("'");
         QTRY_COMPARE(h->text(), QStringLiteral("let g:dot_commit = '%1'").arg(literal));
         QTest::keyClick(h->window, Qt::Key_Return);
         QTRY_VERIFY(!enabled());
         QVERIFY(!h->acceptsInputMethod());
-        QCOMPARE(getVarSync(h->conn, QStringLiteral("dot_commit")), std::optional<QVariant>(literal));
+        QCOMPARE(getVarSync(h->conn, QStringLiteral("dot_commit")),
+                 std::optional<QVariant>(literal));
         h->type(":");
         QTRY_VERIFY(enabled());
         QVERIFY(h->acceptsInputMethod());
@@ -190,16 +215,28 @@ private slots:
         QSignalSpy attached(&h->conn, &NvimConnector::attachComplete);
         QSignalSpy removed(h->conn.cmdline(), &CmdlineModel::rowsRemoved);
         QSignalSpy reset(h->conn.cmdline(), &CmdlineModel::modelReset);
+        bool handoff = false;
+        QObject handoffContext;
+        connect(&h->conn, &NvimConnector::attachedChanged, &handoffContext, [&] {
+            if(h->conn.attached()) return;
+            handoff = true;
+            QCOMPARE(h->conn.cmdline()->activeLevel(), 1);
+            QVERIFY(!h->acceptsInputMethod());
+            QVERIFY(!h->grid->inputMethodQuery(Qt::ImEnabled).toBool());
+            QVERIFY(!h->commit(QStringLiteral("stale")));
+        });
         h->conn.command(QStringLiteral("restart!"));
         QTRY_COMPARE_WITH_TIMEOUT(attached.count(), 1, 20000);
         QTRY_VERIFY(h->panel->property("available").toBool());
+        QVERIFY(handoff);
         QCOMPARE(removed.count(), 0);
         QCOMPARE(reset.count(), 1);
         QVERIFY(!h->panel->isVisible() && !h->panel->property("activeRow").value<QObject *>());
-        QVERIFY(h->text().isEmpty() && h->list("blockLines").isEmpty());
+        QVERIFY(h->text().isEmpty() && h->renderedBlock().isEmpty());
         QVERIFY(!h->acceptsInputMethod());
         QVERIFY(!h->grid->inputMethodQuery(Qt::ImEnabled).toBool());
-        QCOMPARE(evalSync(h->conn, QStringLiteral("nvim_list_uis()[0].ext_cmdline")), std::optional<QVariant>(true));
+        QCOMPARE(evalSync(h->conn, QStringLiteral("nvim_list_uis()[0].ext_cmdline")),
+                 std::optional<QVariant>(true));
         h->type(":");
         QTRY_VERIFY(h->panel->isVisible());
         QTest::keyClick(h->window, Qt::Key_Escape);
@@ -213,29 +250,31 @@ private slots:
         QCOMPARE(h->panel->property("kindMark").toString(), QStringLiteral("/"));
         QTest::keyClick(h->window, Qt::Key_Escape);
         QTRY_VERIFY(!h->panel->isVisible());
-        h->conn.command(QStringLiteral("highlight DotPanelTest guifg=#91abcd guibg=#273849"));
-        h->type(":call input({'prompt':'Name: ', 'highlight':{s -> empty(s) ? [] : [[0,1,'DotPanelTest']]}})");
+        h->conn.command(QStringLiteral(
+            "highlight DotPanelTest guifg=#91abcd guibg=#273849 gui=bold,italic,underline,strikethrough"));
+        h->type(
+            ":call input({'prompt':'Name: ', 'highlight':{s -> empty(s) ? [] : [[0,1,'DotPanelTest']]}})");
         QTest::keyClick(h->window, Qt::Key_Return);
         QTRY_COMPARE(h->panel->property("kindMark").toString(), QStringLiteral("Name: "));
         h->type("ab");
         QTRY_COMPARE(h->text(), QStringLiteral("ab"));
-        const auto spans = h->list("chunkStyles");
-        QCOMPARE(spans.size(), 2);
-        const auto colored = spans.first().toMap();
-        const auto plain = spans.last().toMap();
-        QCOMPARE(colored.value("text").toString(), QStringLiteral("a"));
-        QCOMPARE(colored.value("foreground").value<QColor>(), QColor("#91abcd"));
-        QCOMPARE(colored.value("background").value<QColor>(), QColor("#273849"));
-        QCOMPARE(plain.value("text").toString(), QStringLiteral("b"));
-        QCOMPARE(plain.value("foreground").value<QColor>(), h->conn.colorPalette()->overlayForeground());
-        QCOMPARE(plain.value("background").value<QColor>(), h->conn.colorPalette()->overlayBackground());
-
         auto *quickDocument = h->layout->property("textDocument").value<QQuickTextDocument *>();
         QVERIFY(quickDocument && quickDocument->textDocument());
         QTextCursor cursor(quickDocument->textDocument());
         cursor.setPosition(h->panel->property("kindMark").toString().size() + 1);
         QCOMPARE(cursor.charFormat().foreground().color(), QColor("#91abcd"));
         QCOMPARE(cursor.charFormat().background().color(), QColor("#273849"));
+        QVERIFY(cursor.charFormat().fontWeight() >= QFont::Bold);
+        QVERIFY(cursor.charFormat().fontItalic() && cursor.charFormat().fontUnderline() &&
+                cursor.charFormat().fontStrikeOut());
+        QVERIFY(cursor.movePosition(QTextCursor::NextCharacter));
+        QCOMPARE(cursor.charFormat().foreground().color(),
+                 h->conn.colorPalette()->overlayForeground());
+        QCOMPARE(cursor.charFormat().background().color(),
+                 h->conn.colorPalette()->overlayBackground());
+        QVERIFY(cursor.charFormat().fontWeight() < QFont::Bold);
+        QVERIFY(!cursor.charFormat().fontItalic() && !cursor.charFormat().fontUnderline() &&
+                !cursor.charFormat().fontStrikeOut());
 
         const auto grab = h->panel->grabToImage();
         QVERIFY(grab);
@@ -267,16 +306,19 @@ private slots:
         QVERIFY(h->cursor->isVisible());
         QSignalSpy redraw(&h->conn, &NvimConnector::flush);
         h->type(":let g:dot_panel_count = get(g:, 'dot_panel_count', 0) + 1");
-        QTRY_COMPARE(h->text(), QStringLiteral("let g:dot_panel_count = get(g:, 'dot_panel_count', 0) + 1"));
+        QTRY_COMPARE(h->text(),
+                     QStringLiteral("let g:dot_panel_count = get(g:, 'dot_panel_count', 0) + 1"));
         QVERIFY(h->panel->isVisible() && !h->cursor->isVisible());
         QCOMPARE(h->window->activeFocusItem(), h->grid);
         QCOMPARE(h->panel->property("kindMark").toString(), QStringLiteral(":"));
         QCOMPARE(h->panel->property("caretShape").toString(), QStringLiteral("block"));
-        QCOMPARE(h->panel->property("caretColor").value<QColor>(), h->conn.colorPalette()->cursorBackground());
+        QCOMPARE(h->panel->property("caretColor").value<QColor>(),
+                 h->conn.colorPalette()->cursorBackground());
         QVERIFY(!redraw.isEmpty());
         QTest::keyClick(h->window, Qt::Key_Return);
         QTRY_VERIFY(!h->panel->isVisible());
-        QCOMPARE(getVarSync(h->conn, QStringLiteral("dot_panel_count")), std::optional<QVariant>(1));
+        QCOMPARE(getVarSync(h->conn, QStringLiteral("dot_panel_count")),
+                 std::optional<QVariant>(1));
         QCOMPARE(h->window->activeFocusItem(), h->grid);
         QVERIFY(h->cursor->isVisible());
     }
