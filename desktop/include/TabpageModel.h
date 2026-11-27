@@ -47,6 +47,8 @@ class TabpageModel : public QAbstractListModel {
     QML_UNCREATABLE("Owned by NvimConnector")
 
     Q_PROPERTY(qint64 currentHandle READ currentHandle NOTIFY currentHandleChanged)
+    // Why the latest pending selection failed; unknown and superseded selections are reported
+    // only through selectionFinished.
     Q_PROPERTY(QString selectionError READ selectionError NOTIFY selectionErrorChanged)
     Q_PROPERTY(bool selectionPending READ selectionPending NOTIFY selectionPendingChanged)
 
@@ -81,7 +83,6 @@ signals:
 
 private:
     void clearSelectionError();
-    void failSelection(qint64 id, const QString &reason);
 
     qint64 m_currentHandle = 0;
     std::optional<PendingSelection> m_pending;

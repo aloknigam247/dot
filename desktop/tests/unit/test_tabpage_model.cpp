@@ -375,7 +375,7 @@ private slots:
         QVERIFY(first->generation != second->generation);
         QCOMPARE(finishedSpy.count(), 1);
         verifyFinished(finishedSpy, 0, 2, false, QStringLiteral("Superseded by a newer selection"));
-        QCOMPARE(model->selectionError(), QStringLiteral("Superseded by a newer selection"));
+        QCOMPARE(model->selectionError(), QString());
         QCOMPARE(pendingSpy.count(), 1);
         QVERIFY(model->selectionPending());
 
@@ -387,7 +387,7 @@ private slots:
         QCOMPARE(finishedSpy.count(), 2);
         verifyFinished(finishedSpy, 1, 3, true, QString());
         QCOMPARE(model->selectionError(), QString());
-        QCOMPARE(errorSpy.count(), 2);
+        QCOMPARE(errorSpy.count(), 0);
         QVERIFY(!model->selectionPending());
         QCOMPARE(pendingSpy.count(), 2);
         QCOMPARE(model->currentHandle(), 1);
@@ -399,6 +399,7 @@ private slots:
         QAbstractItemModelTester tester(model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
         dispatch(conn, tablineEvent(1, { tab(1, "one"), tab(2, "two") }));
+        QSignalSpy errorSpy(model, &TabpageModel::selectionErrorChanged);
         QSignalSpy finishedSpy(model, &TabpageModel::selectionFinished);
         QSignalSpy pendingSpy(model, &TabpageModel::selectionPendingChanged);
 
@@ -406,9 +407,37 @@ private slots:
 
         QCOMPARE(finishedSpy.count(), 1);
         verifyFinished(finishedSpy, 0, 99, false, QStringLiteral("Unknown tabpage"));
-        QCOMPARE(model->selectionError(), QStringLiteral("Unknown tabpage"));
+        QCOMPARE(model->selectionError(), QString());
+        QCOMPARE(errorSpy.count(), 0);
         QVERIFY(!model->selectionPending());
         QCOMPARE(pendingSpy.count(), 0);
+    }
+
+    void unknownHandleKeepsPendingSelection() {
+        NvimConnector conn;
+        TabpageModel *model = conn.tabpages();
+        QAbstractItemModelTester tester(model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        dispatch(conn, tablineEvent(1, { tab(1, "one"), tab(2, "two") }));
+        const auto selection = model->beginSelection(2);
+        QVERIFY(selection);
+        QSignalSpy errorSpy(model, &TabpageModel::selectionErrorChanged);
+        QSignalSpy finishedSpy(model, &TabpageModel::selectionFinished);
+        QSignalSpy pendingSpy(model, &TabpageModel::selectionPendingChanged);
+
+        QVERIFY(!model->beginSelection(99));
+
+        QCOMPARE(finishedSpy.count(), 1);
+        verifyFinished(finishedSpy, 0, 99, false, QStringLiteral("Unknown tabpage"));
+        QCOMPARE(model->selectionError(), QString());
+        QCOMPARE(errorSpy.count(), 0);
+        QVERIFY(model->selectionPending());
+        QCOMPARE(pendingSpy.count(), 0);
+
+        model->finishSelection(selection->generation, {});
+
+        QCOMPARE(finishedSpy.count(), 2);
+        verifyFinished(finishedSpy, 1, 2, true, QString());
     }
 
     void beginSelectionClearsPreviousError() {
@@ -417,8 +446,8 @@ private slots:
         QAbstractItemModelTester tester(model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
         dispatch(conn, tablineEvent(1, { tab(1, "one"), tab(2, "two") }));
-        conn.selectTabpage(99);
-        QCOMPARE(model->selectionError(), QStringLiteral("Unknown tabpage"));
+        conn.selectTabpage(1);
+        QCOMPARE(model->selectionError(), QStringLiteral("nvim not running"));
         QSignalSpy errorSpy(model, &TabpageModel::selectionErrorChanged);
 
         QVERIFY(model->beginSelection(2));
@@ -503,8 +532,8 @@ private slots:
         QAbstractItemModelTester tester(model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
         dispatch(conn, tablineEvent(1, { tab(1, "one") }));
-        conn.selectTabpage(99);
-        QCOMPARE(model->selectionError(), QStringLiteral("Unknown tabpage"));
+        conn.selectTabpage(1);
+        QCOMPARE(model->selectionError(), QStringLiteral("nvim not running"));
         QSignalSpy errorSpy(model, &TabpageModel::selectionErrorChanged);
         QSignalSpy finishedSpy(model, &TabpageModel::selectionFinished);
 

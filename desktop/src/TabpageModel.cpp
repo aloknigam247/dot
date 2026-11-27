@@ -102,13 +102,14 @@ std::optional<PendingSelection> TabpageModel::beginSelection(qint64 handle) {
     const auto found = std::ranges::find_if(
         m_rows, [handle](const TabpageEntry &entry) { return entry.handle.id == handle; });
     if(found == m_rows.cend()) {
-        failSelection(handle, QStringLiteral("Unknown tabpage"));
+        emit selectionFinished(handle, false, QStringLiteral("Unknown tabpage"));
         return std::nullopt;
     }
     const TabpageHandle target = found->handle;
     const bool wasPending = m_pending.has_value();
     if(wasPending)
-        failSelection(m_pending->handle.id, QStringLiteral("Superseded by a newer selection"));
+        emit selectionFinished(m_pending->handle.id, false,
+                               QStringLiteral("Superseded by a newer selection"));
     m_pending = PendingSelection{ ++m_selectionGeneration, target };
     if(!wasPending) emit selectionPendingChanged();
     return m_pending;
@@ -119,7 +120,11 @@ void TabpageModel::cancelSelection(const QString &reason) {
     const qint64 id = m_pending->handle.id;
     m_pending.reset();
     emit selectionPendingChanged();
-    failSelection(id, reason);
+    if(m_selectionError != reason) {
+        m_selectionError = reason;
+        emit selectionErrorChanged();
+    }
+    emit selectionFinished(id, false, reason);
 }
 
 void TabpageModel::finishSelection(quint64 generation, const std::expected<void, QString> &result) {
@@ -131,7 +136,6 @@ void TabpageModel::finishSelection(quint64 generation, const std::expected<void,
     const qint64 id = m_pending->handle.id;
     m_pending.reset();
     emit selectionPendingChanged();
-    clearSelectionError();
     emit selectionFinished(id, true, {});
 }
 
@@ -153,14 +157,6 @@ void TabpageModel::clearSelectionError() {
     if(m_selectionError.isEmpty()) return;
     m_selectionError.clear();
     emit selectionErrorChanged();
-}
-
-void TabpageModel::failSelection(qint64 id, const QString &reason) {
-    if(m_selectionError != reason) {
-        m_selectionError = reason;
-        emit selectionErrorChanged();
-    }
-    emit selectionFinished(id, false, reason);
 }
 
 } // namespace dot
