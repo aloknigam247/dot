@@ -124,7 +124,7 @@ QString InputHandler::textToNvim(const QString &text) {
     keys.reserve(text.size());
     for(const QChar ch: text) {
         if(ch == u'<') keys += QStringLiteral("<lt>");
-        else if(ch.unicode() >= 0x20) keys += ch;
+        else if(ch.category() != QChar::Other_Control) keys += ch;
     }
     return keys;
 }

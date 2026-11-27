@@ -65,6 +65,17 @@ private slots:
         conn.input(QStringLiteral("<Esc>"));
     }
 
+    void togglingDuringPendingAttachReachesNeovim() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24));
+        conn.setExtCmdline(true);
+        QVERIFY(waitForAttach(&conn));
+        QTRY_VERIFY(externalCmdline(conn) == true);
+        conn.input(QStringLiteral(":abc"));
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
+        conn.input(QStringLiteral("<Esc>"));
+    }
+
     void enablingDuringPromptDropsGridPromptIndent() {
         NvimConnector conn;
         QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
