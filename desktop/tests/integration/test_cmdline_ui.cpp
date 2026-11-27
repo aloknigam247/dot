@@ -81,22 +81,13 @@ class TestCmdlineUi : public QObject {
 
 private:
     std::unique_ptr<CommandPanelHarness> h;
-    QByteArray previousGate;
 
 private slots:
-    void initTestCase() {
-        previousGate = qgetenv("DOT_EXT_CMDLINE");
-        qputenv("DOT_EXT_CMDLINE", "1");
-        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-    }
-
-    void cleanupTestCase() {
-        if(previousGate.isNull()) qunsetenv("DOT_EXT_CMDLINE");
-        else qputenv("DOT_EXT_CMDLINE", previousGate);
-    }
+    void initTestCase() { QQuickWindow::setGraphicsApi(QSGRendererInterface::Software); }
 
     void init() {
         h = std::make_unique<CommandPanelHarness>();
+        h->conn.setExtCmdline(true);
         FlushLatch initialFlush(&h->conn);
         QVERIFY(startTestNvim(h->conn));
         h->engine.rootContext()->setContextProperty(QStringLiteral("$connector"), &h->conn);

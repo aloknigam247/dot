@@ -99,9 +99,9 @@ static void warnUndefinedAttributes(const char *event, const CmdlineLine &line,
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
 // diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate,
-// plus ext_cmdline when DOT_EXT_CMDLINE=1.
-static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows) {
-    const bool externalCmdline = qEnvironmentVariableIntValue("DOT_EXT_CMDLINE") == 1;
+// plus ext_cmdline when the ext_cmdline config option is on.
+static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows,
+                              bool externalCmdline) {
     pk.pack_array(3);
     pk.pack(static_cast<int64_t>(cols));
     pk.pack(static_cast<int64_t>(rows));
@@ -529,8 +529,8 @@ bool NvimConnector::attachUi(int cols, int rows) {
     m_sentUiSizes.emplace_back(cols, rows);
     if(m_sentUiSizes.size() > kMaxSentUiSizes) m_sentUiSizes.pop_front();
     m_rpc->request(QStringLiteral("nvim_ui_attach"),
-                   [cols, rows](msgpack::packer<msgpack::sbuffer> &pk) {
-        packAttachOptions(pk, cols, rows);
+                   [cols, rows, extCmdline = m_extCmdline](msgpack::packer<msgpack::sbuffer> &pk) {
+        packAttachOptions(pk, cols, rows, extCmdline);
     }, [this](RpcResult res) {
         m_attachPending = false;
         if(res) {
@@ -574,6 +574,20 @@ bool NvimConnector::attachUi(int cols, int rows) {
         }
     });
     return true;
+}
+
+void NvimConnector::setExtCmdline(bool enabled) {
+    if(m_extCmdline == enabled) return;
+    m_extCmdline = enabled;
+    // Cmdline events are dropped while disabled, so no cmdline_hide can clear this session.
+    if(!enabled) m_cmdline->reset();
+    if(!m_attached && !m_attachPending) return;
+    m_rpc->notify(QStringLiteral("nvim_ui_set_option"),
+                  [enabled](msgpack::packer<msgpack::sbuffer> &pk) {
+        pk.pack_array(2);
+        pk.pack(std::string("ext_cmdline"));
+        pk.pack(enabled);
+    });
 }
 
 static QVariant msgpackToVariant(const msgpack::object &o) {
@@ -1183,7 +1197,8 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         return;
     }
     if(name.starts_with("cmdline_")) {
-        dispatchCmdlineEvent(name, a);
+        // Events serialized before nvim applied a disable must not resurrect a session.
+        if(m_extCmdline) dispatchCmdlineEvent(name, a);
         return;
     }
     // mouse_on, mouse_off, busy_start, busy_stop, set_icon, update_menu,

@@ -74,6 +74,9 @@ public:
     bool start(const QString &nvimExe = QStringLiteral("nvim"),
                const QStringList &nvimForwardArgs = {});
     Q_INVOKABLE bool attachUi(int cols, int rows);
+    // Packed into every attach; applied with nvim_ui_set_option while a UI attach is live or
+    // pending.
+    void setExtCmdline(bool enabled);
 
     // Issues `nvim_get_var(name)` and invokes `cb` with the unpacked value on
     // success, or with an empty optional if the variable is unset / errored.
@@ -241,6 +244,7 @@ private:
     bool m_colorRefreshPending = false;
     bool m_colorSnapshotBoundaryPending = false;
     bool m_colorSnapshotReceived = false;
+    bool m_extCmdline = false;
     CmdlineModel *m_cmdline = nullptr;
     TabpageModel *m_tabpages = nullptr;
 };

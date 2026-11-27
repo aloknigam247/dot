@@ -233,7 +233,9 @@ std::expected<void, QString> CmdlineModel::show(int level, const CmdlineSession 
     next.cursorTextOffset = *cursor;
     next.firstCharacter = session.firstCharacter;
     next.highlightId = session.highlightId;
-    next.indent = session.indent;
+    // A prompted line's indent is the prompt's width from a grid-drawn cmdline, which ext_cmdline
+    // reports when it is enabled after the prompt opened; the panel already draws the prompt.
+    next.indent = session.prompt.isEmpty() ? session.indent : 0;
     next.level = level;
     next.prompt = session.prompt;
 

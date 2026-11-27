@@ -18,7 +18,6 @@
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
-#include <QScopeGuard>
 #include <QSGRendererInterface>
 #include <QSharedPointer>
 #include <QSignalSpy>
@@ -111,12 +110,6 @@ private slots:
     // A focus regression after the colon makes the trailing keys vanish and the
     // variable never gets set — a hard failure here, not a soft focus check.
     void keypressAfterColonReachesNvim() {
-        const auto previous = qgetenv("DOT_EXT_CMDLINE");
-        const auto restore = qScopeGuard([&] {
-            if(previous.isNull()) qunsetenv("DOT_EXT_CMDLINE");
-            else qputenv("DOT_EXT_CMDLINE", previous);
-        });
-        qunsetenv("DOT_EXT_CMDLINE");
         NvimConnector conn;
         FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));

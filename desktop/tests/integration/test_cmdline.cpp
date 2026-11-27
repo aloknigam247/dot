@@ -21,6 +21,7 @@ private:
     }
 
     static bool attach(NvimConnector &conn) {
+        conn.setExtCmdline(true);
         if(!startTestNvim(conn) || !conn.attachUi(80, 24) || !waitForAttach(&conn)) return false;
         return externalCmdline(conn) == true;
     }
@@ -39,9 +40,44 @@ private:
     }
 
 private slots:
-    void initTestCase() { qputenv("DOT_EXT_CMDLINE", "1"); }
-
     void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_"))); }
+
+    void runtimeToggleSwitchesCmdlineOwner() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
+        QVERIFY(externalCmdline(conn) == false);
+        CmdlineModel *model = conn.cmdline();
+
+        conn.setExtCmdline(true);
+        QTRY_VERIFY(externalCmdline(conn) == true);
+        conn.input(QStringLiteral(":abc"));
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
+
+        conn.setExtCmdline(false);
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(model->activeLevel(), 0);
+        QTRY_VERIFY(externalCmdline(conn) == false);
+        conn.input(QStringLiteral("d"));
+        QTRY_COMPARE(evalSync(conn, QStringLiteral("getcmdline()")),
+                     std::optional<QVariant>(QStringLiteral("abcd")));
+        QCOMPARE(model->rowCount(), 0);
+        conn.input(QStringLiteral("<Esc>"));
+    }
+
+    void enablingDuringPromptDropsGridPromptIndent() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
+        conn.input(QStringLiteral(":call input('Name: ')<CR>x"));
+        QTRY_COMPARE(evalSync(conn, QStringLiteral("getcmdline()")),
+                     std::optional<QVariant>(QStringLiteral("x")));
+
+        conn.setExtCmdline(true);
+
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("x"));
+        QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 0);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
+        conn.input(QStringLiteral("<Esc>"));
+    }
 
     void colonPromptTracksUnicodeCursor() {
         NvimConnector conn;
