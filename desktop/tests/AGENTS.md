@@ -73,6 +73,8 @@ For generated init fixtures, follow the [desktop operational guide](../AGENTS.md
 
 ## Deployment checks
 
+`test_bridge_staged` checks that the Windows x64 bridge is staged beside `dot.exe`.
+
 [check_deploy.ps1](check_deploy.ps1), registered as `test_deploy_manifest`, inspects the built executable/plugins and
 QML imports without launching the app. Other tests' vcpkg search paths can conceal a missing deployed dependency.
 Follow the [deployment repair rule](../AGENTS.md#build-and-deployment), not a test-expectation change.

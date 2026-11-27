@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 4.2)
+find_program(DOT_CARGO cargo)
+if(NOT DOT_CARGO)
+    message(FATAL_ERROR "cargo was not found on PATH. Install rustup (SETUP.md section 10), then reconfigure.")
+endif()
 project(dot LANGUAGES CXX VERSION 1.7.0)
 
 # vcpkg reads vcpkg.json's version before CMake runs, so it is a second persisted copy
@@ -158,6 +162,19 @@ if(WIN32)
     set(DOT_QT_QML     "${DOT_VCPKG_PREFIX}/Qt6/qml")
     set(DOT_OUT_DIR    "$<TARGET_FILE_DIR:dot>")
 
+    set(DOT_COPILOT_BRIDGE_TARGET x86_64-pc-windows-msvc)
+    set(DOT_COPILOT_BRIDGE_EXE
+        "${CMAKE_BINARY_DIR}/copilot_bridge/${DOT_COPILOT_BRIDGE_TARGET}/release/dot_copilot_bridge.exe")
+    add_custom_target(dot_copilot_bridge
+        COMMAND "${DOT_CARGO}" build --locked --release --target "${DOT_COPILOT_BRIDGE_TARGET}"
+            --target-dir "${CMAKE_BINARY_DIR}/copilot_bridge"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${DOT_OUT_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_COPILOT_BRIDGE_EXE}" "${DOT_OUT_DIR}/"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/copilot_bridge"
+        VERBATIM
+    )
+    add_dependencies(dot dot_copilot_bridge)
+
     # qt.conf tells Qt to look in the local dir for plugins + QML modules.
     file(WRITE "${CMAKE_BINARY_DIR}/qt.conf"
 "[Paths]
@@ -273,6 +290,9 @@ install(TARGETS dot
     RUNTIME DESTINATION bin
     BUNDLE DESTINATION .
 )
+if(WIN32)
+    install(PROGRAMS "${DOT_COPILOT_BRIDGE_EXE}" DESTINATION bin)
+endif()
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
     include(InstallRequiredSystemLibraries)
@@ -311,7 +331,9 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
             "${CMAKE_INSTALL_PREFIX}/Qt6/qml/*.dll"
         )
         file(GET_RUNTIME_DEPENDENCIES
-            EXECUTABLES "${CMAKE_INSTALL_PREFIX}/bin/dot.exe"
+            EXECUTABLES
+                "${CMAKE_INSTALL_PREFIX}/bin/dot.exe"
+                "${CMAKE_INSTALL_PREFIX}/bin/dot_copilot_bridge.exe"
             MODULES ${runtime_modules}
             DIRECTORIES
                 "${CMAKE_INSTALL_PREFIX}/bin"

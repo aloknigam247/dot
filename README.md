@@ -68,7 +68,8 @@ Install [Neovim nightly on PATH](SETUP.md#neovim-nightly-on-path), then download
 
 If Neovim cannot start, dot keeps its main window open and shows the attempted executable and native launch error.
 
-Keep the accompanying runtime directories and `third_party` notices with the executable.
+Keep `bin\dot_copilot_bridge.exe`, the runtime directories, and the `third_party` notices with `dot.exe`.
+The bridge's dependency notices are in `third_party\rust`.
 
 The [release workflow](.github/workflows/release.yml) publishes verified ZIPs when desktop release tags are pushed.
 For a failed publishing run, inspect the Release first. Remove an incomplete draft before retrying the publishing job;
@@ -119,7 +120,8 @@ changes; a successful `set` restores scroll-clipped content. Invalid input and e
 
 ## Copilot CLI bridge
 
-`dot_copilot_bridge` is a standalone process for dot chat; dot does not launch it yet. It connects to the installed
+Desktop builds stage `dot_copilot_bridge.exe` beside `dot.exe`. The bridge is a standalone process for dot chat;
+dot does not launch it yet. It connects to the installed
 GitHub Copilot CLI through the official `copilot-sdk` crate and never downloads or bundles a CLI. It uses the first
 `copilot` executable on `PATH` (with `PATHEXT` extensions) that completes a protocol 4 SDK handshake. Each handshake
 and session creation must finish within `DOT_COPILOT_BRIDGE_STARTUP_TIMEOUT_MS` milliseconds (default 30000); a status
