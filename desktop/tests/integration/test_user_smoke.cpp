@@ -18,6 +18,7 @@
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
+#include <QScopeGuard>
 #include <QSGRendererInterface>
 #include <QSharedPointer>
 #include <QSignalSpy>
@@ -110,6 +111,12 @@ private slots:
     // A focus regression after the colon makes the trailing keys vanish and the
     // variable never gets set — a hard failure here, not a soft focus check.
     void keypressAfterColonReachesNvim() {
+        const auto previous = qgetenv("DOT_EXT_CMDLINE");
+        const auto restore = qScopeGuard([&] {
+            if(previous.isNull()) qunsetenv("DOT_EXT_CMDLINE");
+            else qputenv("DOT_EXT_CMDLINE", previous);
+        });
+        qunsetenv("DOT_EXT_CMDLINE");
         NvimConnector conn;
         FlushLatch initialFlush(&conn);
         QVERIFY(startTestNvim(conn));
@@ -125,6 +132,10 @@ private slots:
                  "No active focus item after attach — Shell didn't force focus");
 
         QTest::keyClick(window, Qt::Key_Colon);
+        auto *panel = window->findChild<QQuickItem *>(QStringLiteral("commandPanel"));
+        QVERIFY(panel);
+        QTRY_VERIFY(conn.grid()->dumpAscii().contains(QStringLiteral(":")));
+        QVERIFY(!panel->isVisible());
         for(char c: QByteArrayLiteral("let g:smoke_after_colon = 7")) {
             QTest::keyClick(window, c);
         }

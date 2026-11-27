@@ -92,10 +92,15 @@ static std::optional<TabpageHandle> tabpageHandle(const msgpack::object &value) 
 // and the :restart re-attach both pack through here so their UI options can never
 // diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
 static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows) {
+    const bool externalCmdline = qEnvironmentVariableIntValue("DOT_EXT_CMDLINE") == 1;
     pk.pack_array(3);
     pk.pack(static_cast<int64_t>(cols));
     pk.pack(static_cast<int64_t>(rows));
-    pk.pack_map(3);
+    pk.pack_map(externalCmdline ? 4 : 3);
+    if(externalCmdline) {
+        pk.pack("ext_cmdline");
+        pk.pack(true);
+    }
     pk.pack("rgb");
     pk.pack(true);
     pk.pack("ext_linegrid");

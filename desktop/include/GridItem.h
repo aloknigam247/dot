@@ -66,6 +66,7 @@ public:
     Q_INVOKABLE QSize cellsForSize(const QSizeF &size) const;
     Q_INVOKABLE int colAt(qreal x) const;
     Q_INVOKABLE int rowAt(qreal y) const;
+    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
 
     // Build the per-run QFont for a highlight attribute. Public for testing —
     // paint() uses this through a per-frame hl_id cache to avoid repeated
@@ -86,6 +87,7 @@ protected:
 
     virtual QSGNode *updateBackgroundNode(QSGNode *oldNode, BackgroundLayer layer);
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
+    void inputMethodEvent(QInputMethodEvent *ev) override;
     void keyPressEvent(QKeyEvent *ev) override;
     void mousePressEvent(QMouseEvent *ev) override;
     void mouseMoveEvent(QMouseEvent *ev) override;
@@ -104,6 +106,7 @@ private:
     void recomputeMetrics();
     void maybeResizeUi();
     void invalidateRendering();
+    void updateInputMethod();
     const GridRuns &preparedRuns();
     GridModel *grid() const;
     HighlightTable *hl() const;

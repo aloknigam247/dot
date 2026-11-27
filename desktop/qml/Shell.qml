@@ -38,6 +38,7 @@ Item {
     // without a separate signal hop.
     CursorItem {
         anchors.fill: baseGrid
+        visible: $connector.cmdline.activeLevel === 0
         z: 99
         connector:    $connector
         cellWidth:    baseGrid.cellWidth

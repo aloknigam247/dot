@@ -168,6 +168,19 @@ HlAttr HighlightTable::attr(int id) const {
     return it->second;
 }
 
+QVariantMap HighlightTable::attributeMap(int attrId) const {
+    const HlAttr a = attr(attrId);
+    QVariantMap map{
+        { QStringLiteral("bold"), a.bold }, { QStringLiteral("italic"), a.italic },
+        { QStringLiteral("reverse"), a.reverse }, { QStringLiteral("strikethrough"), a.strikethrough },
+        { QStringLiteral("undercurl"), a.undercurl }, { QStringLiteral("underline"), a.underline },
+    };
+    if(a.bg.isValid()) map.insert(QStringLiteral("background"), a.bg);
+    if(a.fg.isValid()) map.insert(QStringLiteral("foreground"), a.fg);
+    if(a.sp.isValid()) map.insert(QStringLiteral("special"), a.sp);
+    return map;
+}
+
 bool HighlightTable::isRounded(int id) const {
     const auto it = m_attrs.find(id);
     if(it == m_attrs.end()) return false;

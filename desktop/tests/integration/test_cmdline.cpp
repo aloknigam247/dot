@@ -1,5 +1,4 @@
-// Tier-2 tests for command-line state produced by a real Neovim. Tests enable ext_cmdline on their
-// own UI channel because production attaches keep the grid-rendered command line.
+// Tier-2 tests for command-line state produced by a real Neovim.
 
 #include "CmdlineModel.h"
 #include "IntegrationHelpers.h"
@@ -15,21 +14,17 @@ class TestCmdline : public QObject {
     Q_OBJECT
 
 private:
-    static bool enableExtCmdline(NvimConnector &conn) {
-        conn.m_rpc->notify(QStringLiteral("nvim_ui_set_option"),
-                           [](msgpack::packer<msgpack::sbuffer> &pk) {
-            pk.pack_array(2);
-            pk.pack(std::string("ext_cmdline"));
-            pk.pack(true);
-        });
+    QByteArray m_previousGate;
+
+    static std::optional<bool> externalCmdline(NvimConnector &conn) {
         const auto extCmdline = evalSync(
             conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 20000);
-        return extCmdline && extCmdline->toBool();
+        return extCmdline ? std::optional(extCmdline->toBool()) : std::nullopt;
     }
 
     static bool attach(NvimConnector &conn) {
         if(!startTestNvim(conn) || !conn.attachUi(80, 24) || !waitForAttach(&conn)) return false;
-        return enableExtCmdline(conn);
+        return externalCmdline(conn) == true;
     }
 
     static QVariant role(NvimConnector &conn, int row, int role) {
@@ -46,7 +41,38 @@ private:
     }
 
 private slots:
-    void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_"))); }
+    void init() {
+        QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_")));
+        m_previousGate = qgetenv("DOT_EXT_CMDLINE");
+        qputenv("DOT_EXT_CMDLINE", "1");
+    }
+
+    void cleanup() {
+        if(m_previousGate.isNull()) qunsetenv("DOT_EXT_CMDLINE");
+        else qputenv("DOT_EXT_CMDLINE", m_previousGate);
+    }
+
+    void builtInCmdlineWithoutOptIn() {
+        qunsetenv("DOT_EXT_CMDLINE");
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
+        QVERIFY2(externalCmdline(conn) == false, "ext_cmdline must be off without DOT_EXT_CMDLINE");
+    }
+
+    void explicitChunkAttributes() {
+        NvimConnector conn;
+        msgpack::zone zone;
+        const std::map<std::string, bool> flags{
+            { "bold", true }, { "italic", true }, { "reverse", true }, { "strikethrough", true },
+            { "undercurl", true }, { "underline", true },
+        };
+        conn.highlights()->setDefaultColors(0xaabbcc, 0x112233, 0xeeddcc);
+        conn.highlights()->defineAttr(7, msgpack::object(flags, zone));
+        const QVariantMap map = conn.highlights()->attributeMap(7);
+        for(const auto &[name, value]: flags)
+            QCOMPARE(map.value(QString::fromStdString(name)), QVariant(value));
+        QVERIFY(!map.contains("foreground") && !map.contains("background") && !map.contains("special"));
+    }
 
     void colonPromptTracksUnicodeCursor() {
         NvimConnector conn;
@@ -324,7 +350,7 @@ private slots:
         QCOMPARE(model->rowCount(), 0);
         QCOMPARE(removedSpy.count(), 0);
         QCOMPARE(resetSpy.count(), 1);
-        QVERIFY(enableExtCmdline(conn));
+        QVERIFY(externalCmdline(conn) == true);
 
         conn.input(QStringLiteral(":xyz"));
 

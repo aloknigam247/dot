@@ -11,6 +11,7 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 
 namespace dot {
 
@@ -54,6 +55,7 @@ public:
     void setHighlightGroup(const QString &name, int id);
 
     HlAttr attr(int id) const;
+    Q_INVOKABLE QVariantMap attributeMap(int attrId) const;
     bool isRounded(int id) const;
     QColor defaultFg() const { return m_defaultFg; }
     QColor defaultBg() const { return m_defaultBg; }
