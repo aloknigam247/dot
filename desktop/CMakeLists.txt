@@ -94,6 +94,7 @@ set(DOT_LIB_SOURCES
     src/RectNodePool.cpp        include/RectNodePool.h
     src/ResizeCoalescer.cpp     include/ResizeCoalescer.h
     src/SessionCache.cpp        include/SessionCache.h
+    src/TabpageModel.cpp        include/TabpageModel.h
     src/TextNodePool.cpp        include/TextNodePool.h
     src/VersionString.cpp       include/VersionString.h
     src/WindowChrome.cpp        include/WindowChrome.h
