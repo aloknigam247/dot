@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/aloknigam247/dot/compare/dot-v1.6.0...dot-v1.7.0) (2026-11-27)
+
+### Added
+
+* **ui:** fit panes through one cell sizing path ([#310](https://github.com/aloknigam247/dot/issues/310)) ([e9ae5b2](https://github.com/aloknigam247/dot/commit/e9ae5b210b75ef5eacfe6fdc69b40349dd93d986)), closes [#105](https://github.com/aloknigam247/dot/issues/105)
+
 ## [1.6.0](https://github.com/aloknigam247/dot/compare/dot-v1.5.0...dot-v1.6.0) (2026-11-26)
 
 ### Added
