@@ -66,6 +66,7 @@ dot_add_test(test_resize_coalescer    unit/test_resize_coalescer.cpp)
 dot_add_test(test_rounded_highlight   unit/test_rounded_highlight.cpp)
 dot_add_test(test_scroll_perf_micro   unit/test_scroll_perf_micro.cpp)
 dot_add_test(test_session_cache       unit/test_session_cache.cpp)
+dot_add_test(test_tabpage_model       unit/test_tabpage_model.cpp)
 dot_add_test(test_text_node_pool      unit/test_text_node_pool.cpp)
 dot_add_test(test_ui_colors          unit/test_ui_colors.cpp
     TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_ui_colors.txt,txt")
@@ -145,6 +146,8 @@ target_compile_definitions(test_startup_failure_product PRIVATE
 target_link_libraries(test_startup_failure_product PRIVATE Gdi32 Ole32 Uiautomationcore User32)
 add_dependencies(test_startup_failure_product dot)
 set_tests_properties(test_startup_failure_product PROPERTIES TIMEOUT 120)
+dot_add_test(test_tabline                       integration/test_tabline.cpp)
+target_link_libraries(test_tabline PRIVATE dot_libplugin Qt6::Quick)
 dot_add_test(test_title_updates                 integration/test_title_updates.cpp)
 dot_add_test(test_ui_color_bindings             integration/test_ui_color_bindings.cpp
     TEST_ARGUMENTS -o "${CMAKE_CURRENT_BINARY_DIR}/test_ui_color_bindings.txt,txt")
@@ -178,7 +181,7 @@ target_link_libraries(test_boot_perf           PRIVATE dot_libplugin Qt6::Quick)
 # Instantiates GridItem (a QQuickItem) to exercise GridItem::maybeResizeUi.
 target_link_libraries(test_restart_resize_fit  PRIVATE dot_libplugin Qt6::Quick)
 
-foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_cmdline test_config_g_globals test_ctrl_shift_mapping test_cursor_motion test_cursor_shape test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_startup_failure_product test_title_updates test_ui_color_bindings test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
+foreach(t test_attach_and_render test_boot_no_resize_jump test_boot_perf test_chat_panel test_cmdline test_config_g_globals test_ctrl_shift_mapping test_cursor_motion test_cursor_shape test_image_api test_insert_and_quit test_open_file_arg test_resize test_resize_smoothness test_restart test_restart_resize_fit test_runtime_set_options test_scroll_perf test_startup_activation test_startup_failure_product test_tabline test_title_updates test_ui_color_bindings test_user_smoke test_visual_on_drag test_wheel_scroll test_window_snap)
     set_tests_properties(${t} PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=minimal;QT_QPA_PLATFORM_PLUGIN_PATH=${DOT_TEST_QPA_PLUGIN_DIR_NATIVE};QML_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QML2_IMPORT_PATH=${DOT_TEST_QML_IMPORT_DIR_NATIVE};QT_SCALE_FACTOR=1;QT_AUTO_SCREEN_SCALE_FACTOR=0"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DOT_TEST_DLL_PATH_NATIVE}"
@@ -188,8 +191,8 @@ endforeach()
 # test_restart spawns a SECOND nvim (the :restart handoff) on top of the first,
 # so it needs headroom above the default 60s ceiling under parallel load.
 set_tests_properties(test_restart PROPERTIES TIMEOUT 120)
-# test_cmdline also runs a :restart handoff.
-set_tests_properties(test_cmdline PROPERTIES TIMEOUT 120)
+# test_cmdline and test_tabline also run a :restart handoff.
+set_tests_properties(test_cmdline test_tabline PROPERTIES TIMEOUT 120)
 
 
 # Perf tests assert hard wall-clock ceilings (test_boot_perf: boot < 3000ms;

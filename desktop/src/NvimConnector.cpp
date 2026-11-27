@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string_view>
 #include <utility>
 
 extern int qInitResources_dot();
@@ -65,6 +66,26 @@ static std::optional<CmdlineLine> cmdlineLine(const msgpack::object &value) {
         });
     }
     return line;
+}
+
+// A tabpage handle is an EXT value whose body is exactly one non-negative msgpack integer.
+static std::optional<TabpageHandle> tabpageHandle(const msgpack::object &value) {
+    if(value.type != msgpack::type::EXT) return std::nullopt;
+    msgpack::object_handle body;
+    std::size_t offset = 0;
+    const msgpack::object_ext &ext = value.via.ext;
+    try {
+        body = msgpack::unpack(ext.data(), ext.size, offset);
+    } catch(const msgpack::unpack_error &) { return std::nullopt; }
+    const msgpack::object &id = body.get();
+    if(offset != ext.size || id.type != msgpack::type::POSITIVE_INTEGER ||
+       !std::in_range<qint64>(id.via.u64))
+        return std::nullopt;
+    return TabpageHandle{
+        QByteArray(ext.data(), static_cast<qsizetype>(ext.size)),
+        ext.type(),
+        static_cast<qint64>(id.via.u64),
+    };
 }
 
 // The single source of truth for the nvim_ui_attach option map. Initial attach
@@ -179,7 +200,7 @@ NvimConnector::NvimConnector(QObject *parent) :
     m_resizeCoalescer(new ResizeCoalescer(this)), m_restartTimer(new QTimer(this)),
     m_backendClientId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
     m_images(new ImageModel(this)), m_colorPalette(new ColorPalette(*m_hl, *m_mode, this)),
-    m_cmdline(new CmdlineModel(this)) {
+    m_cmdline(new CmdlineModel(this)), m_tabpages(new TabpageModel(this)) {
     m_restartTimer->setSingleShot(true);
     connect(m_rpc, &MsgpackRpc::notification, this, &NvimConnector::onNotification);
     connect(m_rpc, &MsgpackRpc::transportClosed, this, &NvimConnector::onRpcDisconnected);
@@ -746,6 +767,25 @@ void NvimConnector::execLua(const QString &code) {
     }, nullptr);
 }
 
+void NvimConnector::selectTabpage(qint64 handle) {
+    const auto selection = m_tabpages->beginSelection(handle);
+    if(!selection) return;
+    const TabpageHandle &target = selection->handle;
+    m_rpc->request(QStringLiteral("nvim_set_current_tabpage"),
+                   [&target](msgpack::packer<msgpack::sbuffer> &pk) {
+        const auto size = static_cast<uint32_t>(target.encoded.size());
+        pk.pack_array(1);
+        pk.pack_ext(size, target.extType);
+        pk.pack_ext_body(target.encoded.constData(), size);
+    }, [this, generation = selection->generation](RpcResult result) {
+        if(result) {
+            m_tabpages->finishSelection(generation, {});
+            return;
+        }
+        m_tabpages->finishSelection(generation, std::unexpected(result.error().message));
+    });
+}
+
 void NvimConnector::onOptionSet(const QString &name, const QVariant &value) {
     // O(1) string-table dispatch. Each branch reads the value typed, compares
     // against the cached field, and emits NOTIFY only on real change so QML
@@ -880,10 +920,14 @@ void NvimConnector::onRpcDisconnected() {
         m_attached = false;
         emit attachedChanged();
         m_restartTimer->start(kRestartTimeoutMs);
+        // connectToAddress fails the old channel's pending callbacks, so cancel first and let
+        // the in-flight selection's reply arrive stale.
+        m_tabpages->cancelSelection(QStringLiteral("Neovim restarted"));
         m_rpc->connectToAddress(m_restartListenAddr);
         return;
     }
     m_cmdline->reset();
+    m_tabpages->reset(QStringLiteral("Neovim disconnected"));
     m_attached = false;
     emit attachedChanged();
     emit disconnected();
@@ -909,6 +953,7 @@ void NvimConnector::onRestartFailed() {
     m_restartInProgress = false;
     m_restartTimer->stop();
     m_cmdline->reset();
+    m_tabpages->reset(QStringLiteral("Neovim restart failed"));
     m_attached = false;
     emit attachedChanged();
     emit disconnected();
@@ -922,6 +967,7 @@ void NvimConnector::resetUiState() {
     m_sentUiSizes.clear();
     m_colorPalette->resetContent();
     m_cmdline->reset();
+    m_tabpages->reset(QStringLiteral("Neovim restarted"));
 }
 
 void NvimConnector::handleRedraw(const msgpack::object &events) {
@@ -941,7 +987,7 @@ void NvimConnector::handleRedraw(const msgpack::object &events) {
 
 void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object &evt) {
     if(evt.type != msgpack::type::ARRAY) {
-        if(name.starts_with("cmdline_"))
+        if(name.starts_with("cmdline_") || name == "tabline_update")
             qWarning("Invalid %s: expected an argument array", name.c_str());
         return;
     }
@@ -1118,6 +1164,10 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         }
         return;
     }
+    if(name == "tabline_update") {
+        dispatchTablineEvent(a);
+        return;
+    }
     if(name.starts_with("cmdline_")) {
         dispatchCmdlineEvent(name, a);
         return;
@@ -1220,6 +1270,57 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
            !marked)
             qWarning().noquote() << "Invalid cmdline_special_char:" << marked.error();
     }
+}
+
+// [curtab, tabs, curbuf, buffers] with tabs as [{tab, name}, ...]; curbuf and buffers are unused.
+void NvimConnector::dispatchTablineEvent(const msgpack::object_array &a) {
+    if(a.size < 2) {
+        qWarning("Invalid tabline_update: expected curtab and tabs");
+        return;
+    }
+    const auto current = tabpageHandle(a.ptr[0]);
+    if(!current) {
+        qWarning("Invalid tabline_update: curtab must be a tabpage handle");
+        return;
+    }
+    if(a.ptr[1].type != msgpack::type::ARRAY) {
+        qWarning("Invalid tabline_update: tabs must be an array");
+        return;
+    }
+    const auto &tabs = a.ptr[1].via.array;
+    TablineUpdate update{ *current, {} };
+    update.tabs.reserve(tabs.size);
+    for(uint32_t i = 0; i < tabs.size; ++i) {
+        std::optional<TabpageHandle> handle;
+        const msgpack::object *name = nullptr;
+        const msgpack::object &tab = tabs.ptr[i];
+        if(tab.type != msgpack::type::MAP) {
+            qWarning("Invalid tabline_update: tab entry must be a map");
+            return;
+        }
+        for(uint32_t j = 0; j < tab.via.map.size; ++j) {
+            const msgpack::object_kv &field = tab.via.map.ptr[j];
+            if(field.key.type != msgpack::type::STR) continue;
+            const std::string_view key(field.key.via.str.ptr, field.key.via.str.size);
+            if(key == "tab") handle = tabpageHandle(field.val);
+            else if(key == "name") name = &field.val;
+        }
+        if(!handle) {
+            qWarning("Invalid tabline_update: tab entry needs a tabpage handle");
+            return;
+        }
+        if(handle->extType != current->extType) {
+            qWarning("Invalid tabline_update: tab handle type differs from curtab");
+            return;
+        }
+        if(!name || name->type != msgpack::type::STR) {
+            qWarning("Invalid tabline_update: tab entry needs a string name");
+            return;
+        }
+        update.tabs.append({ std::move(*handle), asQString(*name) });
+    }
+    if(const auto applied = m_tabpages->apply(update); !applied)
+        qWarning().noquote() << "Invalid tabline_update:" << applied.error();
 }
 
 } // namespace dot

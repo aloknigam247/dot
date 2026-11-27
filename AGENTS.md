@@ -1,6 +1,6 @@
 # dot — project index
 
-See [README.md](README.md) for product usage, supported platforms, and repository layout.
+See [README.md](README.md) for product usage and supported platforms, and [Layout](#layout) for the repository layout.
 
 ## Code review
 
@@ -64,8 +64,8 @@ Desktop regression gates, hard assertions, and repetition requirements are in
 
 ## Conventions
 
-- **Documentation:** do not update `README.md` unless the user asks for it. Keep architecture details and operational
-  rules in the scoped guides, not duplicated at the root.
+- **Documentation:** `README.md` is frozen; do not edit it. Keep architecture details and operational rules in the
+  scoped guides, not duplicated at the root.
 - **Naming:** use lowercase `snake_case` for general-purpose files and directories. Preserve established C++
   `PascalCase` sources/headers and includes, QML component names, test/`.moc` names, Android framework/package paths,
   standard tool filenames, `.github` runtime paths, and vendored names. Never distinguish paths only by capitalization.

@@ -25,6 +25,7 @@
 #include "ModeInfo.h"
 #include "MsgpackRpc.h"
 #include "ResizeCoalescer.h"
+#include "TabpageModel.h"
 #include <msgpack.hpp>
 
 namespace dot {
@@ -64,6 +65,7 @@ class NvimConnector : public QObject {
     Q_PROPERTY(bool imagesAvailable READ imagesAvailable NOTIFY imagesAvailableChanged)
     Q_PROPERTY(dot::ColorPalette *colorPalette READ colorPalette CONSTANT)
     Q_PROPERTY(dot::CmdlineModel *cmdline READ cmdline CONSTANT)
+    Q_PROPERTY(dot::TabpageModel *tabpages READ tabpages CONSTANT)
 
 public:
     explicit NvimConnector(QObject *parent = nullptr);
@@ -107,6 +109,7 @@ public:
     bool imagesAvailable() const { return m_imagesAvailable; }
     ColorPalette *colorPalette() const { return m_colorPalette; }
     CmdlineModel *cmdline() const { return m_cmdline; }
+    TabpageModel *tabpages() const { return m_tabpages; }
 
     Q_INVOKABLE void input(const QString &keys);
     Q_INVOKABLE void inputMouse(const QString &button, const QString &action,
@@ -121,6 +124,8 @@ public:
     Q_INVOKABLE void paste(const QString &text);
     Q_INVOKABLE void command(const QString &cmd);
     Q_INVOKABLE void execLua(const QString &code);
+    // Sends the tabpage's original EXT handle; the outcome arrives on tabpages->selectionFinished.
+    Q_INVOKABLE void selectTabpage(qint64 handle);
     // Populates the current buffer with `bytes`, splitting on \n and trimming
     // trailing \r. Used to implement `dot -` (read stdin into buffer 1).
     void loadStdinIntoBuffer(const QByteArray &bytes);
@@ -159,6 +164,8 @@ private:
     friend class TestCmdline;
     friend class TestCmdlineModel;
     friend class TestImageApi;
+    friend class TestTabline;
+    friend class TestTabpageModel;
 
     Q_SLOT void onNotification(const dot::Notification &note);
     Q_SLOT void onRpcDisconnected();
@@ -174,6 +181,7 @@ private:
     void handleRedraw(const msgpack::object &events);
     void dispatchEvent(const std::string &name, const msgpack::object &evt);
     void dispatchCmdlineEvent(const std::string &name, const msgpack::object_array &a);
+    void dispatchTablineEvent(const msgpack::object_array &a);
     // Drops all grid/highlight/mode/overlay state back to a fresh-attach baseline.
     // Called on :restart just before the new server's first redraw batch.
     void resetUiState();
@@ -235,6 +243,7 @@ private:
     bool m_colorSnapshotBoundaryPending = false;
     bool m_colorSnapshotReceived = false;
     CmdlineModel *m_cmdline = nullptr;
+    TabpageModel *m_tabpages = nullptr;
 };
 
 } // namespace dot
