@@ -47,14 +47,12 @@ class TestHighlightTable : public QObject {
 private slots:
     void attributeMapColors() {
         HighlightTable table;
-        const auto attrs = packAttrMap(
-            { { "background", 0x273849 }, { "foreground", 0x91abcd }, { "special", 0xdef012 } },
-            {});
+        const auto attrs =
+            packAttrMap({ { "background", 0x273849 }, { "foreground", 0x91abcd } }, {});
         table.defineAttr(7, attrs.get());
         const auto map = table.attributeMap(7);
         QCOMPARE(map.value("background").value<QColor>(), QColor("#273849"));
         QCOMPARE(map.value("foreground").value<QColor>(), QColor("#91abcd"));
-        QCOMPARE(map.value("special").value<QColor>(), QColor("#def012"));
     }
 
     void attributeMapFlags_data() {
@@ -74,8 +72,7 @@ private slots:
         for(const char *flag:
             { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
             QCOMPARE(map.value(flag), QVariant(enabled == QLatin1String(flag)));
-        QVERIFY(!map.contains("background") && !map.contains("foreground") &&
-                !map.contains("special"));
+        QVERIFY(!map.contains("background") && !map.contains("foreground"));
     }
 
     void defaultColorsSet() {

@@ -98,7 +98,8 @@ static void warnUndefinedAttributes(const char *event, const CmdlineLine &line,
 
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
-// diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
+// diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate,
+// plus ext_cmdline when DOT_EXT_CMDLINE=1.
 static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows) {
     const bool externalCmdline = qEnvironmentVariableIntValue("DOT_EXT_CMDLINE") == 1;
     pk.pack_array(3);

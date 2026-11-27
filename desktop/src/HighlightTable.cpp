@@ -180,7 +180,6 @@ QVariantMap HighlightTable::attributeMap(int attrId) const {
     };
     if(a.bg.isValid()) map.insert(QStringLiteral("background"), a.bg);
     if(a.fg.isValid()) map.insert(QStringLiteral("foreground"), a.fg);
-    if(a.sp.isValid()) map.insert(QStringLiteral("special"), a.sp);
     return map;
 }
 
