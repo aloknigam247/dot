@@ -13,5 +13,5 @@ Reference images describe the approved target, not proof that the native applica
 Verify implementation claims against the [Android](../android/AGENTS.md) or [desktop](../desktop/AGENTS.md) entrypoints.
 Follow the design language's change-control policy before changing its rules or profiles.
 
-Build prerequisites belong in [SETUP.md](../SETUP.md); product usage and repository layout belong in
-[README.md](../README.md).
+Build prerequisites belong in [SETUP.md](../SETUP.md); repository layout belongs in the root
+[Layout](../AGENTS.md#layout) table.
