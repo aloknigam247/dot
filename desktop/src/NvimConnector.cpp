@@ -76,9 +76,7 @@ static std::optional<TabpageHandle> tabpageHandle(const msgpack::object &value) 
     const msgpack::object_ext &ext = value.via.ext;
     try {
         body = msgpack::unpack(ext.data(), ext.size, offset);
-    } catch(const msgpack::unpack_error &) {
-        return std::nullopt;
-    }
+    } catch(const msgpack::unpack_error &) { return std::nullopt; }
     const msgpack::object &id = body.get();
     if(offset != ext.size || id.type != msgpack::type::POSITIVE_INTEGER ||
        !std::in_range<qint64>(id.via.u64))

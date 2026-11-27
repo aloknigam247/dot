@@ -68,10 +68,9 @@ std::expected<void, QString> TabpageModel::apply(const TablineUpdate &update) {
     for(qsizetype i = 0; i < update.tabs.size(); ++i) {
         const TabpageEntry &entry = update.tabs[i];
         const int target = static_cast<int>(i);
-        const auto found = std::find_if(m_rows.cbegin() + i, m_rows.cend(),
-                                        [&entry](const TabpageEntry &row) {
-                                            return row.handle == entry.handle;
-                                        });
+        const auto found =
+            std::find_if(m_rows.cbegin() + i, m_rows.cend(),
+                         [&entry](const TabpageEntry &row) { return row.handle == entry.handle; });
         if(found == m_rows.cend()) {
             beginInsertRows({}, target, target);
             m_rows.insert(i, entry);

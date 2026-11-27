@@ -153,28 +153,28 @@ private slots:
         QSignalSpy currentSpy(model, &TabpageModel::currentHandleChanged);
 
         dispatch(conn, tablineBatch([](Packer &pk) {
-                     pk.pack_array(4);
-                     packExt(pk, kTabpageType, handleBody(2));
-                     pk.pack_array(2);
-                     pk.pack_map(4);
-                     pk.pack(std::string("modified"));
-                     pk.pack(true);
-                     pk.pack(std::string("tab"));
-                     packExt(pk, kTabpageType, handleBody(1));
-                     pk.pack(7);
-                     pk.pack(std::string("ignored"));
-                     pk.pack(std::string("name"));
-                     pk.pack(std::string("one"));
-                     pk.pack_map(2);
-                     pk.pack(std::string("name"));
-                     pk.pack(std::string("two"));
-                     pk.pack(std::string("tab"));
-                     packExt(pk, kTabpageType, handleBody(2));
-                     packBuffers(pk);
-                 }));
+            pk.pack_array(4);
+            packExt(pk, kTabpageType, handleBody(2));
+            pk.pack_array(2);
+            pk.pack_map(4);
+            pk.pack(std::string("modified"));
+            pk.pack(true);
+            pk.pack(std::string("tab"));
+            packExt(pk, kTabpageType, handleBody(1));
+            pk.pack(7);
+            pk.pack(std::string("ignored"));
+            pk.pack(std::string("name"));
+            pk.pack(std::string("one"));
+            pk.pack_map(2);
+            pk.pack(std::string("name"));
+            pk.pack(std::string("two"));
+            pk.pack(std::string("tab"));
+            packExt(pk, kTabpageType, handleBody(2));
+            packBuffers(pk);
+        }));
 
-        QCOMPARE(handles(model), (QList<qint64>{ 1, 2 }));
-        QCOMPARE(names(model), (QStringList{ QStringLiteral("one"), QStringLiteral("two") }));
+        QCOMPARE(handles(model), QList<qint64>({ 1, 2 }));
+        QCOMPARE(names(model), QStringList({ QStringLiteral("one"), QStringLiteral("two") }));
         QCOMPARE(model->currentHandle(), 2);
         QCOMPARE(current(model, 0), false);
         QCOMPARE(current(model, 1), true);
@@ -194,8 +194,8 @@ private slots:
 
         dispatch(conn, tablineEvent(1, { tab(3, "three"), tab(1, "one"), tab(2, "two") }));
 
-        QCOMPARE(handles(model), (QList<qint64>{ 3, 1, 2 }));
-        QCOMPARE(names(model), (QStringList{ QStringLiteral("three"), QStringLiteral("one"),
+        QCOMPARE(handles(model), QList<qint64>({ 3, 1, 2 }));
+        QCOMPARE(names(model), QStringList({ QStringLiteral("three"), QStringLiteral("one"),
                                              QStringLiteral("two") }));
         QVERIFY(!moveSpy.isEmpty());
         QCOMPARE(insertSpy.count(), 0);
@@ -232,7 +232,7 @@ private slots:
             QCOMPARE(dataSpy.at(row).at(2).value<QList<int>>(),
                      QList<int>{ TabpageModel::CurrentRole });
         }
-        QCOMPARE(order, (QStringList{ QStringLiteral("data"), QStringLiteral("data"),
+        QCOMPARE(order, QStringList({ QStringLiteral("data"), QStringLiteral("data"),
                                       QStringLiteral("current") }));
         QCOMPARE(currentSpy.count(), 1);
         QCOMPARE(model->currentHandle(), 2);
@@ -246,7 +246,7 @@ private slots:
         QCOMPARE(dataSpy.at(0).at(0).toModelIndex(), model->index(1));
         QCOMPARE(dataSpy.at(0).at(1).toModelIndex(), model->index(1));
         QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), QList<int>{ TabpageModel::NameRole });
-        QCOMPARE(names(model), (QStringList{ QStringLiteral("one"), QStringLiteral("renamed") }));
+        QCOMPARE(names(model), QStringList({ QStringLiteral("one"), QStringLiteral("renamed") }));
 
         dataSpy.clear();
         order.clear();
@@ -276,7 +276,7 @@ private slots:
         QCOMPARE(removeSpy.count(), 1);
         QCOMPARE(removeSpy.at(0).at(1).toInt(), 1);
         QCOMPARE(removeSpy.at(0).at(2).toInt(), 1);
-        QCOMPARE(handles(model), (QList<qint64>{ 1, 3 }));
+        QCOMPARE(handles(model), QList<qint64>({ 1, 3 }));
         QCOMPARE(insertSpy.count(), 0);
         QCOMPARE(resetSpy.count(), 0);
     }
@@ -294,8 +294,8 @@ private slots:
 
         dispatch(conn, tablineEvent(1, { tab(4, "four"), tab(3, "three"), tab(1, "one") }));
 
-        QCOMPARE(handles(model), (QList<qint64>{ 4, 3, 1 }));
-        QCOMPARE(names(model), (QStringList{ QStringLiteral("four"), QStringLiteral("three"),
+        QCOMPARE(handles(model), QList<qint64>({ 4, 3, 1 }));
+        QCOMPARE(names(model), QStringList({ QStringLiteral("four"), QStringLiteral("three"),
                                              QStringLiteral("one") }));
         QCOMPARE(insertSpy.count(), 1);
         QCOMPARE(moveSpy.count(), 1);
@@ -533,17 +533,16 @@ private slots:
                 packTabsArgument(pk);
             });
         };
-        const QString curtab = QStringLiteral("Invalid tabline_update: curtab must be a tabpage handle");
+        const QString curtab =
+            QStringLiteral("Invalid tabline_update: curtab must be a tabpage handle");
 
         QTest::newRow("argument not array")
             << withArguments([](Packer &pk) { pk.pack(1); })
             << QStringLiteral("Invalid tabline_update: expected an argument array");
-        QTest::newRow("too few arguments")
-            << withArguments([](Packer &pk) {
-                   pk.pack_array(1);
-                   packExt(pk, kTabpageType, handleBody(1));
-               })
-            << QStringLiteral("Invalid tabline_update: expected curtab and tabs");
+        QTest::newRow("too few arguments") << withArguments([](Packer &pk) {
+            pk.pack_array(1);
+            packExt(pk, kTabpageType, handleBody(1));
+        }) << QStringLiteral("Invalid tabline_update: expected curtab and tabs");
         QTest::newRow("curtab not ext") << withArguments([](Packer &pk) {
             pk.pack_array(2);
             pk.pack(1);
@@ -609,8 +608,8 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg, warning.toUtf8().constData());
         dispatch(conn, batch);
 
-        QCOMPARE(handles(model), (QList<qint64>{ 1, 2 }));
-        QCOMPARE(names(model), (QStringList{ QStringLiteral("one"), QStringLiteral("two") }));
+        QCOMPARE(handles(model), QList<qint64>({ 1, 2 }));
+        QCOMPARE(names(model), QStringList({ QStringLiteral("one"), QStringLiteral("two") }));
         QCOMPARE(model->currentHandle(), 2);
         QCOMPARE(currentSpy.count(), 0);
         QCOMPARE(dataSpy.count(), 0);

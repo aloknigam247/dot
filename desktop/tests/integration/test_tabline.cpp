@@ -77,7 +77,9 @@ private:
     }
 
 private slots:
-    void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid tabline_update"))); }
+    void init() {
+        QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid tabline_update")));
+    }
 
     void defaultAttachLeavesTablineOff() {
         NvimConnector conn;
@@ -159,7 +161,7 @@ private slots:
         QCOMPARE(args.at(1).toBool(), false);
         QVERIFY(!args.at(2).toString().isEmpty());
         QCOMPARE(model->selectionError(), args.at(2).toString());
-        QTRY_COMPARE(handles(model), (QList<qint64>{ first, third }));
+        QTRY_COMPARE(handles(model), QList<qint64>({ first, third }));
         QCOMPARE(model->currentHandle(), first);
         QCOMPARE(nvimCurrentTab(conn), first);
         QCOMPARE(finishedSpy.count(), 1);
