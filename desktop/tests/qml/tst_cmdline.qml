@@ -132,7 +132,24 @@ TestCase {
         checkCaret(p, 4)
         const last = edit.positionToRectangle(3)
         verify(caret.y > last.y || caret.x > last.x)
+        verify(p.metrics.cellWidth > 0)
+        compare(caret.width, p.metrics.cellWidth)
         verify(caret.x + caret.width <= viewport.width)
+    }
+
+    function test_rtl_caret() {
+        const p = make()
+        show("a\u05d0\u05d1\u05d2z", 3)
+        const caret = findChild(p, "commandCaret")
+        const edit = findChild(p, "commandLayout")
+        const leading = edit.positionToRectangle(3).x
+        const trailing = edit.positionToRectangle(4).x
+        verify(trailing < leading)
+        for (const shape of ["block", "horizontal", "vertical"]) {
+            $cmdlineFixture.setCursorShape(shape, 25)
+            compare(caret.x, shape === "vertical" ? leading : trailing)
+            if (shape !== "vertical") compare(caret.width, leading - trailing)
+        }
     }
 
     function test_styled_grapheme_under_block() {

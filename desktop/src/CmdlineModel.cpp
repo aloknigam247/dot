@@ -11,6 +11,8 @@ namespace dot {
 
 namespace {
 
+constexpr int kMaxRenderedIndent = 65'536;
+
 struct CodePoint {
     qsizetype length = 1;
     char32_t value = QChar::ReplacementCharacter;
@@ -226,6 +228,10 @@ std::expected<void, QString> CmdlineModel::setSpecialCharacter(int level, const 
 
 std::expected<void, QString> CmdlineModel::show(int level, const CmdlineSession &session) {
     if(level < 1) return std::unexpected(nonPositiveLevel(level));
+    if(session.indent > kMaxRenderedIndent)
+        return std::unexpected(QStringLiteral("indent %1 exceeds the rendering limit of %2")
+                                   .arg(session.indent)
+                                   .arg(kMaxRenderedIndent));
     Level next;
     next.chunks = chunkList(session.content, &next.textOffsets);
     const auto cursor = cursorAt(next.textOffsets, session.position);

@@ -205,12 +205,13 @@ Item {
                 readonly property real fraction: Math.min(100, Math.max(1, panel.connector.modeInfo.cellPercentage)) / 100
                 readonly property string glyph: panel.characterAt(panel.kindMark + panel.displayedText,
                                                                   panel.cursorPosition)
-                readonly property real cell: {
+                readonly property real advance: {
                     const r = panel.caretRect
                     const next = input.positionToRectangle(Math.min(input.length, panel.cursorPosition + glyph.length))
-                    return next.y === r.y && next.x > r.x ? next.x - r.x : panel.metrics.cellWidth
+                    return next.y === r.y && next.x !== r.x ? next.x - r.x : panel.metrics.cellWidth
                 }
-                x: panel.caretRect.x
+                readonly property real cell: Math.abs(advance)
+                x: panel.caretRect.x + (panel.caretShape === "vertical" ? 0 : Math.min(0, advance))
                 y: input.y + panel.caretRect.y + (panel.caretShape === "horizontal" ? panel.caretRect.height - height : 0)
                 width: panel.caretShape === "vertical" ? Math.max(1, cell * fraction) : cell
                 height: panel.caretShape === "horizontal" ? Math.max(1, panel.caretRect.height * fraction)

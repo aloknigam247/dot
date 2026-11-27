@@ -124,7 +124,7 @@ private slots:
         QSignalSpy insertSpy(model, &CmdlineModel::rowsInserted);
 
         dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(":"), false,
-                                   2, 1, -1));
+                                   65'536, 1, -1));
         QCOMPARE(insertSpy.count(), 0);
         QCOMPARE(dataSpy.count(), 1);
         QCOMPARE(dataSpy.at(0).at(0).toModelIndex(), model->index(0));
@@ -134,7 +134,7 @@ private slots:
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(),
                  QVariantList{ chunkMap(0, QString(), 0) });
         QCOMPARE(role(conn, 0, CmdlineModel::HighlightIdRole).toInt(), -1);
-        QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 2);
+        QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 65'536);
         QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QString());
         QCOMPARE(activeLevelSpy.count(), 1);
     }
@@ -531,6 +531,10 @@ private slots:
         QTest::newRow("show negative indent")
             << redrawEvent("cmdline_show", valid, 1, std::string(":"), std::string(), -1, 1, -1)
             << showShape;
+        QTest::newRow("show oversized indent")
+            << showEvent(valid, 1, ":", 1, 65'537)
+            << QStringLiteral(
+                   "Invalid cmdline_show: indent 65537 exceeds the rendering limit of 65536");
         QTest::newRow("show chunk negative attr_id")
             << showEvent(Line{ { -1, "x", 0 } }, 1, ":", 1) << showShape;
         QTest::newRow("show chunk negative hl_id")

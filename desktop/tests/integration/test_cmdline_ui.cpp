@@ -2,13 +2,14 @@
 #include "GridItem.h"
 #include "IntegrationHelpers.h"
 
+#include <QGuiApplication>
+#include <QInputMethod>
 #include <QInputMethodEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItemGrabResult>
 #include <QQuickTextDocument>
 #include <QQuickWindow>
-#include <QSet>
 #include <QSGRendererInterface>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -37,7 +38,7 @@ struct CommandPanelHarness {
     bool commit(const QString &text, int start = 0, int length = 0) const {
         QInputMethodEvent event;
         event.setCommitString(text, start, length);
-        QCoreApplication::sendEvent(grid, &event);
+        QCoreApplication::sendEvent(QGuiApplication::focusObject(), &event);
         return event.isAccepted();
     }
 
@@ -145,7 +146,10 @@ private slots:
 
     void imeCommitReachesCommandLineOnce() {
         const QString literal(u"\u6F22<x>");
-        const auto enabled = [&] { return h->grid->inputMethodQuery(Qt::ImEnabled).toBool(); };
+        const auto enabled = [] {
+            return QInputMethod::queryFocusObject(Qt::ImEnabled, {}).toBool();
+        };
+        QTRY_COMPARE(QGuiApplication::focusObject(), h->grid);
         h->type("iabc");
         QTRY_VERIFY(h->conn.grid()->dumpAscii().contains(QStringLiteral("abc")));
         QVERIFY(!h->acceptsInputMethod());
@@ -156,6 +160,7 @@ private slots:
                  std::optional<QVariant>(QStringLiteral("abc")));
         h->type(":let g:dot_commit = '");
         QTRY_VERIFY(enabled());
+        QCOMPARE(QGuiApplication::focusObject(), h->grid);
         QVERIFY(h->acceptsInputMethod());
         QInputMethodEvent preedit(QStringLiteral("not committed"), {});
         QCoreApplication::sendEvent(h->grid, &preedit);
@@ -267,18 +272,37 @@ private slots:
         QVERIFY(!cursor.charFormat().fontItalic() && !cursor.charFormat().fontUnderline() &&
                 !cursor.charFormat().fontStrikeOut());
 
-        const auto grab = h->panel->grabToImage();
+        const auto *root = h->window->contentItem();
+        QRectF start, end;
+        const int offset = h->panel->property("kindMark").toString().size();
+        QVERIFY(QMetaObject::invokeMethod(h->layout, "positionToRectangle",
+                                          Q_RETURN_ARG(QRectF, start), Q_ARG(int, offset)));
+        QVERIFY(QMetaObject::invokeMethod(h->layout, "positionToRectangle",
+                                          Q_RETURN_ARG(QRectF, end), Q_ARG(int, offset + 1)));
+        start.setRight(end.x());
+        const QRectF cell = h->layout->mapRectToItem(root, start);
+        QVERIFY(cell.width() > 0 && cell.height() > 0);
+        const auto grab = h->window->contentItem()->grabToImage();
         QVERIFY(grab);
         QSignalSpy ready(grab.data(), &QQuickItemGrabResult::ready);
         if(grab->image().isNull()) QVERIFY(ready.wait(5000));
         const QImage image = grab->image();
         QVERIFY(!image.isNull());
-        QSet<QRgb> pixels;
-        for(int y = 0; y < image.height(); ++y)
-            for(int x = 0; x < image.width(); ++x) pixels.insert(image.pixel(x, y));
-        QVERIFY(pixels.size() > 2);
-        QVERIFY(pixels.contains(h->conn.colorPalette()->overlayBackground().rgb()));
-        QVERIFY(pixels.contains(h->conn.colorPalette()->accent().rgb()));
+        const QRect pixels =
+            QTransform::fromScale(image.width() / root->width(), image.height() / root->height())
+                .mapRect(cell)
+                .toRect();
+        QVERIFY(image.rect().contains(pixels) && !pixels.isEmpty());
+        bool background = false;
+        bool ink = false;
+        for(int y = pixels.top(); y <= pixels.bottom(); ++y) {
+            for(int x = pixels.left(); x <= pixels.right(); ++x) {
+                const QColor color = image.pixelColor(x, y);
+                background |= color == QColor("#273849");
+                ink |= color == QColor("#91abcd");
+            }
+        }
+        QVERIFY(background && ink);
     }
 
     void specialCharacterShowsAtCaret() {
