@@ -161,7 +161,6 @@ signals:
     void imagesAvailableChanged();
 
 private:
-    friend class TestCmdline;
     friend class TestCmdlineModel;
     friend class TestImageApi;
     friend class TestTabline;

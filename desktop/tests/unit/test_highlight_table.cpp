@@ -45,6 +45,35 @@ msgpack::object_handle packInfoNames(const std::vector<std::string> &names) {
 class TestHighlightTable : public QObject {
     Q_OBJECT
 private slots:
+    void attributeMapColors() {
+        HighlightTable table;
+        const auto attrs =
+            packAttrMap({ { "background", 0x273849 }, { "foreground", 0x91abcd }, { "special", 0xdef012 } }, {});
+        table.defineAttr(7, attrs.get());
+        const auto map = table.attributeMap(7);
+        QCOMPARE(map.value("background").value<QColor>(), QColor("#273849"));
+        QCOMPARE(map.value("foreground").value<QColor>(), QColor("#91abcd"));
+        QCOMPARE(map.value("special").value<QColor>(), QColor("#def012"));
+    }
+
+    void attributeMapFlags_data() {
+        QTest::addColumn<QString>("enabled");
+        for(const char *flag: { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
+            QTest::newRow(flag) << QString::fromLatin1(flag);
+    }
+
+    void attributeMapFlags() {
+        QFETCH(QString, enabled);
+        HighlightTable table;
+        const auto attrs = packAttrMap({}, { { enabled.toStdString(), true } });
+        table.setDefaultColors(0xaabbcc, 0x112233, 0xeeddcc);
+        table.defineAttr(7, attrs.get());
+        const auto map = table.attributeMap(7);
+        for(const char *flag: { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
+            QCOMPARE(map.value(flag), QVariant(enabled == QLatin1String(flag)));
+        QVERIFY(!map.contains("background") && !map.contains("foreground") && !map.contains("special"));
+    }
+
     void defaultColorsSet() {
         HighlightTable h;
         h.setDefaultColors(0xff0000, 0x00ff00, 0x0000ff);

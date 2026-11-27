@@ -59,21 +59,6 @@ private slots:
         QVERIFY2(externalCmdline(conn) == false, "ext_cmdline must be off without DOT_EXT_CMDLINE");
     }
 
-    void explicitChunkAttributes() {
-        NvimConnector conn;
-        msgpack::zone zone;
-        const std::map<std::string, bool> flags{
-            { "bold", true }, { "italic", true }, { "reverse", true }, { "strikethrough", true },
-            { "undercurl", true }, { "underline", true },
-        };
-        conn.highlights()->setDefaultColors(0xaabbcc, 0x112233, 0xeeddcc);
-        conn.highlights()->defineAttr(7, msgpack::object(flags, zone));
-        const QVariantMap map = conn.highlights()->attributeMap(7);
-        for(const auto &[name, value]: flags)
-            QCOMPARE(map.value(QString::fromStdString(name)), QVariant(value));
-        QVERIFY(!map.contains("foreground") && !map.contains("background") && !map.contains("special"));
-    }
-
     void colonPromptTracksUnicodeCursor() {
         NvimConnector conn;
         QVERIFY(attach(conn));

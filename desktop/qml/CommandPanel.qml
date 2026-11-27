@@ -202,6 +202,7 @@ Item {
                 cursorVisible: false
             }
             Rectangle {
+                objectName: "commandCaret"
                 readonly property real fraction: panel.connector.modeInfo.cellPercentage / 100
                 readonly property string glyph: panel.characterAt(panel.kindMark + panel.displayedText,
                                                                   panel.cursorPosition)
@@ -218,6 +219,7 @@ Item {
                 color: panel.caretColor
                 radius: panel.metrics.cursorCornerRadius
                 Text {
+                    objectName: "caretGlyph"
                     anchors.fill: parent
                     color: panel.colors.cursorForeground
                     font: input.font

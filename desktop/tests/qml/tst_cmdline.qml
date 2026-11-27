@@ -34,6 +34,7 @@ TestCase {
     }
     function cleanup() {
         $cmdlineFixture.resetCmdline()
+        $cmdlineFixture.setCursorShape("block", 100)
         for (const role of ["chrome", "cursor", "overlay"]) $cmdlineFixture.setRoleResolved(role, true)
     }
 
@@ -71,6 +72,32 @@ TestCase {
         compare(p.activeRow, null)
     }
 
+    function test_caret_shapes() {
+        const p = make()
+        show("abc", 1)
+        const caret = findChild(p, "commandCaret")
+        const edit = findChild(p, "commandLayout")
+        const glyph = findChild(caret, "caretGlyph")
+        const cell = edit.positionToRectangle(3).x - edit.positionToRectangle(2).x
+        verify(cell > 0)
+        const height = p.caretRect.height
+        const top = edit.y + p.caretRect.y
+        compare(glyph.text, "b")
+        verify(glyph.visible)
+        $cmdlineFixture.setCursorShape("horizontal", 25)
+        compare(p.caretShape, "horizontal")
+        compare(caret.width, cell)
+        compare(caret.height, Math.max(1, height * 0.25))
+        compare(caret.y, top + height - caret.height)
+        verify(!glyph.visible)
+        $cmdlineFixture.setCursorShape("vertical", 50)
+        compare(p.caretShape, "vertical")
+        compare(caret.width, Math.max(1, cell * 0.5))
+        compare(caret.height, height)
+        compare(caret.y, top)
+        verify(!glyph.visible)
+    }
+
     function test_geometry_and_palette() {
         const p = make()
         show("abc", 3)
@@ -92,7 +119,7 @@ TestCase {
             compare(layer.width, p.width + 2 * (3 - i))
         }
         compare(p.caretColor, $connector.colorPalette.cursorBackground)
-        compare(p.caretShape, ["block", "horizontal", "vertical"][$connector.modeInfo.cursorShape])
+        compare(p.caretShape, "block")
         for (const role of ["chrome", "cursor", "overlay"]) {
             $cmdlineFixture.setRoleResolved(role, false)
             verify(!p.available && !p.visible)
@@ -101,6 +128,18 @@ TestCase {
         }
         p.paneVisible = false
         verify(!p.visible)
+    }
+
+    function test_special_character_at_end() {
+        const p = make()
+        const edit = findChild(p, "commandLayout")
+        for (const text of ["ab", ""]) {
+            show(text, text.length)
+            $cmdlineFixture.setSpecialCharacter(1, "\"", false)
+            compare(p.displayedText, text + "\"")
+            compare(p.chunkStyles[p.chunkStyles.length - 1].text, "\"")
+            compare(p.caretRect, edit.positionToRectangle(1 + text.length))
+        }
     }
 
     function test_style_updates_and_blocks() {

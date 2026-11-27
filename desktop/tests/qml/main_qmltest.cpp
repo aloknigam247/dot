@@ -58,6 +58,19 @@ public:
     Q_INVOKABLE void hideBlock() { m_connector->cmdline()->hideBlock(); }
     Q_INVOKABLE void hideCmdline(int level) { QVERIFY(m_connector->cmdline()->hide(level)); }
     Q_INVOKABLE void resetCmdline() { m_connector->cmdline()->reset(); }
+    Q_INVOKABLE void setCursorShape(const QString &shape, int cellPercentage) {
+        msgpack::sbuffer buffer;
+        msgpack::packer<msgpack::sbuffer> pk(buffer);
+        pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("attr_id");
+        pk.pack(0);
+        pk.pack("cell_percentage");
+        pk.pack(cellPercentage);
+        pk.pack("cursor_shape");
+        pk.pack(shape.toStdString());
+        m_connector->modeInfo()->setModes(msgpack::unpack(buffer.data(), buffer.size()).get(), true);
+    }
     Q_INVOKABLE void setOverlayColors(const QColor &fg, const QColor &bg) {
         constexpr int overlay = 81;
         const auto attr = dot::test::colorAttrs(static_cast<int>(fg.rgb() & 0xffffffU),

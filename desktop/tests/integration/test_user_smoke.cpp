@@ -134,7 +134,8 @@ private slots:
         QTest::keyClick(window, Qt::Key_Colon);
         auto *panel = window->findChild<QQuickItem *>(QStringLiteral("commandPanel"));
         QVERIFY(panel);
-        QTRY_VERIFY(conn.grid()->dumpAscii().contains(QStringLiteral(":")));
+        QTRY_COMPARE(evalSync(conn, QStringLiteral("mode()")), std::optional<QVariant>(QStringLiteral("c")));
+        QCOMPARE(conn.cmdline()->activeLevel(), 0);
         QVERIFY(!panel->isVisible());
         for(char c: QByteArrayLiteral("let g:smoke_after_colon = 7")) {
             QTest::keyClick(window, c);

@@ -6,8 +6,13 @@
 #include <QJSValue>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickItemGrabResult>
+#include <QQuickTextDocument>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
+#include <QSet>
+#include <QTextCursor>
+#include <QTextDocument>
 
 #include <memory>
 
@@ -24,6 +29,8 @@ struct CommandPanelHarness {
     QQuickItem *layout = nullptr;
     QQuickItem *panel = nullptr;
     QQuickWindow *window = nullptr;
+
+    bool acceptsInputMethod() const { return grid->flags().testFlag(QQuickItem::ItemAcceptsInputMethod); }
 
     void type(const QByteArray &text) const {
         for(char key: text) QTest::keyClick(window, key);
@@ -133,12 +140,14 @@ private slots:
         };
         h->type("iabc");
         QTRY_VERIFY(h->conn.grid()->dumpAscii().contains(QStringLiteral("abc")));
+        QVERIFY(!h->acceptsInputMethod());
         QVERIFY(!enabled());
         QVERIFY(!commit(QStringLiteral("x")));
         QTest::keyClick(h->window, Qt::Key_Escape);
         QCOMPARE(evalSync(h->conn, QStringLiteral("getline(1)")), std::optional<QVariant>(QStringLiteral("abc")));
         h->type(":let g:dot_commit = '");
         QTRY_VERIFY(enabled());
+        QVERIFY(h->acceptsInputMethod());
         QInputMethodEvent preedit(QStringLiteral("not committed"), {});
         QCoreApplication::sendEvent(h->grid, &preedit);
         QVERIFY(commit(literal));
@@ -146,11 +155,14 @@ private slots:
         QTRY_COMPARE(h->text(), QStringLiteral("let g:dot_commit = '%1'").arg(literal));
         QTest::keyClick(h->window, Qt::Key_Return);
         QTRY_VERIFY(!enabled());
+        QVERIFY(!h->acceptsInputMethod());
         QCOMPARE(getVarSync(h->conn, QStringLiteral("dot_commit")), std::optional<QVariant>(literal));
         h->type(":");
         QTRY_VERIFY(enabled());
+        QVERIFY(h->acceptsInputMethod());
         QTest::keyClick(h->window, Qt::Key_Escape);
         QTRY_VERIFY(!enabled());
+        QVERIFY(!h->acceptsInputMethod());
     }
 
     void nestedPanelRestoresOuter() {
@@ -185,6 +197,7 @@ private slots:
         QCOMPARE(reset.count(), 1);
         QVERIFY(!h->panel->isVisible() && !h->panel->property("activeRow").value<QObject *>());
         QVERIFY(h->text().isEmpty() && h->list("blockLines").isEmpty());
+        QVERIFY(!h->acceptsInputMethod());
         QVERIFY(!h->grid->inputMethodQuery(Qt::ImEnabled).toBool());
         QCOMPARE(evalSync(h->conn, QStringLiteral("nvim_list_uis()[0].ext_cmdline")), std::optional<QVariant>(true));
         h->type(":");
@@ -216,6 +229,26 @@ private slots:
         QCOMPARE(plain.value("text").toString(), QStringLiteral("b"));
         QCOMPARE(plain.value("foreground").value<QColor>(), h->conn.colorPalette()->overlayForeground());
         QCOMPARE(plain.value("background").value<QColor>(), h->conn.colorPalette()->overlayBackground());
+
+        auto *quickDocument = h->layout->property("textDocument").value<QQuickTextDocument *>();
+        QVERIFY(quickDocument && quickDocument->textDocument());
+        QTextCursor cursor(quickDocument->textDocument());
+        cursor.setPosition(h->panel->property("kindMark").toString().size() + 1);
+        QCOMPARE(cursor.charFormat().foreground().color(), QColor("#91abcd"));
+        QCOMPARE(cursor.charFormat().background().color(), QColor("#273849"));
+
+        const auto grab = h->panel->grabToImage();
+        QVERIFY(grab);
+        QSignalSpy ready(grab.data(), &QQuickItemGrabResult::ready);
+        if(grab->image().isNull()) QVERIFY(ready.wait(5000));
+        const QImage image = grab->image();
+        QVERIFY(!image.isNull());
+        QSet<QRgb> pixels;
+        for(int y = 0; y < image.height(); ++y)
+            for(int x = 0; x < image.width(); ++x) pixels.insert(image.pixel(x, y));
+        QVERIFY(pixels.size() > 2);
+        QVERIFY(pixels.contains(h->conn.colorPalette()->overlayBackground().rgb()));
+        QVERIFY(pixels.contains(h->conn.colorPalette()->accent().rgb()));
     }
 
     void specialCharacterShowsAtCaret() {
