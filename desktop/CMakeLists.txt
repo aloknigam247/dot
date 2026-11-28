@@ -3,7 +3,7 @@ find_program(DOT_CARGO cargo)
 if(NOT DOT_CARGO)
     message(FATAL_ERROR "cargo was not found on PATH. Install rustup (SETUP.md section 10), then reconfigure.")
 endif()
-project(dot LANGUAGES CXX VERSION 1.7.0)
+project(dot LANGUAGES CXX VERSION 1.8.0)
 
 # vcpkg reads vcpkg.json's version before CMake runs, so it is a second persisted copy
 # of the canonical project() version rather than a generated one.

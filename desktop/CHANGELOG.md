@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/aloknigam247/dot/compare/dot-v1.7.0...dot-v1.8.0) (2026-11-28)
+
+### Added
+
+* **ui:** expose and select live tabpages ([#311](https://github.com/aloknigam247/dot/issues/311)) ([4a0a6a4](https://github.com/aloknigam247/dot/commit/4a0a6a4f4f348c15b796c784f52ba6203a0b1e30)), closes [#108](https://github.com/aloknigam247/dot/issues/108)
+
 ## [1.7.0](https://github.com/aloknigam247/dot/compare/dot-v1.6.0...dot-v1.7.0) (2026-11-27)
 
 ### Added
