@@ -316,8 +316,7 @@ private slots:
         NvimConnector conn;
         // "e" + U+0301 COMBINING ACUTE ACCENT + "x".
         dispatch(conn, showEvent(Line{ { 0, "e\xCC\x81", 0 }, { 0, "x", 0 } }, 0, ":", 1));
-        QCOMPARE(role(conn, 0, CmdlineModel::CursorGraphemeRole).toString(),
-                 QString(u"e\u0301"));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorGraphemeRole).toString(), QString(u"e\u0301"));
 
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
         QCOMPARE(role(conn, 0, CmdlineModel::CursorGraphemeRole).toString(), QStringLiteral("x"));

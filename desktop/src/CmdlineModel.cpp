@@ -157,8 +157,8 @@ void CmdlineBlockModel::replace(QList<QVariantList> lines) {
     endResetModel();
 }
 
-CmdlineModel::CmdlineModel(QObject *parent)
-    : QAbstractListModel(parent), m_block(new CmdlineBlockModel(this)) {}
+CmdlineModel::CmdlineModel(QObject *parent) :
+    QAbstractListModel(parent), m_block(new CmdlineBlockModel(this)) {}
 
 int CmdlineModel::rowCount(const QModelIndex &parent) const {
     if(parent.isValid()) return 0;
