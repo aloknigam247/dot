@@ -126,6 +126,7 @@ qt_add_qml_module(dot_lib
     VERSION 1.0
     QML_FILES
         qml/ChatPanel.qml
+        qml/CommandPanel.qml
         qml/DesktopMetrics.qml
         qml/Main.qml
         qml/NeutralButton.qml

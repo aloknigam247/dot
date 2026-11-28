@@ -88,14 +88,28 @@ static std::optional<TabpageHandle> tabpageHandle(const msgpack::object &value) 
     };
 }
 
+// Undefined attributes still render with inherited colors; the warning exposes the protocol error.
+static void warnUndefinedAttributes(const char *event, const CmdlineLine &line,
+                                    const HighlightTable &table) {
+    for(const CmdlineChunk &chunk: line)
+        if(!table.contains(chunk.attrId))
+            qWarning("Invalid %s: undefined attr_id %d", event, chunk.attrId);
+}
+
 // The single source of truth for the nvim_ui_attach option map. Initial attach
 // and the :restart re-attach both pack through here so their UI options can never
-// diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate.
-static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows) {
+// diverge. dot renders the single global grid: rgb + ext_linegrid + ext_hlstate,
+// plus ext_cmdline when the ext_cmdline config option is on.
+static void packAttachOptions(msgpack::packer<msgpack::sbuffer> &pk, int cols, int rows,
+                              bool externalCmdline) {
     pk.pack_array(3);
     pk.pack(static_cast<int64_t>(cols));
     pk.pack(static_cast<int64_t>(rows));
-    pk.pack_map(3);
+    pk.pack_map(externalCmdline ? 4 : 3);
+    if(externalCmdline) {
+        pk.pack("ext_cmdline");
+        pk.pack(true);
+    }
     pk.pack("rgb");
     pk.pack(true);
     pk.pack("ext_linegrid");
@@ -352,6 +366,35 @@ void NvimConnector::requestColorSnapshot() {
     });
 }
 
+void NvimConnector::requestPromptStyle(int highlightId) {
+    if(!m_rpc->isRunning()) return;
+    m_rpc->request(QStringLiteral("nvim_get_hl"), [highlightId](auto &pk) {
+        pk.pack_array(2);
+        pk.pack(0);
+        pk.pack_map(2);
+        pk.pack("id");
+        pk.pack(highlightId);
+        pk.pack("link");
+        pk.pack(false);
+    }, [this, generation = m_promptStyleGeneration, highlightId](RpcResult result) {
+        if(generation != m_promptStyleGeneration) return;
+        if(!result) {
+            qWarning().noquote() << QStringLiteral("Could not resolve prompt highlight %1: %2")
+                                        .arg(highlightId)
+                                        .arg(result.error().message);
+            return;
+        }
+        const auto &root = result.value()->get();
+        if(root.type != msgpack::type::ARRAY || root.via.array.size != 4 ||
+           root.via.array.ptr[3].type != msgpack::type::MAP) {
+            qWarning("Invalid nvim_get_hl response for prompt highlight %d", highlightId);
+            return;
+        }
+        m_cmdline->setPromptStyle(highlightId,
+                                  HighlightTable::groupAttributeMap(root.via.array.ptr[3]));
+    });
+}
+
 void NvimConnector::resetColorRequests() {
     ++m_colorGeneration;
     m_colorRefreshInFlight = false;
@@ -515,8 +558,8 @@ bool NvimConnector::attachUi(int cols, int rows) {
     m_sentUiSizes.emplace_back(cols, rows);
     if(m_sentUiSizes.size() > kMaxSentUiSizes) m_sentUiSizes.pop_front();
     m_rpc->request(QStringLiteral("nvim_ui_attach"),
-                   [cols, rows](msgpack::packer<msgpack::sbuffer> &pk) {
-        packAttachOptions(pk, cols, rows);
+                   [cols, rows, extCmdline = m_extCmdline](msgpack::packer<msgpack::sbuffer> &pk) {
+        packAttachOptions(pk, cols, rows, extCmdline);
     }, [this](RpcResult res) {
         m_attachPending = false;
         if(res) {
@@ -560,6 +603,20 @@ bool NvimConnector::attachUi(int cols, int rows) {
         }
     });
     return true;
+}
+
+void NvimConnector::setExtCmdline(bool enabled) {
+    if(m_extCmdline == enabled) return;
+    m_extCmdline = enabled;
+    // Cmdline events are dropped while disabled, so no cmdline_hide can clear this session.
+    if(!enabled) m_cmdline->reset();
+    if(!m_attached && !m_attachPending) return;
+    m_rpc->notify(QStringLiteral("nvim_ui_set_option"),
+                  [enabled](msgpack::packer<msgpack::sbuffer> &pk) {
+        pk.pack_array(2);
+        pk.pack(std::string("ext_cmdline"));
+        pk.pack(enabled);
+    });
 }
 
 static QVariant msgpackToVariant(const msgpack::object &o) {
@@ -923,6 +980,7 @@ void NvimConnector::onRpcDisconnected() {
         // connectToAddress fails the old channel's pending callbacks, so cancel first and let
         // the in-flight selection's reply arrive stale.
         m_tabpages->cancelSelection(QStringLiteral("Neovim restarted"));
+        ++m_promptStyleGeneration;
         m_rpc->connectToAddress(m_restartListenAddr);
         return;
     }
@@ -1169,7 +1227,8 @@ void NvimConnector::dispatchEvent(const std::string &name, const msgpack::object
         return;
     }
     if(name.starts_with("cmdline_")) {
-        dispatchCmdlineEvent(name, a);
+        // Events serialized before nvim applied a disable must not resurrect a session.
+        if(m_extCmdline) dispatchCmdlineEvent(name, a);
         return;
     }
     // mouse_on, mouse_off, busy_start, busy_stop, set_icon, update_menu,
@@ -1183,6 +1242,7 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
             qWarning("Invalid cmdline_block_append: expected a chunk line");
             return;
         }
+        warnUndefinedAttributes("cmdline_block_append", *line, *m_hl);
         if(const auto appended = m_cmdline->appendBlock(*line); !appended)
             qWarning().noquote() << "Invalid cmdline_block_append:" << appended.error();
         return;
@@ -1207,6 +1267,8 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
             }
             block.append(std::move(*line));
         }
+        for(const CmdlineLine &line: block)
+            warnUndefinedAttributes("cmdline_block_show", line, *m_hl);
         m_cmdline->showBlock(block);
         return;
     }
@@ -1251,11 +1313,17 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
                      "and hl_id");
             return;
         }
+        warnUndefinedAttributes("cmdline_show", *content, *m_hl);
         const CmdlineSession session{
             *content, asQString(a.ptr[2]), *highlightId, *indent, *position, asQString(prompt),
         };
-        if(const auto shown = m_cmdline->show(*level, session); !shown)
+        if(const auto shown = m_cmdline->show(*level, session); !shown) {
             qWarning().noquote() << "Invalid cmdline_show:" << shown.error();
+            return;
+        }
+        // Highlight group changes send no redraw event, so every prompted show refreshes the style.
+        if(!session.prompt.isEmpty() && session.highlightId > 0)
+            requestPromptStyle(session.highlightId);
         return;
     }
     if(name == "cmdline_special_char") {

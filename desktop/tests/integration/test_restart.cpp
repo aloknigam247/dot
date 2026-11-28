@@ -15,7 +15,7 @@ private slots:
         QVERIFY(waitForAttach(&conn));
         QVERIFY(initialFlush.wait());
 
-        // Production attaches leave the command line on the grid until a consumer exists.
+        // Without the ext_cmdline option, attaches leave the command line on the grid.
         const auto initialExtCmdline =
             evalSync(conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"));
         QVERIFY(initialExtCmdline);

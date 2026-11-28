@@ -1,9 +1,9 @@
-// Tier-2 tests for command-line state produced by a real Neovim. Tests enable ext_cmdline on their
-// own UI channel because production attaches keep the grid-rendered command line.
+// Tier-2 tests for command-line state produced by a real Neovim.
 
 #include "CmdlineModel.h"
 #include "IntegrationHelpers.h"
 
+#include <QColor>
 #include <QRegularExpression>
 #include <QtTest>
 
@@ -15,21 +15,16 @@ class TestCmdline : public QObject {
     Q_OBJECT
 
 private:
-    static bool enableExtCmdline(NvimConnector &conn) {
-        conn.m_rpc->notify(QStringLiteral("nvim_ui_set_option"),
-                           [](msgpack::packer<msgpack::sbuffer> &pk) {
-            pk.pack_array(2);
-            pk.pack(std::string("ext_cmdline"));
-            pk.pack(true);
-        });
+    static std::optional<bool> externalCmdline(NvimConnector &conn) {
         const auto extCmdline = evalSync(
             conn, QStringLiteral("get(nvim_list_uis()[0], 'ext_cmdline', v:false)"), 20000);
-        return extCmdline && extCmdline->toBool();
+        return extCmdline ? std::optional(extCmdline->toBool()) : std::nullopt;
     }
 
     static bool attach(NvimConnector &conn) {
+        conn.setExtCmdline(true);
         if(!startTestNvim(conn) || !conn.attachUi(80, 24) || !waitForAttach(&conn)) return false;
-        return enableExtCmdline(conn);
+        return externalCmdline(conn) == true;
     }
 
     static QVariant role(NvimConnector &conn, int row, int role) {
@@ -47,6 +42,82 @@ private:
 
 private slots:
     void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral("^Invalid cmdline_"))); }
+
+    void runtimeToggleSwitchesCmdlineOwner() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
+        QVERIFY(externalCmdline(conn) == false);
+        CmdlineModel *model = conn.cmdline();
+
+        conn.setExtCmdline(true);
+        QTRY_VERIFY(externalCmdline(conn) == true);
+        conn.input(QStringLiteral(":abc"));
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
+        QVERIFY(!conn.grid()->dumpAscii().contains(QStringLiteral(":abc")));
+
+        conn.setExtCmdline(false);
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(model->activeLevel(), 0);
+        QTRY_VERIFY(externalCmdline(conn) == false);
+        conn.input(QStringLiteral("d"));
+        QTRY_COMPARE(evalSync(conn, QStringLiteral("getcmdline()")),
+                     std::optional<QVariant>(QStringLiteral("abcd")));
+        QTRY_VERIFY(conn.grid()->dumpAscii().contains(QStringLiteral(":abcd")));
+        conn.input(QStringLiteral("<Esc>"));
+    }
+
+    void togglingDuringPendingAttachReachesNeovim() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24));
+        conn.setExtCmdline(true);
+        QVERIFY(waitForAttach(&conn));
+        QTRY_VERIFY(externalCmdline(conn) == true);
+        conn.input(QStringLiteral(":abc"));
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("abc"));
+        conn.input(QStringLiteral("<Esc>"));
+    }
+
+    void enablingDuringPromptDropsGridPromptIndent() {
+        NvimConnector conn;
+        QVERIFY(startTestNvim(conn) && conn.attachUi(80, 24) && waitForAttach(&conn));
+        conn.input(QStringLiteral(":call input('Name: ')<CR>x"));
+        QTRY_COMPARE(evalSync(conn, QStringLiteral("getcmdline()")),
+                     std::optional<QVariant>(QStringLiteral("x")));
+
+        conn.setExtCmdline(true);
+
+        QTRY_COMPARE(text(conn, 0), QStringLiteral("x"));
+        QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 0);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
+        conn.input(QStringLiteral("<Esc>"));
+    }
+
+    void inputPromptResolvesHighlightGroup() {
+        NvimConnector conn;
+        QVERIFY(attach(conn));
+        CmdlineModel *model = conn.cmdline();
+        const auto promptStyle = [&conn] {
+            return role(conn, 0, CmdlineModel::PromptStyleRole).toMap();
+        };
+        QVERIFY(evalSync(conn, QStringLiteral("execute('hi DotPrompt guifg=#123456 gui=bold')")));
+
+        conn.input(QStringLiteral(":echohl DotPrompt | call input('Name: ') | echohl None<CR>"));
+
+        QTRY_COMPARE(role(conn, 0, CmdlineModel::PromptRole).toString(), QStringLiteral("Name: "));
+        QTRY_COMPARE(promptStyle().value(QStringLiteral("foreground")).value<QColor>(),
+                     QColor(0x12, 0x34, 0x56));
+        QCOMPARE(promptStyle().value(QStringLiteral("bold")).toBool(), true);
+        QVERIFY(!promptStyle().contains(QStringLiteral("background")));
+
+        QVERIFY(evalSync(conn, QStringLiteral("execute('hi DotPrompt guifg=#654321 gui=NONE')")));
+        conn.input(QStringLiteral("x"));
+
+        QTRY_COMPARE(promptStyle().value(QStringLiteral("foreground")).value<QColor>(),
+                     QColor(0x65, 0x43, 0x21));
+        QCOMPARE(promptStyle().value(QStringLiteral("bold")).toBool(), false);
+        conn.input(QStringLiteral("<Esc>"));
+        QTRY_COMPARE(model->rowCount(), 0);
+    }
 
     void colonPromptTracksUnicodeCursor() {
         NvimConnector conn;
@@ -249,21 +320,20 @@ private slots:
 
         QTRY_COMPARE(model->blockActive(), true);
         QTRY_COMPARE(model->rowCount(), 1);
-        QCOMPARE(model->blockLines().size(), 1);
-        QCOMPARE(model->blockLines().at(0).toList(),
-                 line(QStringLiteral("function! DotCmdlineBlock()")));
+        QCOMPARE(model->block()->lines(),
+                 QList<QVariantList>{ line(QStringLiteral("function! DotCmdlineBlock()")) });
         QCOMPARE(role(conn, 0, CmdlineModel::IndentRole).toInt(), 2);
         QCOMPARE(text(conn, 0), QString());
 
         conn.input(QStringLiteral("let x = 1<CR>"));
 
-        QTRY_COMPARE(model->blockLines().size(), 2);
-        QCOMPARE(model->blockLines().at(1), QVariant(line(QStringLiteral("  let x = 1"))));
+        QTRY_COMPARE(model->block()->rowCount(), 2);
+        QCOMPARE(model->block()->lines().at(1), line(QStringLiteral("  let x = 1")));
 
         conn.input(QStringLiteral("endfunction<CR>"));
 
         QTRY_COMPARE(model->blockActive(), false);
-        QCOMPARE(model->blockLines(), QVariantList());
+        QCOMPARE(model->block()->rowCount(), 0);
         QCOMPARE(model->rowCount(), 0);
         const auto defined = evalSync(conn, QStringLiteral("exists('*DotCmdlineBlock')"));
         QVERIFY(defined);
@@ -324,7 +394,7 @@ private slots:
         QCOMPARE(model->rowCount(), 0);
         QCOMPARE(removedSpy.count(), 0);
         QCOMPARE(resetSpy.count(), 1);
-        QVERIFY(enableExtCmdline(conn));
+        QVERIFY(externalCmdline(conn) == true);
 
         conn.input(QStringLiteral(":xyz"));
 

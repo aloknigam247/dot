@@ -105,6 +105,8 @@ int main(int argc, char **argv) {
                    "dot options:\n"
                    "  -h, --help       Show this help and exit.\n"
                    "  -v, --version    Show dot version and exit.\n"
+                   "  --dot-ext_cmdline[=<bool>]\n"
+                   "                   Show the command line in a panel instead of the grid.\n"
                    "  --dot-rounded_highlights=<groups>\n"
                    "                   Comma-separated rounded highlight groups.\n"
                    "\n"
@@ -174,6 +176,7 @@ int main(int argc, char **argv) {
     boot.mark("QGuiApplication ctor done");
 
     dot::Config cfg;
+    cfg.registerOption(QStringLiteral("ext_cmdline"), dot::ConfigType::Bool, false);
     cfg.registerOption(QStringLiteral("rounded_highlights"), dot::ConfigType::StringList,
                        QStringList{});
 
@@ -184,6 +187,16 @@ int main(int argc, char **argv) {
     dot::NvimConnector connector;
     dot::WindowChrome windowChrome;
     boot.mark("NvimConnector ctor done");
+
+    // Applied before the early attach so it packs the CLI value; a g: value arrives after attach.
+    const auto applyExtCmdline = [&] {
+        connector.setExtCmdline(cfg.value(QStringLiteral("ext_cmdline")).toBool());
+    };
+    applyExtCmdline();
+    QObject::connect(&cfg, &dot::Config::changed, &connector,
+                     [applyExtCmdline](const QString &name) {
+        if(name == QStringLiteral("ext_cmdline")) applyExtCmdline();
+    });
 
     const bool nvimStarted = connector.start(locateNvim(), forwardArgs);
     if(nvimStarted) {

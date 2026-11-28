@@ -124,10 +124,15 @@ private slots:
         QVERIFY2(window->activeFocusItem() != nullptr,
                  "No active focus item after attach — Shell didn't force focus");
 
+        auto *panel = window->findChild<QQuickItem *>(QStringLiteral("commandPanel"));
+        QVERIFY(panel);
+        const auto command = QByteArrayLiteral("let g:smoke_after_colon = 7");
         QTest::keyClick(window, Qt::Key_Colon);
-        for(char c: QByteArrayLiteral("let g:smoke_after_colon = 7")) {
-            QTest::keyClick(window, c);
-        }
+        for(char c: command) QTest::keyClick(window, c);
+        QTRY_COMPARE(evalSync(conn, QStringLiteral("getcmdline()")),
+                     std::optional<QVariant>(QString::fromLatin1(command)));
+        QCOMPARE(conn.cmdline()->activeLevel(), 0);
+        QVERIFY(!panel->isVisible());
         QTest::keyClick(window, Qt::Key_Return);
 
         const bool applied = waitUntil([&] {

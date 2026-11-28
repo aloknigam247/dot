@@ -211,6 +211,7 @@ Window {
     }
 
     Rectangle {
+        id: editorPane
         objectName: "editorPane"
         readonly property rect bounds: shell.metrics.editorPaneRect(window.width, window.height, chatPanel.visible)
         x: bounds.x
@@ -234,6 +235,14 @@ Window {
         enabled: visible
         opacity: $connector.colorPalette.paneValid ? 1 : 0
         visible: !window._startupFailed
+    }
+
+    CommandPanel {
+        objectName: "commandPanel"
+        connector: $connector
+        metrics: shell.metrics
+        paneBounds: editorPane.bounds
+        paneVisible: editorPane.visible
     }
 
     ChatPanel {

@@ -74,6 +74,9 @@ public:
     bool start(const QString &nvimExe = QStringLiteral("nvim"),
                const QStringList &nvimForwardArgs = {});
     Q_INVOKABLE bool attachUi(int cols, int rows);
+    // Packed into every attach; applied with nvim_ui_set_option while a UI attach is live or
+    // pending.
+    void setExtCmdline(bool enabled);
 
     // Issues `nvim_get_var(name)` and invokes `cb` with the unpacked value on
     // success, or with an empty optional if the variable is unset / errored.
@@ -161,7 +164,6 @@ signals:
     void imagesAvailableChanged();
 
 private:
-    friend class TestCmdline;
     friend class TestCmdlineModel;
     friend class TestImageApi;
     friend class TestTabline;
@@ -175,6 +177,7 @@ private:
 
     void installDotBackend();
     void requestColorSnapshot();
+    void requestPromptStyle(int highlightId);
     void resetColorRequests();
     void setImagesAvailable(bool available);
     void showImageError(const QString &message);
@@ -242,7 +245,10 @@ private:
     bool m_colorRefreshPending = false;
     bool m_colorSnapshotBoundaryPending = false;
     bool m_colorSnapshotReceived = false;
+    bool m_extCmdline = false;
     CmdlineModel *m_cmdline = nullptr;
+    // Identifies the transport whose prompt highlight replies may still apply.
+    quint64 m_promptStyleGeneration = 0;
     TabpageModel *m_tabpages = nullptr;
 };
 
