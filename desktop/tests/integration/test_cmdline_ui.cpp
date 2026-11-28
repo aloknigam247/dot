@@ -3,8 +3,6 @@
 #include "IntegrationHelpers.h"
 
 #include <QGuiApplication>
-#include <QInputMethod>
-#include <QInputMethodEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItemGrabResult>
@@ -30,17 +28,6 @@ struct CommandPanelHarness {
     QQuickItem *layout = nullptr;
     QQuickItem *panel = nullptr;
     QQuickWindow *window = nullptr;
-
-    bool acceptsInputMethod() const {
-        return grid->flags().testFlag(QQuickItem::ItemAcceptsInputMethod);
-    }
-
-    bool commit(const QString &text, int start = 0, int length = 0) const {
-        QInputMethodEvent event;
-        event.setCommitString(text, start, length);
-        QCoreApplication::sendEvent(QGuiApplication::focusObject(), &event);
-        return event.isAccepted();
-    }
 
     void type(const QByteArray &text) const {
         for(char key: text) QTest::keyClick(window, key);
@@ -144,48 +131,6 @@ private slots:
         QTRY_VERIFY(h->conn.grid()->dumpAscii().contains(QStringLiteral("E117:")));
     }
 
-    void imeCommitReachesCommandLineOnce() {
-        const QString literal(u"\u6F22<x>");
-        const auto enabled = [] {
-            return QInputMethod::queryFocusObject(Qt::ImEnabled, {}).toBool();
-        };
-        QTRY_COMPARE(QGuiApplication::focusObject(), h->grid);
-        h->type("iabc");
-        QTRY_VERIFY(h->conn.grid()->dumpAscii().contains(QStringLiteral("abc")));
-        QVERIFY(!h->acceptsInputMethod());
-        QVERIFY(!enabled());
-        QVERIFY(!h->commit(QStringLiteral("x")));
-        QTest::keyClick(h->window, Qt::Key_Escape);
-        QCOMPARE(evalSync(h->conn, QStringLiteral("getline(1)")),
-                 std::optional<QVariant>(QStringLiteral("abc")));
-        h->type(":let g:dot_commit = '");
-        QTRY_VERIFY(enabled());
-        QCOMPARE(QGuiApplication::focusObject(), h->grid);
-        QVERIFY(h->acceptsInputMethod());
-        QInputMethodEvent preedit(QStringLiteral("not committed"), {});
-        QCoreApplication::sendEvent(h->grid, &preedit);
-        QVERIFY(!preedit.isAccepted());
-        QVERIFY(!h->commit({}));
-        QVERIFY(!h->commit(QStringLiteral("x"), -1, 1));
-        QVERIFY(!h->commit({}, -1, 1));
-        QVERIFY(!h->commit(QStringLiteral("x"), 1, 0));
-        QVERIFY(!h->commit(QStringLiteral("x"), 0, 1));
-        QVERIFY(h->commit(literal));
-        h->type("'");
-        QTRY_COMPARE(h->text(), QStringLiteral("let g:dot_commit = '%1'").arg(literal));
-        QTest::keyClick(h->window, Qt::Key_Return);
-        QTRY_VERIFY(!enabled());
-        QVERIFY(!h->acceptsInputMethod());
-        QCOMPARE(getVarSync(h->conn, QStringLiteral("dot_commit")),
-                 std::optional<QVariant>(literal));
-        h->type(":");
-        QTRY_VERIFY(enabled());
-        QVERIFY(h->acceptsInputMethod());
-        QTest::keyClick(h->window, Qt::Key_Escape);
-        QTRY_VERIFY(!enabled());
-        QVERIFY(!h->acceptsInputMethod());
-    }
-
     void nestedPanelRestoresOuter() {
         h->type(":echo ");
         QTRY_COMPARE(h->text(), QStringLiteral("echo "));
@@ -217,9 +162,6 @@ private slots:
             if(h->conn.attached()) return;
             handoff = true;
             QCOMPARE(h->conn.cmdline()->activeLevel(), 1);
-            QVERIFY(!h->acceptsInputMethod());
-            QVERIFY(!h->grid->inputMethodQuery(Qt::ImEnabled).toBool());
-            QVERIFY(!h->commit(QStringLiteral("stale")));
         });
         h->conn.command(QStringLiteral("restart!"));
         QTRY_COMPARE_WITH_TIMEOUT(attached.count(), 1, 20000);
@@ -229,8 +171,6 @@ private slots:
         QCOMPARE(reset.count(), 1);
         QVERIFY(!h->panel->isVisible() && !h->panel->property("activeRow").value<QObject *>());
         QVERIFY(h->text().isEmpty() && h->renderedBlock().isEmpty());
-        QVERIFY(!h->acceptsInputMethod());
-        QVERIFY(!h->grid->inputMethodQuery(Qt::ImEnabled).toBool());
         QCOMPARE(evalSync(h->conn, QStringLiteral("nvim_list_uis()[0].ext_cmdline")),
                  std::optional<QVariant>(true));
         h->type(":");

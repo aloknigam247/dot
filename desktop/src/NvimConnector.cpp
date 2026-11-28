@@ -366,6 +366,35 @@ void NvimConnector::requestColorSnapshot() {
     });
 }
 
+void NvimConnector::requestPromptStyle(int highlightId) {
+    if(!m_rpc->isRunning()) return;
+    m_rpc->request(QStringLiteral("nvim_get_hl"), [highlightId](auto &pk) {
+        pk.pack_array(2);
+        pk.pack(0);
+        pk.pack_map(2);
+        pk.pack("id");
+        pk.pack(highlightId);
+        pk.pack("link");
+        pk.pack(false);
+    }, [this, generation = m_promptStyleGeneration, highlightId](RpcResult result) {
+        if(generation != m_promptStyleGeneration) return;
+        if(!result) {
+            qWarning().noquote() << QStringLiteral("Could not resolve prompt highlight %1: %2")
+                                        .arg(highlightId)
+                                        .arg(result.error().message);
+            return;
+        }
+        const auto &root = result.value()->get();
+        if(root.type != msgpack::type::ARRAY || root.via.array.size != 4 ||
+           root.via.array.ptr[3].type != msgpack::type::MAP) {
+            qWarning("Invalid nvim_get_hl response for prompt highlight %d", highlightId);
+            return;
+        }
+        m_cmdline->setPromptStyle(highlightId,
+                                  HighlightTable::groupAttributeMap(root.via.array.ptr[3]));
+    });
+}
+
 void NvimConnector::resetColorRequests() {
     ++m_colorGeneration;
     m_colorRefreshInFlight = false;
@@ -951,6 +980,7 @@ void NvimConnector::onRpcDisconnected() {
         // connectToAddress fails the old channel's pending callbacks, so cancel first and let
         // the in-flight selection's reply arrive stale.
         m_tabpages->cancelSelection(QStringLiteral("Neovim restarted"));
+        ++m_promptStyleGeneration;
         m_rpc->connectToAddress(m_restartListenAddr);
         return;
     }
@@ -1287,8 +1317,13 @@ void NvimConnector::dispatchCmdlineEvent(const std::string &name, const msgpack:
         const CmdlineSession session{
             *content, asQString(a.ptr[2]), *highlightId, *indent, *position, asQString(prompt),
         };
-        if(const auto shown = m_cmdline->show(*level, session); !shown)
+        if(const auto shown = m_cmdline->show(*level, session); !shown) {
             qWarning().noquote() << "Invalid cmdline_show:" << shown.error();
+            return;
+        }
+        // Highlight group changes send no redraw event, so every prompted show refreshes the style.
+        if(!session.prompt.isEmpty() && session.highlightId > 0)
+            requestPromptStyle(session.highlightId);
         return;
     }
     if(name == "cmdline_special_char") {

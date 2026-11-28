@@ -56,6 +56,8 @@ public:
 
     HlAttr attr(int id) const;
     Q_INVOKABLE QVariantMap attributeMap(int attrId) const;
+    // Attribute map, in attributeMap()'s shape, of an nvim_get_hl() group definition.
+    static QVariantMap groupAttributeMap(const msgpack::object &definition);
     bool isRounded(int id) const;
     QColor defaultFg() const { return m_defaultFg; }
     QColor defaultBg() const { return m_defaultBg; }

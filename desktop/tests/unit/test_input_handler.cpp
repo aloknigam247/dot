@@ -15,14 +15,6 @@ QString translate(int key, Qt::KeyboardModifiers mods, const QString &text) {
 class TestInputHandler : public QObject {
     Q_OBJECT
 private slots:
-    void committedTextIsLiteral() {
-        QCOMPARE(InputHandler::textToNvim(QStringLiteral("\u6f22<Esc>\x01\n\U0001f600")),
-                 QStringLiteral("\u6f22<lt>Esc>\U0001f600"));
-        QCOMPARE(InputHandler::textToNvim(QStringLiteral("\x1f\x20~\x7f\u0080\u009f\u00a0")),
-                 QStringLiteral(" ~\u00a0"));
-        QVERIFY(InputHandler::textToNvim(QString()).isEmpty());
-    }
-
     void plainLetter() {
         QCOMPARE(translate(Qt::Key_A, Qt::NoModifier, QStringLiteral("a")), QStringLiteral("a"));
     }

@@ -119,16 +119,6 @@ QString InputHandler::keyToNvim(QKeyEvent *ev) {
     return text;
 }
 
-QString InputHandler::textToNvim(const QString &text) {
-    QString keys;
-    keys.reserve(text.size());
-    for(const QChar ch: text) {
-        if(ch == u'<') keys += QStringLiteral("<lt>");
-        else if(ch.category() != QChar::Other_Control) keys += ch;
-    }
-    return keys;
-}
-
 InputHandler::MouseInput InputHandler::mouseFor(QMouseEvent *ev, QEvent::Type type) {
     MouseInput m;
     // Qt sets ev->button() only on press/release transitions; during a drag

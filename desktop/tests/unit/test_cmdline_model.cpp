@@ -301,7 +301,8 @@ private slots:
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
 
         QCOMPARE(dataSpy.count(), 1);
-        const QList<int> cursorRoles{ CmdlineModel::CursorTextOffsetRole };
+        const QList<int> cursorRoles{ CmdlineModel::CursorGraphemeRole,
+                                      CmdlineModel::CursorTextOffsetRole };
         QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), cursorRoles);
         QCOMPARE(insertSpy.count(), 0);
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole), chunks);
@@ -309,6 +310,54 @@ private slots:
 
         dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
         QCOMPARE(dataSpy.count(), 1);
+    }
+
+    void cursorGraphemeKeepsCombiningMarks() {
+        NvimConnector conn;
+        // "e" + U+0301 COMBINING ACUTE ACCENT + "x".
+        dispatch(conn, showEvent(Line{ { 0, "e\xCC\x81", 0 }, { 0, "x", 0 } }, 0, ":", 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorGraphemeRole).toString(),
+                 QString(u"e\u0301"));
+
+        dispatch(conn, redrawEvent("cmdline_pos", 3, 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorGraphemeRole).toString(), QStringLiteral("x"));
+
+        dispatch(conn, redrawEvent("cmdline_pos", 4, 1));
+        QCOMPARE(role(conn, 0, CmdlineModel::CursorGraphemeRole).toString(), QString());
+    }
+
+    void promptStyleAppliesToRowsOfItsGroup() {
+        NvimConnector conn;
+        CmdlineModel *model = conn.cmdline();
+        const QVariantMap style{ { QStringLiteral("bold"), true } };
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(),
+                                   std::string("Name: "), 0, 1, 7));
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(),
+                                   std::string("Age: "), 0, 2, 8));
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptStyleRole).toMap(), QVariantMap());
+        QSignalSpy dataSpy(model, &CmdlineModel::dataChanged);
+
+        model->setPromptStyle(7, style);
+
+        QCOMPARE(dataSpy.count(), 1);
+        QCOMPARE(dataSpy.at(0).at(0).toModelIndex(), model->index(0));
+        QCOMPARE(dataSpy.at(0).at(1).toModelIndex(), model->index(0));
+        const QList<int> styleRoles{ CmdlineModel::PromptStyleRole };
+        QCOMPARE(dataSpy.at(0).at(2).value<QList<int>>(), styleRoles);
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptStyleRole).toMap(), style);
+        QCOMPARE(role(conn, 1, CmdlineModel::PromptStyleRole).toMap(), QVariantMap());
+
+        model->setPromptStyle(7, style);
+        QCOMPARE(dataSpy.count(), 1);
+
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(),
+                                   std::string("Again: "), 0, 2, 7));
+        QCOMPARE(role(conn, 1, CmdlineModel::PromptStyleRole).toMap(), style);
+
+        conn.resetUiState();
+        dispatch(conn, redrawEvent("cmdline_show", Line{ { 0, "", 0 } }, 0, std::string(),
+                                   std::string("Name: "), 0, 1, 7));
+        QCOMPARE(role(conn, 0, CmdlineModel::PromptStyleRole).toMap(), QVariantMap());
     }
 
     void nestedPromptRestoresOuterLevel() {
@@ -407,7 +456,10 @@ private slots:
     void blockAppendHideLifecycle() {
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
-        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QAbstractItemModelTester tester(model->block(),
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockActiveChanged);
+        QSignalSpy insertSpy(model->block(), &CmdlineBlockModel::rowsInserted);
         defineAttributes(conn, { 5 });
 
         QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: no block is visible");
@@ -424,33 +476,41 @@ private slots:
 
         QCOMPARE(model->blockActive(), true);
         QCOMPARE(model->rowCount(), 0);
-        QCOMPARE(blockSpy.count(), 2);
-        const QVariantList expectedBlock{
+        QCOMPARE(blockSpy.count(), 1);
+        QCOMPARE(insertSpy.count(), 1);
+        QCOMPARE(insertSpy.at(0).at(1).toInt(), 1);
+        QCOMPARE(insertSpy.at(0).at(2).toInt(), 1);
+        const QList<QVariantList> expectedBlock{
             QVariantList{ chunkMap(0, QStringLiteral("function! Foo()"), 0) },
             QVariantList{ chunkMap(0, QStringLiteral("  let x"), 0),
                           chunkMap(5, QStringLiteral(" = 1"), 9) },
         };
-        QCOMPARE(model->blockLines(), expectedBlock);
+        QCOMPARE(model->block()->lines(), expectedBlock);
+        const QModelIndex appended = model->block()->index(1);
+        QCOMPARE(model->block()->data(appended, CmdlineBlockModel::ChunksRole).toList(),
+                 expectedBlock.at(1));
 
         QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
         dispatch(conn, redrawEvent("cmdline_block_append",
                                    std::vector<std::tuple<int, int, int>>{ { 0, 1, 0 } }));
         QTest::ignoreMessage(QtWarningMsg, "Invalid cmdline_block_append: expected a chunk line");
         dispatch(conn, redrawEvent("cmdline_block_append"));
-        QCOMPARE(model->blockLines(), expectedBlock);
-        QCOMPARE(blockSpy.count(), 2);
+        QCOMPARE(model->block()->lines(), expectedBlock);
+        QCOMPARE(blockSpy.count(), 1);
+        QCOMPARE(insertSpy.count(), 1);
 
         dispatch(conn, redrawEvent("cmdline_block_hide"));
 
         QCOMPARE(model->blockActive(), false);
-        QCOMPARE(model->blockLines(), QVariantList());
-        QCOMPARE(blockSpy.count(), 3);
+        QCOMPARE(model->block()->lines(), QList<QVariantList>());
+        QCOMPARE(blockSpy.count(), 2);
     }
 
     void blockReshowReplacesLines() {
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
-        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockActiveChanged);
+        QSignalSpy resetSpy(model->block(), &CmdlineBlockModel::modelReset);
 
         dispatch(conn,
                  redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 0, "one", 0 } },
@@ -459,10 +519,10 @@ private slots:
                  redrawEvent("cmdline_block_show", std::vector<Line>{ Line{ { 0, "three", 0 } } }));
 
         QCOMPARE(model->blockActive(), true);
-        QCOMPARE(model->blockLines().size(), 1);
-        QCOMPARE(model->blockLines().at(0).toList(),
-                 QVariantList{ chunkMap(0, QStringLiteral("three"), 0) });
-        QCOMPARE(blockSpy.count(), 2);
+        QCOMPARE(model->block()->lines(),
+                 QList<QVariantList>{ QVariantList{ chunkMap(0, QStringLiteral("three"), 0) } });
+        QCOMPARE(blockSpy.count(), 1);
+        QCOMPARE(resetSpy.count(), 2);
     }
 
     void undefinedAttributesWarnAndKeepChunks() {
@@ -479,10 +539,12 @@ private slots:
 
         const QVariantList expectedChunks{ chunkMap(0, QStringLiteral("a"), 0),
                                            chunkMap(7, QStringLiteral("b"), 3) };
-        const QVariantList expectedBlock{ QVariantList{ chunkMap(8, QStringLiteral("x"), 0) },
-                                          QVariantList{ chunkMap(9, QStringLiteral("y"), 0) } };
+        const QList<QVariantList> expectedBlock{
+            QVariantList{ chunkMap(8, QStringLiteral("x"), 0) },
+            QVariantList{ chunkMap(9, QStringLiteral("y"), 0) },
+        };
         QCOMPARE(role(conn, 0, CmdlineModel::ChunksRole).toList(), expectedChunks);
-        QCOMPARE(model->blockLines(), expectedBlock);
+        QCOMPARE(model->block()->lines(), expectedBlock);
 
         defineAttributes(conn, { 7 });
         dispatch(conn, showEvent(Line{ { 7, "b", 3 } }, 1, ":", 1));
@@ -494,7 +556,8 @@ private slots:
         NvimConnector conn;
         CmdlineModel *model = conn.cmdline();
         QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
-        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockActiveChanged);
+        QSignalSpy blockResetSpy(model->block(), &CmdlineBlockModel::modelReset);
         QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
 
         conn.resetUiState();
@@ -502,6 +565,7 @@ private slots:
 
         QCOMPARE(activeLevelSpy.count(), 0);
         QCOMPARE(blockSpy.count(), 0);
+        QCOMPARE(blockResetSpy.count(), 0);
         QCOMPARE(resetSpy.count(), 0);
     }
 
@@ -634,7 +698,7 @@ private slots:
         dispatch(conn, redrawEvent("cmdline_block_show",
                                    std::vector<Line>{ Line{ { 0, "function! Foo()", 0 } } }));
         QSignalSpy activeLevelSpy(model, &CmdlineModel::activeLevelChanged);
-        QSignalSpy blockSpy(model, &CmdlineModel::blockChanged);
+        QSignalSpy blockSpy(model, &CmdlineModel::blockActiveChanged);
         QSignalSpy resetSpy(model, &CmdlineModel::modelReset);
 
         if(path == 0) {
@@ -651,7 +715,7 @@ private slots:
         QCOMPARE(model->rowCount(), 0);
         QCOMPARE(model->activeLevel(), 0);
         QCOMPARE(model->blockActive(), false);
-        QCOMPARE(model->blockLines(), QVariantList());
+        QCOMPARE(model->block()->rowCount(), 0);
         QCOMPARE(activeLevelSpy.count(), 1);
         QCOMPARE(blockSpy.count(), 1);
         QCOMPARE(resetSpy.count(), 1);

@@ -177,6 +177,7 @@ private:
 
     void installDotBackend();
     void requestColorSnapshot();
+    void requestPromptStyle(int highlightId);
     void resetColorRequests();
     void setImagesAvailable(bool available);
     void showImageError(const QString &message);
@@ -246,6 +247,8 @@ private:
     bool m_colorSnapshotReceived = false;
     bool m_extCmdline = false;
     CmdlineModel *m_cmdline = nullptr;
+    // Identifies the transport whose prompt highlight replies may still apply.
+    quint64 m_promptStyleGeneration = 0;
     TabpageModel *m_tabpages = nullptr;
 };
 

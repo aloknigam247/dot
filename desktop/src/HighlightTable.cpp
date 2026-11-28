@@ -168,8 +168,7 @@ HlAttr HighlightTable::attr(int id) const {
     return it->second;
 }
 
-QVariantMap HighlightTable::attributeMap(int attrId) const {
-    const HlAttr a = attr(attrId);
+static QVariantMap toAttributeMap(const HlAttr &a) {
     QVariantMap map{
         { QStringLiteral("bold"), a.bold },
         { QStringLiteral("italic"), a.italic },
@@ -181,6 +180,21 @@ QVariantMap HighlightTable::attributeMap(int attrId) const {
     if(a.bg.isValid()) map.insert(QStringLiteral("background"), a.bg);
     if(a.fg.isValid()) map.insert(QStringLiteral("foreground"), a.fg);
     return map;
+}
+
+QVariantMap HighlightTable::attributeMap(int attrId) const { return toAttributeMap(attr(attrId)); }
+
+QVariantMap HighlightTable::groupAttributeMap(const msgpack::object &definition) {
+    HlAttr a;
+    a.bg = fromRgb24(getInt(definition, "bg"));
+    a.fg = fromRgb24(getInt(definition, "fg"));
+    a.bold = getBool(definition, "bold");
+    a.italic = getBool(definition, "italic");
+    a.reverse = getBool(definition, "reverse");
+    a.strikethrough = getBool(definition, "strikethrough");
+    a.undercurl = getBool(definition, "undercurl");
+    a.underline = getBool(definition, "underline");
+    return toAttributeMap(a);
 }
 
 bool HighlightTable::isRounded(int id) const {

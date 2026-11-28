@@ -12,7 +12,6 @@
 #include <QFontDatabase>
 #include <QGlyphRun>
 #include <QHash>
-#include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -97,16 +96,11 @@ void GridItem::setConnector(NvimConnector *c) {
     if(m_conn == c) return;
     if(m_conn) {
         disconnect(m_conn, nullptr, this, nullptr);
-        disconnect(m_conn->cmdline(), nullptr, this, nullptr);
         disconnect(m_conn->grid(), nullptr, this, nullptr);
         disconnect(m_conn->highlights(), nullptr, this, nullptr);
     }
     m_conn = c;
     if(m_conn) {
-        connect(m_conn->cmdline(), &CmdlineModel::activeLevelChanged, this,
-                &GridItem::syncCommandLineInputMethod);
-        connect(m_conn, &NvimConnector::attachedChanged, this,
-                &GridItem::syncCommandLineInputMethod);
         connect(m_conn, &NvimConnector::guifontChanged, this, &GridItem::onGuifontChanged);
         connect(m_conn, &NvimConnector::linespaceChanged, this, &GridItem::onLinespaceChanged);
         connect(m_conn, &NvimConnector::flush, this, &GridItem::onFlush);
@@ -117,7 +111,6 @@ void GridItem::setConnector(NvimConnector *c) {
             connect(h, &HighlightTable::changed, this, &GridItem::invalidateRendering);
         }
     }
-    syncCommandLineInputMethod();
     emit connectorChanged();
     invalidateRendering();
 }
@@ -642,30 +635,6 @@ QSGNode *GridItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData * /*dat
 
     // Cursor is rendered by CursorItem, a sibling overlay in Shell.qml.
     return root;
-}
-
-bool GridItem::acceptsCommandLineInput() const {
-    return m_conn && m_conn->attached() && m_conn->cmdline()->activeLevel() > 0;
-}
-
-void GridItem::syncCommandLineInputMethod() {
-    const bool active = acceptsCommandLineInput();
-    if(flags().testFlag(ItemAcceptsInputMethod) == active) return;
-    setFlag(ItemAcceptsInputMethod, active);
-    updateInputMethod(Qt::ImEnabled);
-}
-
-// Neovim owns the command-line text, so only plain insertions at the caret can be forwarded.
-void GridItem::inputMethodEvent(QInputMethodEvent *ev) {
-    if(acceptsCommandLineInput() && ev->replacementStart() == 0 && ev->replacementLength() == 0) {
-        const QString keys = InputHandler::textToNvim(ev->commitString());
-        if(!keys.isEmpty()) {
-            m_conn->input(keys);
-            ev->accept();
-            return;
-        }
-    }
-    ev->ignore();
 }
 
 void GridItem::keyPressEvent(QKeyEvent *ev) {

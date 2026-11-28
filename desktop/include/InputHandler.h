@@ -13,7 +13,6 @@ public:
     // Translate a Qt key event to a Neovim keycode string. Empty result means
     // "no input to send" (e.g., bare modifier press).
     static QString keyToNvim(QKeyEvent *ev);
-    static QString textToNvim(const QString &text);
 
     // Translate a mouse event into nvim_input_mouse arguments.
     struct MouseInput {

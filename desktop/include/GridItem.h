@@ -86,7 +86,6 @@ protected:
 
     virtual QSGNode *updateBackgroundNode(QSGNode *oldNode, BackgroundLayer layer);
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
-    void inputMethodEvent(QInputMethodEvent *ev) override;
     void keyPressEvent(QKeyEvent *ev) override;
     void mousePressEvent(QMouseEvent *ev) override;
     void mouseMoveEvent(QMouseEvent *ev) override;
@@ -105,8 +104,6 @@ private:
     void recomputeMetrics();
     void maybeResizeUi();
     void invalidateRendering();
-    void syncCommandLineInputMethod();
-    bool acceptsCommandLineInput() const;
     const GridRuns &preparedRuns();
     GridModel *grid() const;
     HighlightTable *hl() const;

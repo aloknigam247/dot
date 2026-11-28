@@ -14,6 +14,17 @@ Item {
     readonly property rect caretRect: activeRow ? input.cursorRectangle : Qt.rect(0, 0, 0, 0)
     readonly property string caretShape: connector.modeInfo.cursorStyleEnabled
                                          ? ["block", "horizontal", "vertical"][connector.modeInfo.cursorShape] : "block"
+    // The displayed grapheme under the cursor with its chunk's style, or null at the end of the line.
+    readonly property var caretSpan: {
+        const text = activeRow ? activeRow.specialCharacter || activeRow.cursorGrapheme : ""
+        if (!text) return null
+        let offset = activeRow.cursorTextOffset
+        for (const span of chunkStyles) {
+            if (offset < span.text.length) return Object.assign({}, span, {text: text})
+            offset -= span.text.length
+        }
+        return style(0, text)
+    }
     readonly property var chunkStyles: {
         if (!activeRow) return []
         const spans = styles(activeRow.chunks, styleRevision)
@@ -22,7 +33,7 @@ Item {
         let offset = activeRow.cursorTextOffset
         for (const span of spans) {
             if (offset < span.text.length) {
-                const skip = activeRow.specialShift ? 0 : characterAt(span.text, offset).length
+                const skip = activeRow.specialShift ? 0 : activeRow.cursorGrapheme.length
                 span.text = span.text.slice(0, offset) + mark + span.text.slice(offset + skip)
                 return spans
             }
@@ -33,6 +44,9 @@ Item {
     }
     readonly property string displayedText: indentText + plain(chunkStyles)
     readonly property string kindMark: activeRow ? activeRow.firstCharacter || activeRow.prompt : ""
+    // Neovim styles an input() prompt with its highlight group, never the command-line type character.
+    readonly property var prefixStyle: styleFrom(activeRow && !activeRow.firstCharacter ? activeRow.promptStyle : {},
+                                                 kindMark + indentText)
     readonly property int styleRevision: refresh.revision
 
     readonly property ColorPalette colors: connector.colorPalette
@@ -50,14 +64,13 @@ Item {
     Accessible.name: kindMark + displayedText
     Accessible.role: Accessible.StaticText
 
-    function characterAt(text, offset) {
-        return offset < text.length ? String.fromCodePoint(text.codePointAt(offset)) : ""
-    }
     function escapeHtml(text) {
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     }
     function style(id, text) {
-        const attr = connector.highlights.attributeMap(id)
+        return styleFrom(connector.highlights.attributeMap(id), text)
+    }
+    function styleFrom(attr, text) {
         const bg = attr.background ?? colors.overlayBackground
         const fg = attr.foreground ?? colors.overlayForeground
         return {text: text, background: attr.reverse ? fg : bg, foreground: attr.reverse ? bg : fg,
@@ -70,8 +83,8 @@ Item {
     function plain(spans) {
         return spans.map(span => span.text).join("")
     }
-    function rich(prefix, spans, cursorInk = false) {
-        let html = "<span style='white-space:pre-wrap'>" + escapeHtml(prefix)
+    function rich(spans, cursorInk = false) {
+        let html = "<span style='white-space:pre-wrap'>"
         for (const s of spans) {
             const decoration = (s.underline ? " underline" : "") + (s.strikethrough ? " line-through" : "")
             html += "<span style='color:" + (cursorInk ? colors.cursorForeground : s.foreground)
@@ -108,10 +121,12 @@ Item {
         model: panel.connector.cmdline
         delegate: Item {
             required property var chunks
+            required property string cursorGrapheme
             required property int cursorTextOffset
             required property string firstCharacter
             required property int indent
             required property string prompt
+            required property var promptStyle
             required property string specialCharacter
             required property bool specialShift
         }
@@ -150,14 +165,14 @@ Item {
             anchors.bottom: parent.bottom
             width: parent.width
             Repeater {
-                model: panel.connector.cmdline.blockLines
+                model: panel.connector.cmdline.block
                 delegate: Text {
-                    required property var modelData
+                    required property var chunks
                     objectName: "blockLine"
                     width: blockContent.width
                     color: panel.colors.overlayForeground
                     font: panel.metrics.textFont
-                    text: panel.rich("", panel.styles(modelData, panel.styleRevision))
+                    text: panel.rich(panel.styles(chunks, panel.styleRevision))
                     textFormat: Text.RichText
                     wrapMode: Text.WrapAnywhere
                 }
@@ -191,7 +206,7 @@ Item {
                 width: Math.max(0, viewport.width - panel.metrics.cellWidth)
                 color: panel.colors.overlayForeground
                 font: panel.metrics.textFont
-                text: panel.rich(panel.kindMark + panel.indentText, panel.chunkStyles)
+                text: panel.rich([panel.prefixStyle].concat(panel.chunkStyles))
                 textFormat: TextEdit.RichText
                 wrapMode: TextEdit.WrapAnywhere
                 readOnly: true
@@ -203,11 +218,10 @@ Item {
             Rectangle {
                 objectName: "commandCaret"
                 readonly property real fraction: Math.min(100, Math.max(1, panel.connector.modeInfo.cellPercentage)) / 100
-                readonly property string glyph: panel.characterAt(panel.kindMark + panel.displayedText,
-                                                                  panel.cursorPosition)
                 readonly property real advance: {
                     const r = panel.caretRect
-                    const next = input.positionToRectangle(Math.min(input.length, panel.cursorPosition + glyph.length))
+                    const length = panel.caretSpan ? panel.caretSpan.text.length : 0
+                    const next = input.positionToRectangle(Math.min(input.length, panel.cursorPosition + length))
                     return next.y === r.y && next.x !== r.x ? next.x - r.x : panel.metrics.cellWidth
                 }
                 readonly property real cell: Math.abs(advance)
@@ -219,22 +233,14 @@ Item {
                 color: panel.caretColor
                 clip: true
                 radius: panel.metrics.cursorCornerRadius
-                // Clip the same shaped line, rather than reshaping a single code point in isolation.
-                TextEdit {
+                // Like the grid cursor, the block redraws the grapheme under it alone with its carried style.
+                Text {
                     objectName: "caretGlyph"
-                    x: input.x - parent.x
-                    y: input.y - parent.y
-                    width: input.width
-                    activeFocusOnPress: false
                     color: panel.colors.cursorForeground
-                    cursorVisible: false
-                    enabled: false
                     font: input.font
-                    readOnly: true
-                    text: visible ? panel.rich(panel.kindMark + panel.indentText, panel.chunkStyles, true) : ""
-                    textFormat: input.textFormat
-                    visible: panel.caretShape === "block" && parent.glyph.length > 0
-                    wrapMode: input.wrapMode
+                    text: visible ? panel.rich([panel.caretSpan], true) : ""
+                    textFormat: Text.RichText
+                    visible: panel.caretShape === "block" && panel.caretSpan !== null
                     Accessible.ignored: true
                 }
             }

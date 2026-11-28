@@ -49,6 +49,9 @@ class TestSetup : public QObject {
 public:
     explicit TestSetup(QObject *parent = nullptr) : QObject(parent) {}
 
+    Q_INVOKABLE void appendBlock(const QVariantList &chunks) {
+        QVERIFY(m_connector->cmdline()->appendBlock(line(chunks)));
+    }
     Q_INVOKABLE void defineHighlight(int id, const QVariantMap &attributes) {
         msgpack::sbuffer buffer;
         msgpack::packer<msgpack::sbuffer> pk(buffer);
@@ -122,6 +125,9 @@ public:
     Q_INVOKABLE void setPosition(int level, int pos) {
         QVERIFY(m_connector->cmdline()->setPosition(level, pos));
     }
+    Q_INVOKABLE void setPromptStyle(int highlightId, const QVariantMap &style) {
+        m_connector->cmdline()->setPromptStyle(highlightId, style);
+    }
     Q_INVOKABLE void setRoleResolved(const QString &role, bool resolved) {
         if(role == QStringLiteral("chrome")) {
             if(resolved)
@@ -147,10 +153,12 @@ public:
         m_connector->cmdline()->showBlock(block);
     }
     Q_INVOKABLE void showCmdline(int level, const QString &firstChar, const QString &prompt,
-                                 const QVariantList &chunks, int bytePosition, int indent) {
+                                 const QVariantList &chunks, int bytePosition, int indent,
+                                 int highlightId = -1) {
         dot::CmdlineSession state;
         state.content = line(chunks);
         state.firstCharacter = firstChar;
+        state.highlightId = highlightId;
         state.indent = indent;
         state.position = bytePosition;
         state.prompt = prompt;

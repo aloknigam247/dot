@@ -1,6 +1,7 @@
 #include "CmdlineModel.h"
 
 #include <QDebug>
+#include <QTextBoundaryFinder>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -74,18 +75,20 @@ static QString decodeUtf8(const QByteArray &bytes, qsizetype textBase, QList<qsi
     return text;
 }
 
-// The final entry of `offsets`, when requested, is the text offset of the end of the line.
-static QVariantList chunkList(const CmdlineLine &line, QList<qsizetype> *offsets) {
+// The final entry of `offsets`, when requested, is the text offset of the end of the line. `text`,
+// when requested, receives the concatenated chunk texts.
+static QVariantList chunkList(const CmdlineLine &line, QList<qsizetype> *offsets, QString *text) {
     QVariantList chunks;
     chunks.reserve(line.size());
     qsizetype textBase = 0;
     for(const CmdlineChunk &chunk: line) {
-        const QString text = decodeUtf8(chunk.utf8, textBase, offsets);
-        textBase += text.size();
+        const QString chunkText = decodeUtf8(chunk.utf8, textBase, offsets);
+        textBase += chunkText.size();
+        if(text) text->append(chunkText);
         chunks.append(QVariantMap{
             { QStringLiteral("attrId"), chunk.attrId },
             { QStringLiteral("highlightId"), chunk.highlightId },
-            { QStringLiteral("text"), text },
+            { QStringLiteral("text"), chunkText },
         });
     }
     if(offsets) offsets->append(textBase);
@@ -111,11 +114,51 @@ static QString invisibleLevel(int level) {
     return QStringLiteral("level %1 is not visible").arg(level);
 }
 
+// The grapheme cluster starting at `offset`, or an empty string at the end of the text.
+static QString graphemeAt(const QString &text, qsizetype offset) {
+    if(offset >= text.size()) return {};
+    QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, text);
+    finder.setPosition(offset);
+    return text.sliced(offset, finder.toNextBoundary() - offset);
+}
+
 static QString nonPositiveLevel(int level) {
     return QStringLiteral("level %1 is not positive").arg(level);
 }
 
-CmdlineModel::CmdlineModel(QObject *parent) : QAbstractListModel(parent) {}
+CmdlineBlockModel::CmdlineBlockModel(QObject *parent) : QAbstractListModel(parent) {}
+
+int CmdlineBlockModel::rowCount(const QModelIndex &parent) const {
+    if(parent.isValid()) return 0;
+    return static_cast<int>(m_lines.size());
+}
+
+QVariant CmdlineBlockModel::data(const QModelIndex &index, int role) const {
+    const int row = index.row();
+    if(!index.isValid() || row < 0 || row >= m_lines.size() || role != ChunksRole) return {};
+    return m_lines[row];
+}
+
+QHash<int, QByteArray> CmdlineBlockModel::roleNames() const {
+    return { { ChunksRole, QByteArrayLiteral("chunks") } };
+}
+
+void CmdlineBlockModel::append(QVariantList line) {
+    const auto row = static_cast<int>(m_lines.size());
+    beginInsertRows({}, row, row);
+    m_lines.append(std::move(line));
+    endInsertRows();
+}
+
+void CmdlineBlockModel::replace(QList<QVariantList> lines) {
+    if(m_lines.isEmpty() && lines.isEmpty()) return;
+    beginResetModel();
+    m_lines = std::move(lines);
+    endResetModel();
+}
+
+CmdlineModel::CmdlineModel(QObject *parent)
+    : QAbstractListModel(parent), m_block(new CmdlineBlockModel(this)) {}
 
 int CmdlineModel::rowCount(const QModelIndex &parent) const {
     if(parent.isValid()) return 0;
@@ -129,6 +172,8 @@ QVariant CmdlineModel::data(const QModelIndex &index, int role) const {
     switch(role) {
         case ChunksRole:
             return level.chunks;
+        case CursorGraphemeRole:
+            return graphemeAt(level.text, level.cursorTextOffset);
         case CursorTextOffsetRole:
             return static_cast<qlonglong>(level.cursorTextOffset);
         case FirstCharacterRole:
@@ -141,6 +186,8 @@ QVariant CmdlineModel::data(const QModelIndex &index, int role) const {
             return level.level;
         case PromptRole:
             return level.prompt;
+        case PromptStyleRole:
+            return m_promptStyles.value(level.highlightId);
         case SpecialCharacterRole:
             return level.specialCharacter;
         case SpecialShiftRole:
@@ -153,12 +200,14 @@ QVariant CmdlineModel::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> CmdlineModel::roleNames() const {
     return {
         { ChunksRole, QByteArrayLiteral("chunks") },
+        { CursorGraphemeRole, QByteArrayLiteral("cursorGrapheme") },
         { CursorTextOffsetRole, QByteArrayLiteral("cursorTextOffset") },
         { FirstCharacterRole, QByteArrayLiteral("firstCharacter") },
         { HighlightIdRole, QByteArrayLiteral("highlightId") },
         { IndentRole, QByteArrayLiteral("indent") },
         { LevelRole, QByteArrayLiteral("level") },
         { PromptRole, QByteArrayLiteral("prompt") },
+        { PromptStyleRole, QByteArrayLiteral("promptStyle") },
         { SpecialCharacterRole, QByteArrayLiteral("specialCharacter") },
         { SpecialShiftRole, QByteArrayLiteral("specialShift") },
     };
@@ -166,8 +215,7 @@ QHash<int, QByteArray> CmdlineModel::roleNames() const {
 
 std::expected<void, QString> CmdlineModel::appendBlock(const CmdlineLine &line) {
     if(!m_blockActive) return std::unexpected(QStringLiteral("no block is visible"));
-    m_blockLines.append(QVariant(chunkList(line, nullptr)));
-    emit blockChanged();
+    m_block->append(chunkList(line, nullptr, nullptr));
     return {};
 }
 
@@ -186,11 +234,12 @@ std::expected<void, QString> CmdlineModel::hide(int level) {
 void CmdlineModel::hideBlock() {
     if(!m_blockActive) return;
     m_blockActive = false;
-    m_blockLines.clear();
-    emit blockChanged();
+    m_block->replace({});
+    emit blockActiveChanged();
 }
 
 void CmdlineModel::reset() {
+    m_promptStyles.clear();
     if(!m_levels.isEmpty()) {
         beginResetModel();
         m_levels.clear();
@@ -209,8 +258,19 @@ std::expected<void, QString> CmdlineModel::setPosition(int level, qsizetype posi
     if(current.cursorTextOffset == *cursor) return {};
     current.cursorTextOffset = *cursor;
     const QModelIndex changed = index(static_cast<int>(row));
-    emit dataChanged(changed, changed, { CursorTextOffsetRole });
+    emit dataChanged(changed, changed, { CursorGraphemeRole, CursorTextOffsetRole });
     return {};
+}
+
+void CmdlineModel::setPromptStyle(int highlightId, const QVariantMap &style) {
+    const auto existing = m_promptStyles.constFind(highlightId);
+    if(existing != m_promptStyles.cend() && *existing == style) return;
+    m_promptStyles.insert(highlightId, style);
+    for(qsizetype row = 0; row < m_levels.size(); ++row) {
+        if(m_levels[row].highlightId != highlightId) continue;
+        const QModelIndex changed = index(static_cast<int>(row));
+        emit dataChanged(changed, changed, { PromptStyleRole });
+    }
 }
 
 std::expected<void, QString> CmdlineModel::setSpecialCharacter(int level, const QString &character,
@@ -233,7 +293,7 @@ std::expected<void, QString> CmdlineModel::show(int level, const CmdlineSession 
                                    .arg(session.indent)
                                    .arg(kMaxRenderedIndent));
     Level next;
-    next.chunks = chunkList(session.content, &next.textOffsets);
+    next.chunks = chunkList(session.content, &next.textOffsets, &next.text);
     const auto cursor = cursorAt(next.textOffsets, session.position);
     if(!cursor) return std::unexpected(cursor.error());
     next.cursorTextOffset = *cursor;
@@ -261,11 +321,13 @@ std::expected<void, QString> CmdlineModel::show(int level, const CmdlineSession 
 }
 
 void CmdlineModel::showBlock(const QList<CmdlineLine> &lines) {
-    m_blockLines.clear();
-    m_blockLines.reserve(lines.size());
-    for(const CmdlineLine &line: lines) m_blockLines.append(QVariant(chunkList(line, nullptr)));
+    QList<QVariantList> chunks;
+    chunks.reserve(lines.size());
+    for(const CmdlineLine &line: lines) chunks.append(chunkList(line, nullptr, nullptr));
+    m_block->replace(std::move(chunks));
+    if(m_blockActive) return;
     m_blockActive = true;
-    emit blockChanged();
+    emit blockActiveChanged();
 }
 
 qsizetype CmdlineModel::lowerBound(int level) const {

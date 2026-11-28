@@ -75,6 +75,27 @@ private slots:
         QVERIFY(!map.contains("background") && !map.contains("foreground"));
     }
 
+    void groupAttributeMapColors() {
+        const auto colored = packAttrMap({ { "bg", 0x273849 }, { "fg", 0x91abcd } }, {});
+        const auto map = HighlightTable::groupAttributeMap(colored.get());
+        QCOMPARE(map.value("background").value<QColor>(), QColor("#273849"));
+        QCOMPARE(map.value("foreground").value<QColor>(), QColor("#91abcd"));
+        const auto uncolored = packAttrMap({}, {});
+        const auto empty = HighlightTable::groupAttributeMap(uncolored.get());
+        QVERIFY(!empty.contains("background") && !empty.contains("foreground"));
+    }
+
+    void groupAttributeMapFlags_data() { attributeMapFlags_data(); }
+
+    void groupAttributeMapFlags() {
+        QFETCH(QString, enabled);
+        const auto definition = packAttrMap({}, { { enabled.toStdString(), true } });
+        const auto map = HighlightTable::groupAttributeMap(definition.get());
+        for(const char *flag:
+            { "bold", "italic", "reverse", "strikethrough", "undercurl", "underline" })
+            QCOMPARE(map.value(flag), QVariant(enabled == QLatin1String(flag)));
+    }
+
     void defaultColorsSet() {
         HighlightTable h;
         h.setDefaultColors(0xff0000, 0x00ff00, 0x0000ff);

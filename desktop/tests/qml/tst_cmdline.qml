@@ -96,7 +96,9 @@ TestCase {
         verify(cell > 0)
         const height = p.caretRect.height
         const top = edit.y + p.caretRect.y
-        compare(glyph.getText(2, 3), "b")
+        compare($cmdlineFixture.renderedAt(glyph, 0).text, "b")
+        compare(glyph.mapToItem(p, 0, 0), caret.mapToItem(p, 0, 0))
+        checkCaret(p, 2)
         verify(glyph.visible)
         $cmdlineFixture.setCursorShape("horizontal", 25)
         compare(p.caretShape, "horizontal")
@@ -164,9 +166,9 @@ TestCase {
         const start = edit.positionToRectangle(2)
         const end = edit.positionToRectangle(4)
         compare(caret.width, end.x - start.x)
-        compare(glyph.mapToItem(edit, 0, 0), Qt.point(0, 0))
-        compare(glyph.getText(2, 4), "e\u0301")
-        for (const pos of [2, 3]) {
+        compare(glyph.mapToItem(p, 0, 0), caret.mapToItem(p, 0, 0))
+        compare($cmdlineFixture.renderedAt(glyph, 0).text, "e\u0301")
+        for (const pos of [0, 1]) {
             const format = $cmdlineFixture.renderedAt(glyph, pos)
             compare(format.foreground, p.colors.cursorForeground)
             verify(format.bold && format.italic && format.strikeout && format.underline)
@@ -205,6 +207,26 @@ TestCase {
         verify(!p.visible)
     }
 
+    function test_prompt_style() {
+        const p = make()
+        $cmdlineFixture.showCmdline(1, "", "Name: ", [chunk("x")], 0, 0, 42)
+        const edit = findChild(p, "commandLayout")
+        const unstyled = $cmdlineFixture.renderedAt(edit, 0)
+        compare(unstyled.foreground, p.colors.overlayForeground)
+        verify(!unstyled.bold)
+        $cmdlineFixture.setPromptStyle(42, {foreground: "#123456", bold: true})
+        const styled = $cmdlineFixture.renderedAt(edit, 0)
+        compare(styled.text, "Name: x")
+        compare(styled.foreground, "#123456")
+        verify(styled.bold)
+        verify(!$cmdlineFixture.renderedAt(edit, 6).bold)
+        $cmdlineFixture.showCmdline(2, ":", "", [chunk("y")], 0, 0, 42)
+        const command = $cmdlineFixture.renderedAt(edit, 0)
+        compare(command.text, ":y")
+        compare(command.foreground, p.colors.overlayForeground)
+        verify(!command.bold)
+    }
+
     function test_special_character_at_end() {
         const p = make()
         const edit = findChild(p, "commandLayout")
@@ -230,6 +252,14 @@ TestCase {
         }
     }
 
+    function test_special_character_replaces_grapheme() {
+        const p = make()
+        show("he\u0301llo", 1)
+        $cmdlineFixture.setSpecialCharacter(1, "\"", false)
+        compare(p.displayedText, "h\"llo")
+        checkCaret(p, 2)
+    }
+
     function test_style_updates_and_blocks() {
         const p = make()
         $cmdlineFixture.setOverlayColors("#123456", "#987654")
@@ -250,6 +280,10 @@ TestCase {
         compare(space.foreground, "#123456")
         compare(space.background, "#987654")
         compare($cmdlineFixture.renderedAt(row, 4).background, "#ff0123")
+        $cmdlineFixture.appendBlock([chunk("next")])
+        compare(blockRows(p).length, 2)
+        compare(blockRows(p)[0], row)
+        compare($cmdlineFixture.renderedAt(blockRows(p)[1], 0).text, "next")
         $cmdlineFixture.showCmdline(1, "/", "", [chunk("a", 12), chunk("<b>  &")], 1, 0)
         const edit = findChild(p, "commandLayout")
         compare(edit.getText(0, edit.length), "/a<b>  &")
